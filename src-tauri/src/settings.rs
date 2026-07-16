@@ -32,6 +32,7 @@ impl Default for Settings {
             port_range: "6881-6899".to_string(),
             dht_enabled: false,
             watch_folder: String::new(),
+            completion_notification_excluded_labels: Vec::new(),
             // Honour the env var so `RSTORRENT_MOCK=1` flips the default on.
             mock: std::env::var("RSTORRENT_MOCK").is_ok(),
         }

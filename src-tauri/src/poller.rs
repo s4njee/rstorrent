@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter};
 use crate::ipc::{
     ConnPhase, ConnState, DetailPayload, DetailTab, GlobalStats, LogLevel, Snapshot, TorrentDto,
 };
+use crate::notifications::{self, CompletionTracker};
 use crate::rtorrent::{derive, RawGlobal};
 use crate::settings;
 use crate::state::AppState;
@@ -43,6 +44,7 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
 /// The main ~1s poll: list + globals + tracker resolution + snapshot emit.
 async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
     let mut failures: usize = 0;
+    let mut completion_tracker = CompletionTracker::default();
 
     loop {
         let backend = state.backend();
@@ -58,6 +60,8 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
 
         match result {
             Ok((raw, globals)) => {
+                let continuing_session =
+                    failures == 0 && state.conn().phase == ConnPhase::Connected;
                 if failures > 0 || state.conn().phase != ConnPhase::Connected {
                     // (Re)connected: learn the version and log the transition.
                     let version = backend.client_version().await.ok();
@@ -73,12 +77,26 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                 }
                 failures = 0;
 
+                if !continuing_session {
+                    completion_tracker.reset();
+                }
+
+                let settings = state.settings();
+                let completed = completion_tracker
+                    .observe(&raw, &settings.completion_notification_excluded_labels);
+                notifications::set_dock_badge(&app, notifications::active_download_count(&raw));
+                for completion in completed {
+                    notifications::post_completion(app.clone(), completion);
+                }
+
                 resolve_trackers(&app, &state, &raw).await;
                 let snapshot = build_snapshot(&state, raw, globals);
                 let _ = app.emit("state://snapshot", &snapshot);
             }
             Err(e) => {
                 failures += 1;
+                completion_tracker.reset();
+                notifications::set_dock_badge(&app, 0);
                 let delay = BACKOFF[(failures - 1).min(BACKOFF.len() - 1)];
                 let s = state.settings();
                 // Only log the first failure of a streak to avoid log spam.

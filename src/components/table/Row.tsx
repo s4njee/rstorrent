@@ -56,6 +56,7 @@ function RowInner({
   }`;
   return (
     <div
+      id={`torrent-row-${t.hash}`}
       className={cls}
       onMouseDown={(e) => onMouseDown(t.hash, e)}
       onContextMenu={(e) => onContextMenu(t.hash, e)}

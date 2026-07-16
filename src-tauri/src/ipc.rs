@@ -228,6 +228,9 @@ pub struct Settings {
     /// Directory auto-scanned for `.torrent` files to add (empty = disabled).
     #[serde(default)]
     pub watch_folder: String,
+    /// Labels whose completed torrents should not produce a notification.
+    #[serde(default)]
+    pub completion_notification_excluded_labels: Vec<String>,
     pub mock: bool,
 }
 

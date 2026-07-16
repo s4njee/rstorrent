@@ -63,3 +63,21 @@
   color: var(--accent-amber);
   font-size: var(--fs-cell);
 }
+
+.notificationLabels {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-mid);
+}
+
+.labelGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 20px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-input);
+  background: var(--bg-field);
+}

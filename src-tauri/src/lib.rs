@@ -17,6 +17,7 @@ pub mod ipc;
 mod commands;
 mod log;
 mod menu;
+mod notifications;
 mod open_requests;
 mod poller;
 mod rtorrent;

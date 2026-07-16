@@ -8,10 +8,11 @@
  * the backend doesn't support them yet (see plan.md §10) with an explanatory tip.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useUi } from "../../store/ui";
 import { useSettings, isLocalhost } from "../../store/settings";
+import { useTorrents } from "../../store/torrents";
 import { applySettings, testConnection } from "../../ipc/commands";
 import type { Settings, Transport } from "../../ipc/types";
 import { ModalBase, Button } from "./ModalBase";
@@ -48,6 +49,7 @@ const NAV: Array<{
 export function PreferencesDialog() {
   const closeDialog = useUi((s) => s.closeDialog);
   const settings = useSettings((s) => s.settings);
+  const torrents = useTorrents((s) => s.torrents);
 
   const [section, setSection] = useState<Section>("downloads");
   const [draft, setDraft] = useState<Settings | null>(settings);
@@ -59,6 +61,14 @@ export function PreferencesDialog() {
   useEffect(() => {
     if (settings && !draft) setDraft(settings);
   }, [settings, draft]);
+
+  const labels = useMemo(() => {
+    const known = torrents.map((torrent) => torrent.label).filter(Boolean);
+    const excluded = draft?.completionNotificationExcludedLabels ?? [];
+    return [...new Set([...known, ...excluded])].sort((a, b) =>
+      a.localeCompare(b),
+    );
+  }, [torrents, draft?.completionNotificationExcludedLabels]);
 
   if (!draft) {
     return (
@@ -150,6 +160,43 @@ export function PreferencesDialog() {
                 onChange={(v) => patch({ confirmOnRemove: v })}
                 label="Confirm before removing torrents"
               />
+              <div className={styles.notificationLabels}>
+                <span className={forms.fieldLabel} style={{ width: "auto" }}>
+                  Exclude labels from completion notifications
+                </span>
+                <span className={forms.meta}>
+                  Completed torrents with checked labels will stay silent.
+                </span>
+                {labels.length === 0 ? (
+                  <span className={forms.meta}>
+                    No labels are currently known.
+                  </span>
+                ) : (
+                  <div className={styles.labelGrid}>
+                    {labels.map((label) => (
+                      <Checkbox
+                        key={label}
+                        checked={draft.completionNotificationExcludedLabels.includes(
+                          label,
+                        )}
+                        onChange={(excluded) => {
+                          const next = new Set(
+                            draft.completionNotificationExcludedLabels,
+                          );
+                          if (excluded) next.add(label);
+                          else next.delete(label);
+                          patch({
+                            completionNotificationExcludedLabels: [
+                              ...next,
+                            ].sort((a, b) => a.localeCompare(b)),
+                          });
+                        }}
+                        label={label}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </Group>
           )}
 

@@ -1,0 +1,79 @@
+/* Detail panel: a tab strip over a fixed-height content area on the app
+   background. Active tab is cyan-bright with a 2px cyan underline. */
+.panel {
+  flex: none;
+  border-top: 1px solid var(--border-mid);
+  background: var(--bg-panel);
+  height: 132px;
+  display: flex;
+  flex-direction: column;
+}
+
+.tabs {
+  display: flex;
+  gap: 14px;
+  padding: 6px 14px 0;
+  font-size: var(--fs-title);
+  flex: none;
+}
+.tab {
+  padding: 2px 0 6px;
+  color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+  cursor: default;
+}
+.tab:hover {
+  color: var(--text-muted);
+}
+.active {
+  color: var(--accent-cyan-bright);
+  border-bottom-color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+.content {
+  flex: 1;
+  border-top: 1px solid var(--border-mid);
+  background: var(--bg-app);
+  overflow: auto;
+  padding: 8px 14px;
+}
+
+/* General tab: 4-column label:value grid. */
+.general {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px 20px;
+  font-size: var(--fs-cell);
+  color: var(--text-body);
+}
+.general b {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.placeholder {
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+}
+
+/* Simple detail table (trackers/peers) reusing the theme. */
+.dtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-cell);
+}
+.dtable th {
+  text-align: left;
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: var(--fs-header);
+  letter-spacing: 0.05em;
+  padding: 2px 8px 4px 0;
+}
+.dtable td {
+  color: var(--text-muted);
+  padding: 2px 8px 2px 0;
+  white-space: nowrap;
+}

@@ -1,0 +1,10 @@
+dist
+src-tauri/target
+design
+package-lock.json
+src-tauri/gen
+README.md
+backlog.md
+plan.md
+tasks.md
+docs/rtorrent-setup.md

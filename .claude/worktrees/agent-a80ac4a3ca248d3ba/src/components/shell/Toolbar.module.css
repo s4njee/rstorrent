@@ -1,0 +1,59 @@
+/* Toolbar: icon buttons grouped by separators, with a right-aligned filter
+   input. Matches the design's compact 26x24 buttons on the panel background. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-black);
+  flex: none;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--toolbar-btn);
+  height: var(--toolbar-btn-h);
+  border: none;
+  background: none;
+  border-radius: var(--radius-input);
+  color: var(--text-muted);
+  cursor: default;
+}
+.btn:hover:not(:disabled) {
+  background: var(--bg-track);
+}
+.btn:disabled {
+  opacity: 0.4;
+}
+/* The primary Add (+) glyph carries the cyan accent. */
+.add {
+  color: var(--accent-cyan);
+}
+
+.sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border-strong);
+  margin: 0 5px;
+  flex: none;
+}
+
+.grow {
+  flex: 1;
+}
+
+.filter {
+  width: 190px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-field);
+  font-size: var(--fs-title);
+  color: var(--text-body);
+}
+.filter::placeholder {
+  color: var(--text-dim);
+}

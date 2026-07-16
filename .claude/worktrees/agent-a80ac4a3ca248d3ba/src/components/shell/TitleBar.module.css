@@ -1,0 +1,28 @@
+/* Overlay title bar: a draggable strip that clears the native macOS traffic
+   lights on the left and centers the app title. */
+.bar {
+  height: var(--titlebar-height);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-black);
+  display: flex;
+  align-items: center;
+  /* Left padding leaves room for the native traffic lights (overlay style). */
+  padding: 0 12px 0 78px;
+  flex: none;
+}
+
+.title {
+  flex: 1;
+  text-align: center;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--text-dim);
+  /* The title must not swallow drags, but should not intercept text selection. */
+  pointer-events: none;
+}
+
+/* Balances the traffic-light gutter so the title is optically centered. */
+.spacer {
+  width: 66px;
+  flex: none;
+}
