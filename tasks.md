@@ -480,8 +480,8 @@ Deps: E13.
 - [x] **E15-S1 · `.torrent` file association + `magnet:` URL scheme** — deep-link plugin + fileAssociations; opening either routes into the add dialogs (or instant-add per prefs).
 - [ ] **E15-S2 · HTTP(S) XML-RPC transport with basic auth** — for nginx/ruTorrent-fronted remote daemons; unlocks remote use (keeps delete-data/reveal disabled).
 - [ ] **E15-S3 · Move data on Set location** — local daemon same-volume rename, else copy+verify+erase; progress toast.
-- [ ] **E15-S4 · Resizable/customizable columns** — drag header edges, show/hide via header context menu, persisted.
-- [ ] **E15-S5 · Completion notifications** — macOS notification on download-complete (per-label opt-out in Behavior).
+- [x] **E15-S4 · Resizable/customizable columns** — drag header edges, show/hide via header context menu, persisted.
+- [x] **E15-S5 · Completion notifications** — macOS notification on download-complete (per-label opt-out in Behavior).
 - [ ] **E15-S6 · RSS section** — feed polling + auto-add rules (fills the disabled prefs nav).
 
 ---

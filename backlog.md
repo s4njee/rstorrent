@@ -26,28 +26,29 @@ Finish these in tasks.md before starting anything below:
 
 Things a real user hits in the first week of daily use.
 
-- [ ] **B1 · `.torrent` file association + `magnet:` URL scheme** (M) — *tracked as E15-S1*
+- [x] **B1 · `.torrent` file association + `magnet:` URL scheme** (M) — *tracked as E15-S1*
   Opening either from Finder/browser routes into the add dialogs (or instant-add
   per prefs). This is the single biggest friction point vs. every other client.
 
-- [ ] **B2 · Completion notifications** (S) — *tracked as E15-S5*
+- [x] **B2 · Completion notifications** (S) — *tracked as E15-S5*
   macOS notification on download-complete; per-label opt-out in Behavior prefs.
   Clicking the notification selects the torrent (and reveals in Finder if complete).
 
-- [ ] **B3 · Dock badge & dock menu** (S)
+- [x] **B3 · Dock badge & dock menu** (S)
   Badge with active-download count; dock menu with global pause/resume and
-  current ↓/↑ rates. Cheap, very visible.
+  current ↓/↑ rates. Cheap, very visible. *Shipped badge only — the dock menu
+  needs custom Objective-C (no Tauri API); revisit alongside B17.*
 
 - [x] **B4 · Per-torrent speed limits** (M)
   `d.throttle_name.set` against named throttles (rtorrent has no true per-torrent
   cap, so: manage a small pool of named throttle groups). Context menu ▸ Limit
   download/upload… Surfaced in the General tab.
 
-- [ ] **B5 · Tracker management** (M)
+- [x] **B5 · Tracker management** (M)
   Trackers tab: add tracker (`d.tracker.insert`), remove, enable/disable,
   **force reannounce** (also on the context menu). Today the tab is read-only.
 
-- [ ] **B6 · Resizable / customizable columns** (M) — *tracked as E15-S4*
+- [x] **B6 · Resizable / customizable columns** (M) — *tracked as E15-S4*
   Drag header edges, show/hide via header context menu, persisted with the rest
   of UI state (E13-S3 already persists sort).
 
