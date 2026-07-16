@@ -37,6 +37,8 @@ pub struct AppState {
     pub conn: RwLock<ConnState>,
     /// Notified to request an immediate extra poll (after a user action).
     pub repoll: Notify,
+    /// Notified to refresh the active detail tab immediately.
+    pub detail_repoll: Notify,
     /// Path to the persisted since-install transfer counters (see `stats.rs`).
     pub stats_path: PathBuf,
 }
@@ -67,6 +69,7 @@ impl AppState {
             detail_watch: std::sync::Mutex::new(None),
             conn: RwLock::new(conn),
             repoll: Notify::new(),
+            detail_repoll: Notify::new(),
             stats_path,
         }
     }

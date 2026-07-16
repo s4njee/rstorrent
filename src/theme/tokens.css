@@ -41,6 +41,8 @@
   /* --- Danger palette --- */
   --danger-bg: #3a1f1f; /* destructive button fill, warning icon bg */
   --danger-border: #6b2f2f; /* destructive button border */
+  --danger-text: #e0a5a5; /* destructive menu text */
+  --shadow-menu: rgba(0, 0, 0, 0.5); /* floating context menus */
 
   /* --- Traffic lights (design reference only; real ones come from macOS) --- */
   --tl-red: #f45c53;

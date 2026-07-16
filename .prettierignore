@@ -3,7 +3,4 @@ src-tauri/target
 design
 package-lock.json
 src-tauri/gen
-README.md
-plan.md
-tasks.md
-docs/rtorrent-setup.md
+*.md

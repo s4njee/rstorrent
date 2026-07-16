@@ -7,6 +7,7 @@
 //! start, erase, set_label…) actually change the fixture state, so the app feels
 //! live. It's also the fixture source for the transport/derive tests.
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -23,7 +24,35 @@ const KIB: f64 = 1_024.0;
 /// non-awaiting critical sections that read or mutate the torrent list).
 struct State {
     torrents: Vec<RawTorrent>,
+    trackers: HashMap<String, Vec<MockTracker>>,
     last_tick: Instant,
+}
+
+#[derive(Clone)]
+struct MockTracker {
+    url: String,
+    enabled: bool,
+    seeds: i64,
+    leeches: i64,
+    last_announce: String,
+}
+
+impl MockTracker {
+    fn row(&self, index: usize) -> TrackerRow {
+        TrackerRow {
+            index,
+            url: self.url.clone(),
+            enabled: self.enabled,
+            status: if self.enabled {
+                "working".into()
+            } else {
+                "disabled".into()
+            },
+            seeds: self.seeds,
+            leeches: self.leeches,
+            last_announce: self.last_announce.clone(),
+        }
+    }
 }
 
 pub struct MockClient {
@@ -38,9 +67,20 @@ impl Default for MockClient {
 
 impl MockClient {
     pub fn new() -> Self {
+        let torrents = fixtures();
+        let trackers = torrents
+            .iter()
+            .map(|torrent| {
+                (
+                    torrent.hash.clone(),
+                    vec![mock_tracker(tracker_url(&torrent.hash))],
+                )
+            })
+            .collect();
         Self {
             state: Mutex::new(State {
-                torrents: fixtures(),
+                torrents,
+                trackers,
                 last_tick: Instant::now(),
             }),
         }
@@ -93,32 +133,78 @@ impl RtorrentApi for MockClient {
         Ok(RawGlobal {
             down_rate,
             up_rate,
-            down_rate_limit: 0,               // ∞
+            down_rate_limit: 0,                // ∞
             up_rate_limit: (5.0 * MIB) as i64, // 5.0 MiB/s (matches design footer)
             dht_nodes: 387,
         })
     }
 
     async fn primary_tracker(&self, hash: &str) -> Result<String> {
-        // Fixed host per fixture, matching the design's Tracker column.
-        let host = match hash {
-            "A1" => "torrent.ubuntu.com",
-            "B2" => "bttracker.debian.org",
-            "F6" | "G7" | "J10" => "tracker.blender.org",
-            "I9" => "downloads.raspberrypi.org",
-            _ => "linuxtracker.org",
-        };
-        Ok(host.to_string())
+        let state = self.state.lock().unwrap();
+        let url = state
+            .trackers
+            .get(hash)
+            .and_then(|trackers| {
+                trackers
+                    .iter()
+                    .find(|tracker| tracker.enabled)
+                    .or_else(|| trackers.first())
+            })
+            .map(|tracker| tracker.url.as_str())
+            .unwrap_or("");
+        Ok(tracker_host(url))
     }
 
-    async fn trackers(&self, _hash: &str) -> Result<Vec<TrackerRow>> {
-        Ok(vec![TrackerRow {
-            url: "https://linuxtracker.org/announce".into(),
-            status: "working".into(),
-            seeds: 34,
-            leeches: 12,
-            last_announce: "2m ago".into(),
-        }])
+    async fn trackers(&self, hash: &str) -> Result<Vec<TrackerRow>> {
+        let state = self.state.lock().unwrap();
+        Ok(state
+            .trackers
+            .get(hash)
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .map(|(index, tracker)| tracker.row(index))
+            .collect())
+    }
+
+    async fn add_tracker(&self, hash: &str, url: &str) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state
+            .trackers
+            .entry(hash.to_string())
+            .or_default()
+            .push(mock_tracker(url));
+        Ok(())
+    }
+
+    async fn remove_tracker(&self, hash: &str, index: usize) -> Result<()> {
+        // Mock rtorrent identifies as 0.9.8, which has no d.tracker.remove;
+        // mirror the real client's compatibility fallback by disabling it.
+        self.set_tracker_enabled(hash, index, false).await
+    }
+
+    async fn set_tracker_enabled(&self, hash: &str, index: usize, enabled: bool) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        if let Some(tracker) = state
+            .trackers
+            .get_mut(hash)
+            .and_then(|trackers| trackers.get_mut(index))
+        {
+            tracker.enabled = enabled;
+        }
+        Ok(())
+    }
+
+    async fn force_reannounce(&self, hashes: &[String]) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        for hash in hashes {
+            if let Some(trackers) = state.trackers.get_mut(hash) {
+                for tracker in trackers.iter_mut().filter(|tracker| tracker.enabled) {
+                    tracker.last_announce = "just now".into();
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn peers(&self, _hash: &str) -> Result<Vec<PeerRow>> {
@@ -190,12 +276,20 @@ impl RtorrentApi for MockClient {
         state
             .torrents
             .retain(|t| !hashes.iter().any(|h| h.eq_ignore_ascii_case(&t.hash)));
+        state
+            .trackers
+            .retain(|hash, _| !hashes.iter().any(|h| h.eq_ignore_ascii_case(hash)));
         Ok(())
     }
 
     async fn load_raw(&self, _bytes: Vec<u8>, opts: LoadOptions) -> Result<()> {
         let mut state = self.state.lock().unwrap();
-        state.torrents.push(new_download("added-from-file.iso", &opts));
+        let torrent = new_download("added-from-file.iso", &opts);
+        state.trackers.insert(
+            torrent.hash.clone(),
+            vec![mock_tracker(tracker_url(&torrent.hash))],
+        );
+        state.torrents.push(torrent);
         Ok(())
     }
 
@@ -207,7 +301,12 @@ impl RtorrentApi for MockClient {
             .unwrap_or("magnet-download")
             .to_string();
         let mut state = self.state.lock().unwrap();
-        state.torrents.push(new_download(&name, &opts));
+        let torrent = new_download(&name, &opts);
+        state.trackers.insert(
+            torrent.hash.clone(),
+            vec![mock_tracker(tracker_url(&torrent.hash))],
+        );
+        state.torrents.push(torrent);
         Ok(())
     }
 
@@ -266,6 +365,35 @@ impl RtorrentApi for MockClient {
             cache_overload_pct: Some(0.0),
             queued_io: Some(3),
         })
+    }
+}
+
+fn tracker_url(hash: &str) -> &'static str {
+    match hash {
+        "A1" => "https://torrent.ubuntu.com/announce",
+        "B2" => "https://bttracker.debian.org/announce",
+        "F6" | "G7" | "J10" => "https://tracker.blender.org/announce",
+        "I9" => "https://downloads.raspberrypi.org/announce",
+        _ => "https://linuxtracker.org/announce",
+    }
+}
+
+fn tracker_host(url: &str) -> String {
+    let after_scheme = url.split("://").nth(1).unwrap_or(url);
+    after_scheme
+        .split(['/', ':'])
+        .next()
+        .unwrap_or(after_scheme)
+        .to_string()
+}
+
+fn mock_tracker(url: &str) -> MockTracker {
+    MockTracker {
+        url: url.into(),
+        enabled: true,
+        seeds: 34,
+        leeches: 12,
+        last_announce: "2m ago".into(),
     }
 }
 
@@ -407,5 +535,29 @@ mod tests {
         let c = MockClient::new();
         c.erase(&["A1".into()]).await.unwrap();
         assert_eq!(c.list_snapshot().await.unwrap().len(), 9);
+    }
+
+    #[tokio::test]
+    async fn tracker_management_updates_mock_detail_rows() {
+        let c = MockClient::new();
+        let url = "udp://tracker.example.test:6969/announce";
+
+        c.add_tracker("C3", url).await.unwrap();
+        let rows = c.trackers("C3").await.unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1].url, url);
+        assert!(rows[1].enabled);
+
+        c.set_tracker_enabled("C3", 1, false).await.unwrap();
+        let rows = c.trackers("C3").await.unwrap();
+        assert!(!rows[1].enabled);
+        assert_eq!(rows[1].status, "disabled");
+
+        c.set_tracker_enabled("C3", 1, true).await.unwrap();
+        c.force_reannounce(&["C3".into()]).await.unwrap();
+        assert_eq!(c.trackers("C3").await.unwrap()[1].last_announce, "just now");
+
+        c.remove_tracker("C3", 1).await.unwrap();
+        assert!(!c.trackers("C3").await.unwrap()[1].enabled);
     }
 }

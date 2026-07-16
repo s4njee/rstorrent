@@ -202,7 +202,10 @@ fn empty_globals() -> GlobalStats {
 /// The ~2s detail poll for the watched torrent/tab.
 async fn detail_loop(app: AppHandle, state: Arc<AppState>) {
     loop {
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+            _ = state.detail_repoll.notified() => {}
+        }
 
         let watch = state.detail_watch.lock().unwrap().clone();
         let Some((hash, tab)) = watch else { continue };

@@ -16,26 +16,26 @@ use crate::ipc::{FileNode, PeerRow, Transport, TrackerRow};
 /// The per-download commands fetched by `d.multicall2`, in column order. The
 /// indices here must match the `row[i]` reads in [`row_to_raw`].
 const LIST_COMMANDS: &[&str] = &[
-    "d.hash=",             // 0
-    "d.name=",             // 1
-    "d.size_bytes=",       // 2
-    "d.bytes_done=",       // 3
-    "d.complete=",         // 4
-    "d.is_active=",        // 5
-    "d.is_open=",          // 6
-    "d.hashing=",          // 7
-    "d.message=",          // 8
-    "d.down.rate=",        // 9
-    "d.up.rate=",          // 10
-    "d.ratio=",            // 11
-    "d.custom1=",          // 12
-    "d.directory=",        // 13
-    "d.base_path=",        // 14
-    "d.peers_complete=",   // 15
-    "d.peers_accounted=",  // 16
-    "d.peers_connected=",  // 17
-    "d.priority=",         // 18
-    "d.is_private=",       // 19
+    "d.hash=",            // 0
+    "d.name=",            // 1
+    "d.size_bytes=",      // 2
+    "d.bytes_done=",      // 3
+    "d.complete=",        // 4
+    "d.is_active=",       // 5
+    "d.is_open=",         // 6
+    "d.hashing=",         // 7
+    "d.message=",         // 8
+    "d.down.rate=",       // 9
+    "d.up.rate=",         // 10
+    "d.ratio=",           // 11
+    "d.custom1=",         // 12
+    "d.directory=",       // 13
+    "d.base_path=",       // 14
+    "d.peers_complete=",  // 15
+    "d.peers_accounted=", // 16
+    "d.peers_connected=", // 17
+    "d.priority=",        // 18
+    "d.is_private=",      // 19
 ];
 
 /// rtorrent client that talks to a live daemon over SCGI.
@@ -107,6 +107,15 @@ impl ScgiClient {
         }
         Ok(())
     }
+
+    /// Query XML-RPC introspection without making older daemons fail an action.
+    async fn method_exists(&self, method: &str) -> bool {
+        self.call("system.methodExist", &[Value::Str(method.into())])
+            .await
+            .ok()
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    }
 }
 
 /// Build the command list a load call applies to the new download.
@@ -129,6 +138,42 @@ fn host_of(url: &str) -> String {
         .next()
         .unwrap_or(after_scheme);
     host.to_string()
+}
+
+fn tracker_target(hash: &str, index: usize) -> String {
+    format!("{hash}:t{index}")
+}
+
+fn tracker_insert_call(hash: &str, group: i64, url: &str) -> (&'static str, Vec<Value>) {
+    (
+        "d.tracker.insert",
+        vec![
+            Value::Str(hash.into()),
+            Value::Int(group),
+            Value::Str(url.into()),
+        ],
+    )
+}
+
+fn tracker_enabled_call(hash: &str, index: usize, enabled: bool) -> (&'static str, Vec<Value>) {
+    (
+        "t.is_enabled.set",
+        vec![
+            Value::Str(tracker_target(hash, index)),
+            Value::Int(i64::from(enabled)),
+        ],
+    )
+}
+
+fn tracker_remove_call(hash: &str, index: usize) -> (&'static str, Vec<Value>) {
+    (
+        "d.tracker.remove",
+        vec![Value::Str(hash.into()), Value::Int(index as i64)],
+    )
+}
+
+fn tracker_announce_call(hash: &str) -> (&'static str, Vec<Value>) {
+    ("d.tracker_announce", vec![Value::Str(hash.into())])
 }
 
 /// Map one `d.multicall2` row (a positional array) into a [`RawTorrent`].
@@ -223,13 +268,20 @@ impl RtorrentApi for ScgiClient {
         let resp = self
             .call(
                 "t.multicall",
-                &[Value::Str(hash.into()), Value::Str(String::new()), Value::Str("t.url=".into())],
+                &[
+                    Value::Str(hash.into()),
+                    Value::Str(String::new()),
+                    Value::Str("t.url=".into()),
+                    Value::Str("t.is_enabled=".into()),
+                ],
             )
             .await?;
-        let url = resp
-            .as_array()
-            .and_then(|rows| rows.first())
-            .and_then(Value::as_array)
+        let rows = resp.as_array().unwrap_or(&[]);
+        let url = rows
+            .iter()
+            .filter_map(Value::as_array)
+            .find(|row| row.get(1).and_then(Value::as_bool).unwrap_or(false))
+            .or_else(|| rows.first().and_then(Value::as_array))
             .and_then(|row| row.first())
             .and_then(Value::as_str)
             .unwrap_or("");
@@ -244,6 +296,7 @@ impl RtorrentApi for ScgiClient {
                     Value::Str(hash.into()),
                     Value::Str(String::new()),
                     Value::Str("t.url=".into()),
+                    Value::Str("t.is_enabled=".into()),
                     Value::Str("t.is_usable=".into()),
                     Value::Str("t.scrape_complete=".into()),
                     Value::Str("t.scrape_incomplete=".into()),
@@ -254,17 +307,84 @@ impl RtorrentApi for ScgiClient {
         Ok(rows
             .iter()
             .filter_map(Value::as_array)
-            .map(|r| {
-                let usable = r.get(1).and_then(Value::as_bool).unwrap_or(false);
+            .enumerate()
+            .map(|(index, r)| {
+                let enabled = r.get(1).and_then(Value::as_bool).unwrap_or(false);
+                let usable = r.get(2).and_then(Value::as_bool).unwrap_or(false);
                 TrackerRow {
+                    index,
                     url: r.first().and_then(Value::as_str).unwrap_or("").to_string(),
-                    status: if usable { "working".into() } else { "error".into() },
-                    seeds: r.get(2).and_then(Value::as_i64).unwrap_or(0),
-                    leeches: r.get(3).and_then(Value::as_i64).unwrap_or(0),
+                    enabled,
+                    status: if !enabled {
+                        "disabled".into()
+                    } else if usable {
+                        "working".into()
+                    } else {
+                        "error".into()
+                    },
+                    seeds: r.get(3).and_then(Value::as_i64).unwrap_or(0),
+                    leeches: r.get(4).and_then(Value::as_i64).unwrap_or(0),
                     last_announce: String::new(),
                 }
             })
             .collect())
+    }
+
+    async fn add_tracker(&self, hash: &str, url: &str) -> Result<()> {
+        // A fresh group appends the URL instead of changing an existing tier.
+        let group = self
+            .call("d.tracker_size", &[Value::Str(hash.into())])
+            .await?
+            .as_i64()
+            .unwrap_or(0)
+            .clamp(0, 32);
+        let calls = [tracker_insert_call(hash, group, url)];
+        for result in self.multicall(&calls).await? {
+            result?;
+        }
+        Ok(())
+    }
+
+    async fn remove_tracker(&self, hash: &str, index: usize) -> Result<()> {
+        if self.method_exists("d.tracker.remove").await {
+            let calls = [tracker_remove_call(hash, index)];
+            let removed = async {
+                for result in self.multicall(&calls).await? {
+                    result?;
+                }
+                Ok(())
+            }
+            .await;
+            if removed.is_ok() {
+                return removed;
+            }
+        }
+
+        // Standard rtorrent has no true tracker removal. Disabling preserves
+        // the announce URL in the session but prevents rtorrent from using it.
+        self.set_tracker_enabled(hash, index, false).await
+    }
+
+    async fn set_tracker_enabled(&self, hash: &str, index: usize, enabled: bool) -> Result<()> {
+        let calls = [tracker_enabled_call(hash, index, enabled)];
+        for result in self.multicall(&calls).await? {
+            result?;
+        }
+        Ok(())
+    }
+
+    async fn force_reannounce(&self, hashes: &[String]) -> Result<()> {
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let calls: Vec<_> = hashes
+            .iter()
+            .map(|hash| tracker_announce_call(hash))
+            .collect();
+        for result in self.multicall(&calls).await? {
+            result?;
+        }
+        Ok(())
     }
 
     async fn peers(&self, hash: &str) -> Result<Vec<PeerRow>> {
@@ -544,8 +664,8 @@ mod tests {
             Value::Int(1), // open
             Value::Int(0), // hashing
             Value::Str(String::new()),
-            Value::Int(42),  // down rate
-            Value::Int(7),   // up rate
+            Value::Int(42), // down rate
+            Value::Int(7),  // up rate
             Value::Int(1900),
             Value::Str("linux-iso".into()),
             Value::Str("/srv".into()),
@@ -577,6 +697,40 @@ mod tests {
         assert_eq!(cmds[0], "d.directory.set=/srv/dl");
         assert!(cmds.contains(&"d.custom1.set=iso".to_string()));
         assert!(cmds.contains(&"d.priority.set=3".to_string()));
+    }
+
+    #[test]
+    fn tracker_mutations_encode_rtorrent_targets_and_arguments() {
+        assert_eq!(tracker_target("ABC", 4), "ABC:t4");
+        assert_eq!(
+            tracker_insert_call("ABC", 2, "udp://tracker.test/announce"),
+            (
+                "d.tracker.insert",
+                vec![
+                    Value::Str("ABC".into()),
+                    Value::Int(2),
+                    Value::Str("udp://tracker.test/announce".into()),
+                ],
+            )
+        );
+        assert_eq!(
+            tracker_enabled_call("ABC", 4, false),
+            (
+                "t.is_enabled.set",
+                vec![Value::Str("ABC:t4".into()), Value::Int(0)],
+            )
+        );
+        assert_eq!(
+            tracker_remove_call("ABC", 4),
+            (
+                "d.tracker.remove",
+                vec![Value::Str("ABC".into()), Value::Int(4)],
+            )
+        );
+        assert_eq!(
+            tracker_announce_call("ABC"),
+            ("d.tracker_announce", vec![Value::Str("ABC".into())])
+        );
     }
 }
 

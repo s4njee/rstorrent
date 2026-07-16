@@ -28,6 +28,13 @@ export function recheck(hashes = selectedHashes()) {
   if (hashes.length) void cmd.recheck(hashes);
 }
 
+export function forceReannounce(hashes = selectedHashes()) {
+  if (hashes.length)
+    void cmd.forceReannounce(hashes).catch(() => {
+      // The Rust command records the failure in the app log.
+    });
+}
+
 export function queueUp(hashes = selectedHashes()) {
   if (hashes.length) void cmd.queueMove(hashes, "up");
 }

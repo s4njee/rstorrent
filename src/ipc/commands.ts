@@ -49,6 +49,33 @@ export function recheck(hashes: string[]): Promise<void> {
   return invoke("recheck", { hashes });
 }
 
+/** Ask selected torrents to announce to their trackers immediately. */
+export function forceReannounce(hashes: string[]): Promise<void> {
+  return invoke("force_reannounce", { hashes });
+}
+
+/** Append an announce URL to one torrent's tracker list. */
+export function addTracker(hash: string, url: string): Promise<void> {
+  return invoke("add_tracker", { hash, url });
+}
+
+/** Remove a tracker, or disable it when the daemon lacks true removal. */
+export function removeTracker(
+  hash: string,
+  trackerIndex: number,
+): Promise<void> {
+  return invoke("remove_tracker", { hash, trackerIndex });
+}
+
+/** Enable or disable one tracker by its list index. */
+export function setTrackerEnabled(
+  hash: string,
+  trackerIndex: number,
+  enabled: boolean,
+): Promise<void> {
+  return invoke("set_tracker_enabled", { hash, trackerIndex, enabled });
+}
+
 /** Remove torrents; when `deleteData`, their files are moved to the Trash. */
 export function remove(hashes: string[], deleteData: boolean): Promise<void> {
   return invoke("remove", { hashes, deleteData });

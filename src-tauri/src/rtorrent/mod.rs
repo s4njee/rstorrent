@@ -144,6 +144,18 @@ pub trait RtorrentApi: Send + Sync {
     /// Tracker rows for the Trackers detail tab.
     async fn trackers(&self, hash: &str) -> Result<Vec<crate::ipc::TrackerRow>>;
 
+    /// Append an announce URL to a torrent's tracker list.
+    async fn add_tracker(&self, hash: &str, url: &str) -> Result<()>;
+
+    /// Remove a tracker when supported, otherwise disable it.
+    async fn remove_tracker(&self, hash: &str, index: usize) -> Result<()>;
+
+    /// Enable or disable one tracker by its zero-based list index.
+    async fn set_tracker_enabled(&self, hash: &str, index: usize, enabled: bool) -> Result<()>;
+
+    /// Ask the selected torrents to announce to their trackers now.
+    async fn force_reannounce(&self, hashes: &[String]) -> Result<()>;
+
     /// Peer rows for the Peers detail tab.
     async fn peers(&self, hash: &str) -> Result<Vec<crate::ipc::PeerRow>>;
 
