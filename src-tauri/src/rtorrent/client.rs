@@ -10,7 +10,7 @@ use async_trait::async_trait;
 
 use super::scgi;
 use super::xmlrpc::Value;
-use super::{LoadOptions, RawGlobal, RawTorrent, Result, RtorrentApi, RtorrentError};
+use super::{LoadOptions, RawGlobal, RawStats, RawTorrent, Result, RtorrentApi, RtorrentError};
 use crate::ipc::{FileNode, PeerRow, Transport, TrackerRow};
 
 /// The per-download commands fetched by `d.multicall2`, in column order. The
@@ -422,6 +422,85 @@ impl RtorrentApi for ScgiClient {
             .to_string())
     }
 
+    async fn set_port_range(&self, range: &str) -> Result<()> {
+        self.call(
+            "network.port_range.set",
+            &[Value::Str(String::new()), Value::Str(range.into())],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn set_dht(&self, enabled: bool) -> Result<()> {
+        let mode = if enabled { "auto" } else { "disable" };
+        self.call(
+            "dht.mode.set",
+            &[Value::Str(String::new()), Value::Str(mode.into())],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn statistics(&self) -> Result<RawStats> {
+        // All of these exist on rtorrent 0.16.17 (verified by the live probe).
+        let g = self
+            .multicall(&[
+                ("throttle.global_down.total", vec![]),
+                ("throttle.global_up.total", vec![]),
+                ("pieces.memory.current", vec![]),
+                ("pieces.stats_preloaded", vec![]),
+                ("pieces.stats_not_preloaded", vec![]),
+                ("pieces.sync.queue_size", vec![]),
+            ])
+            .await?;
+        let at = |i: usize| {
+            g.get(i)
+                .and_then(|r| r.as_ref().ok())
+                .and_then(Value::as_i64)
+        };
+
+        // Connected peers and wasted bytes summed over all torrents.
+        let mut connected_peers = 0;
+        let mut session_waste = 0;
+        if let Ok(resp) = self
+            .call(
+                "d.multicall2",
+                &[
+                    Value::Str(String::new()),
+                    Value::Str("main".into()),
+                    Value::Str("d.peers_connected=".into()),
+                    Value::Str("d.skip.total=".into()),
+                ],
+            )
+            .await
+        {
+            for row in resp.as_array().unwrap_or(&[]).iter().filter_map(Value::as_array) {
+                connected_peers += row.first().and_then(Value::as_i64).unwrap_or(0);
+                session_waste += row.get(1).and_then(Value::as_i64).unwrap_or(0);
+            }
+        }
+
+        let preloaded = at(3).unwrap_or(0);
+        let not_preloaded = at(4).unwrap_or(0);
+        let cache_hit_pct = if preloaded + not_preloaded > 0 {
+            Some(preloaded as f64 / (preloaded + not_preloaded) as f64 * 100.0)
+        } else {
+            None
+        };
+
+        Ok(RawStats {
+            session_down: at(0).unwrap_or(0),
+            session_up: at(1).unwrap_or(0),
+            connected_peers,
+            session_waste,
+            buffer_size: at(2),
+            cache_hit_pct,
+            // rtorrent exposes no direct write-overload metric.
+            cache_overload_pct: None,
+            queued_io: at(5),
+        })
+    }
+
     async fn set_throttles(&self, down_kb: i64, up_kb: i64) -> Result<()> {
         for r in self
             .multicall(&[
@@ -608,5 +687,61 @@ mod live {
         std::env::var("HOME")
             .map(|h| format!("{h}/Downloads/rstorrent-test"))
             .unwrap_or_else(|_| "/tmp".into())
+    }
+
+    /// Set the port range and read it back to confirm the setter works.
+    #[tokio::test]
+    #[ignore]
+    async fn live_set_port_range() {
+        let Some(c) = client() else {
+            eprintln!("skip: set RSTORRENT_TEST_SOCKET");
+            return;
+        };
+        c.set_port_range("6990-6999").await.expect("set_port_range");
+        let back = c.call("network.port_range", &[]).await.expect("read back");
+        println!("port_range = {back:?}");
+        assert_eq!(back.as_str(), Some("6990-6999"));
+    }
+
+    /// Validate the assembled `statistics()` against the live daemon.
+    #[tokio::test]
+    #[ignore]
+    async fn live_statistics() {
+        let Some(c) = client() else {
+            eprintln!("skip: set RSTORRENT_TEST_SOCKET");
+            return;
+        };
+        let s = c.statistics().await.expect("statistics");
+        println!("stats = {s:?}");
+        // These fields are always present on 0.16.17.
+        assert!(s.buffer_size.is_some(), "buffer_size should be present");
+        assert!(s.queued_io.is_some(), "queued_io should be present");
+    }
+
+    /// Spike: probe which statistics methods this rtorrent build exposes, so
+    /// `statistics()` only calls ones that exist. Prints Ok/err for each.
+    #[tokio::test]
+    #[ignore]
+    async fn live_probe_stats() {
+        let Some(c) = client() else {
+            eprintln!("skip: set RSTORRENT_TEST_SOCKET");
+            return;
+        };
+        let candidates = [
+            "throttle.global_down.total",
+            "throttle.global_up.total",
+            "pieces.memory.current",
+            "pieces.memory.max",
+            "pieces.stats_preloaded",
+            "pieces.stats_not_preloaded",
+            "pieces.sync.queue_size",
+            "network.open_sockets",
+        ];
+        for m in candidates {
+            match c.call(m, &[]).await {
+                Ok(v) => println!("OK   {m} = {v:?}"),
+                Err(e) => println!("ERR  {m} -> {e}"),
+            }
+        }
     }
 }

@@ -37,6 +37,7 @@ lava_torrent = "0.11" # .torrent metadata parsing for the Add dialog
 
 # --- Filesystem side-effects ---
 trash = "5"           # "delete data" moves files to the macOS Trash, never rm
+notify = "7"          # watched-folder auto-add (E11-S5)
 
 # --- Errors ---
 thiserror = "2"       # typed error enums across the rtorrent layer

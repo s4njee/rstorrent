@@ -29,6 +29,9 @@ impl Default for Settings {
             confirm_on_remove: true,
             down_limit_kb: 0,
             up_limit_kb: 0,
+            port_range: "6881-6899".to_string(),
+            dht_enabled: false,
+            watch_folder: String::new(),
             // Honour the env var so `RSTORRENT_MOCK=1` flips the default on.
             mock: std::env::var("RSTORRENT_MOCK").is_ok(),
         }

@@ -24,3 +24,10 @@ export function onDetail(cb: (d: DetailPayload) => void): Promise<UnlistenFn> {
 export function onLog(cb: (l: LogEntry) => void): Promise<UnlistenFn> {
   return listen<LogEntry>("log://append", (e) => cb(e.payload));
 }
+
+/** A native-menu item was clicked (payload is the action id, e.g. "prefs"). */
+export function onMenuAction(
+  cb: (action: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>("menu://action", (e) => cb(e.payload));
+}

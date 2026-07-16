@@ -16,11 +16,14 @@ pub mod ipc;
 
 mod commands;
 mod log;
+mod menu;
 mod poller;
 mod rtorrent;
 mod settings;
 mod state;
+mod stats;
 mod torrent_file;
+mod watcher;
 
 use std::sync::Arc;
 
@@ -46,8 +49,13 @@ pub fn run() {
             let app_state = Arc::new(AppState::new(settings_path));
             app.manage(app_state.clone());
 
+            // Install the native menubar (forwards to the frontend via events).
+            menu::setup(app)?;
+
             // Kick off the polling loops that keep the UI live.
-            poller::spawn(app.handle().clone(), app_state);
+            poller::spawn(app.handle().clone(), app_state.clone());
+            // Start the watched-folder auto-add (no-op if unconfigured).
+            watcher::spawn(app.handle().clone(), app_state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

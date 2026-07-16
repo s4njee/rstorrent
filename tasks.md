@@ -12,35 +12,40 @@ Execution backlog for the plan in [plan.md](plan.md). Design authority: `design/
 
 ## Progress (as of feature build)
 
-Milestones **M0–M4 essentially complete; M5 substantially done.**
-`RSTORRENT_MOCK=1 npm run tauri dev` launches a full, interactive client:
+Milestones **M0–M5 complete.** `RSTORRENT_MOCK=1 npm run tauri dev` launches a
+full, interactive client:
 
-- Main window: toolbar, filter sidebar, sortable/selectable torrent table,
-  status bar, right-click context menu, keyboard shortcuts (⌘F/⌘A/⌘O/⌘,/Space/⌫/Esc).
-- **All six detail tabs** work: General, Trackers, Peers, Content (click a file's
+- Main window: **native macOS menubar**, overlay title bar, toolbar, filter
+  sidebar, sortable/selectable torrent table, status bar, right-click context
+  menu, keyboard shortcuts.
+- **All six detail tabs**: General, Trackers, Peers, Content (click a file's
   priority to cycle off/normal/high), Speed (live SVG rate chart), Log.
-- **Dialogs:** Add-torrent (tri-state file tree), Add-magnet, Remove, Statistics
-  (from the status-bar DHT segment), and **Preferences** (⌘,) with Behavior /
-  Downloads / Connection (with Test-connection) / Speed / Advanced sections.
+- **Dialogs:** Add-torrent (tri-state file tree), Add-magnet, Remove, Statistics,
+  and **Preferences** (⌘,) — Behavior / Downloads (incl. watched-folder) /
+  Connection (Test-connection) / Speed / BitTorrent (port range + DHT) / Advanced.
+- **Watched folder** auto-adds `.torrent` files; **since-install** transfer
+  counters persist across restarts.
 
-Verification: Rust **28 tests** + `clippy -D warnings` clean + full binary builds
+Verification: Rust **29 tests** + `clippy -D warnings` clean + full binary builds
 and launches cleanly; frontend **22 tests** + `tsc --noEmit` + ESLint + `vite build`
-clean. Checked-off (`[x]`) stories are built and verified in mock mode.
+clean.
 
 **Live-daemon verified** against Homebrew **rtorrent 0.16.17** (ignored integration
 tests in `src-tauri/src/rtorrent/client.rs`, run with `RSTORRENT_TEST_SOCKET`):
-`client_version`, `global_stats`, `d.multicall2` list, `load_raw` (add), `start`/
-`stop`, and `erase` all round-trip correctly, and our `.torrent` parser's info-hash
-matches rtorrent's. The GUI app also connects to the live daemon and polls cleanly.
-(Note: rtorrent 0.16 crashes on a malformed all-zero-hash magnet — an upstream bug,
-documented in `docs/rtorrent-setup.md`; use real magnets.)
+version, globals, `d.multicall2` list, `load_raw` add, start/stop, erase, `statistics`,
+and `set_port_range` (set + read-back) all round-trip; our `.torrent` parser's
+info-hash matches rtorrent's; and the **watched folder** was verified end-to-end
+(dropped file auto-loaded into the live daemon and renamed `*.loaded`). The GUI app
+connects to the live daemon and polls cleanly. (Note: rtorrent 0.16 crashes on a
+malformed all-zero-hash magnet — an upstream bug, documented in
+`docs/rtorrent-setup.md`; use real magnets.)
 
-Still open: `E3-S7` **native macOS app menu** (JS shortcuts done; native menubar not);
-`E11-S4` port/DHT prefs and `E11-S5` watched folder; `E12-S1` all-time/cache stats
-(currently best-effort with "—" placeholders — needs a command-availability spike +
-persisted counters); and the polish/packaging epics `E13`/`E14`. Still to verify
-live: per-file priorities (`E10-S5`/`E8-S4` deselect), throttle changes, set-location,
-and the detail tabs against an actively-downloading torrent.
+Still open (M6): `E13` polish — perf/virtualization (`E13-S2`), fuller
+disconnected/first-run card (`E13-S1`), accessibility (`E13-S4`), UI-state
+persistence (`E13-S3`), QA checklist (`E13-S5`) — and `E14` packaging (app icon +
+`.dmg`). `E12`'s cache-overload stat has no rtorrent source (stays "—"). Still to
+verify live against an *actively downloading* torrent: per-file priorities, Speed
+chart, peers/trackers population.
 
 ---
 
@@ -176,7 +181,7 @@ Deps: E0. Pure UI — parallel-safe with E1/E2 using placeholder data; wire to s
   **AC:** keyboard behavior per design §Interactions; background inert while open.
   **Verify:** demo modal in dev; tab-cycle stays inside.
 
-- [ ] **E3-S7 · Native app menu + shortcuts registry** (M)
+- [x] **E3-S7 · Native app menu + shortcuts registry** (M)
   macOS menu: App (About, Preferences… ⌘,, Quit ⌘Q), Edit (standard clipboard for inputs), a small central keyboard-shortcut handler (⌘O add-file, ⌘⇧O magnet, ⌘F focus search, Space toggle, ⌫ remove, ⌘A select-all) dispatching to ui store actions.
   **AC:** menu items + shortcuts fire the same actions as buttons; no shortcut fires while typing in an input (except ⌘-combos).
   **Verify:** manual pass over each shortcut.
@@ -390,12 +395,12 @@ Deps: E3-S6, E1-S6, E6-S1.
   **AC:** switching transports live-reconnects the poller; test button accurate.
   **Verify:** point at bad port → clean error; back to good → recovers.
 
-- [ ] **E11-S4 · Speed / BitTorrent / Behavior / Advanced sections** (M)
+- [x] **E11-S4 · Speed / BitTorrent / Behavior / Advanced sections** (M)
   Speed: global down/up limits (KiB/s, 0 = ∞) → `throttle.global_*.max_rate.set_kb`, reflected in status bar. BitTorrent: port range → `network.port_range.set`, DHT on/off → `dht.mode.set` (caption "may require rtorrent restart" on failure). Behavior: confirm-on-remove toggle. Advanced: log verbosity, mock-mode toggle.
   **AC:** setting a 5 MiB/s up-limit shows in rtorrent (`throttle.global_up.max_rate`) and caps real traffic.
   **Verify:** live daemon check.
 
-- [ ] **E11-S5 · Watched folder** (M)
+- [x] **E11-S5 · Watched folder** (M)
   Rust `notify`-based watcher on the configured dir: new `*.torrent` → auto-add with defaults (respecting do-not-start), rename to `*.torrent.loaded` on success, log entry either way; robust to duplicates/partial writes (debounce + parse-validate).
   **AC:** dropping a file into the watch dir adds it within 2 s; bad file logged, not crash-looped.
   **Verify:** manual drop of good + garbage file.
@@ -406,7 +411,7 @@ Deps: E3-S6, E1-S6, E6-S1.
 
 Deps: E3-S6, E2-S1.
 
-- [ ] **E12-S1 · Stats plumbing & verification spike** (M)
+- [x] **E12-S1 · Stats plumbing & verification spike** (M)
   Verify against live rtorrent 0.9.8 which of these exist and map: `throttle.global_*.total`, `pieces.memory.current/.max`, `pieces.stats_preloaded/.stats_not_preloaded`, `pieces.sync.queue_size`, per-torrent `d.skip.total`. Implement `get_statistics` returning: session down/up, **since-install** down/up/ratio (app-persisted counters accumulated from throttle totals across daemon restarts — store last-seen totals to handle counter resets), session waste (Σ `d.skip.total`), connected peers (Σ `d.peers_connected`), cache block (hit % from preloaded stats, buffer size, overload, queued I/O) with `None` for unavailable.
   **AC:** document actual mappings in code comments; counters survive app+daemon restarts without double-count.
   **Verify:** `cargo test stats` (persistence logic) + live daemon smoke.

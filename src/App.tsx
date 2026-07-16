@@ -7,7 +7,7 @@
  */
 
 import { useEffect } from "react";
-import { onSnapshot, onDetail, onLog } from "./ipc/events";
+import { onSnapshot, onDetail, onLog, onMenuAction } from "./ipc/events";
 import { setDetailWatch, getLog } from "./ipc/commands";
 import { useKeyboardShortcuts } from "./hooks/useKeyboard";
 import { useTorrents } from "./store/torrents";
@@ -49,6 +49,12 @@ export default function App() {
       }),
       onDetail((d) => setDetail(d)),
       onLog((entry) => useLog.getState().append(entry)),
+      // Native menu items open the matching dialog.
+      onMenuAction((action) =>
+        useUi
+          .getState()
+          .openDialog(action as "prefs" | "add-file" | "add-magnet" | "stats"),
+      ),
     ];
     return () => {
       unsubs.forEach((p) => void p.then((un) => un()));

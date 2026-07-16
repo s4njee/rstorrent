@@ -243,6 +243,30 @@ impl RtorrentApi for MockClient {
     async fn set_throttles(&self, _down_kb: i64, _up_kb: i64) -> Result<()> {
         Ok(())
     }
+
+    async fn set_port_range(&self, _range: &str) -> Result<()> {
+        Ok(())
+    }
+
+    async fn set_dht(&self, _enabled: bool) -> Result<()> {
+        Ok(())
+    }
+
+    async fn statistics(&self) -> Result<super::RawStats> {
+        let state = self.state.lock().unwrap();
+        let connected_peers = state.torrents.iter().map(|t| t.peers_connected).sum();
+        // Values chosen to match the design's Statistics screen (05).
+        Ok(super::RawStats {
+            session_down: (1.6 * GIB) as i64,
+            session_up: (312.0 * MIB) as i64,
+            connected_peers,
+            session_waste: (184.0 * MIB) as i64,
+            buffer_size: Some((128.0 * MIB) as i64),
+            cache_hit_pct: Some(96.4),
+            cache_overload_pct: Some(0.0),
+            queued_io: Some(3),
+        })
+    }
 }
 
 /// Construct a freshly-added downloading torrent for load_* calls.

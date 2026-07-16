@@ -180,6 +180,9 @@ export interface Settings {
   confirmOnRemove: boolean;
   downLimitKb: number; // 0 = unlimited
   upLimitKb: number;
+  portRange: string; // e.g. "6881-6899"
+  dhtEnabled: boolean;
+  watchFolder: string; // auto-add .torrent files from here; empty = disabled
   mock: boolean;
 }
 

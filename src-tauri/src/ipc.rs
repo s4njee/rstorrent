@@ -219,7 +219,20 @@ pub struct Settings {
     pub confirm_on_remove: bool,
     pub down_limit_kb: i64,
     pub up_limit_kb: i64,
+    /// Listen port range, e.g. "6881-6899" (BitTorrent prefs).
+    #[serde(default = "default_port_range")]
+    pub port_range: String,
+    /// Whether the DHT is enabled.
+    #[serde(default)]
+    pub dht_enabled: bool,
+    /// Directory auto-scanned for `.torrent` files to add (empty = disabled).
+    #[serde(default)]
+    pub watch_folder: String,
     pub mock: bool,
+}
+
+fn default_port_range() -> String {
+    "6881-6899".to_string()
 }
 
 /// Aggregate figures for the Statistics dialog.

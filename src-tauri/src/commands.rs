@@ -262,11 +262,14 @@ pub async fn apply_settings(
 ) -> Result<Settings, String> {
     let next = settings::apply_patch(&state.settings(), patch);
     let saved = state.update_settings(next.clone());
-    // Push throttle changes to the live daemon (best-effort).
-    let _ = state
-        .backend()
+    // Push daemon-affecting changes to rtorrent (best-effort; some may need a
+    // restart to take effect on older builds).
+    let backend = state.backend();
+    let _ = backend
         .set_throttles(saved.down_limit_kb, saved.up_limit_kb)
         .await;
+    let _ = backend.set_port_range(&saved.port_range).await;
+    let _ = backend.set_dht(saved.dht_enabled).await;
     state.log(&app, LogLevel::Info, "settings updated", None);
     Ok(saved)
 }
@@ -296,22 +299,27 @@ pub fn get_log(state: St<'_>) -> Vec<crate::ipc::LogEntry> {
 
 #[tauri::command]
 pub async fn get_statistics(state: St<'_>) -> Result<Statistics, String> {
-    // Best-effort v1: connected peers from the snapshot, all-time counters
-    // deferred to E12. Nulls render as "—".
-    let rows = state.backend().list_snapshot().await.map_err(e)?;
-    let connected_peers = rows.iter().map(|t| t.peers_connected).sum();
+    let raw = state.backend().statistics().await.map_err(e)?;
+    // Fold this session's totals into the persisted since-install counters.
+    let (all_time_down, all_time_up) =
+        crate::stats::accumulate(&state.stats_path, raw.session_down, raw.session_up);
+    let all_time_ratio = if all_time_down > 0 {
+        Some(all_time_up as f64 / all_time_down as f64)
+    } else {
+        None
+    };
     Ok(Statistics {
-        session_down: 0,
-        session_up: 0,
-        all_time_down: 0,
-        all_time_up: 0,
-        all_time_ratio: None,
-        session_waste: 0,
-        connected_peers,
-        cache_hit_pct: None,
-        buffer_size: None,
-        cache_overload_pct: None,
-        queued_io: None,
+        session_down: raw.session_down,
+        session_up: raw.session_up,
+        all_time_down,
+        all_time_up,
+        all_time_ratio,
+        session_waste: raw.session_waste,
+        connected_peers: raw.connected_peers,
+        cache_hit_pct: raw.cache_hit_pct,
+        buffer_size: raw.buffer_size,
+        cache_overload_pct: raw.cache_overload_pct,
+        queued_io: raw.queued_io,
     })
 }
 

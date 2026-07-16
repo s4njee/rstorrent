@@ -56,18 +56,8 @@ export function useKeyboardShortcuts() {
         ui.selectAll(visibleHashes());
         return;
       }
-      // ⌘O / ⌘⇧O — add file / magnet.
-      if (mod && e.key.toLowerCase() === "o") {
-        e.preventDefault();
-        ui.openDialog(e.shiftKey ? "add-magnet" : "add-file");
-        return;
-      }
-      // ⌘, — Preferences (macOS convention).
-      if (mod && e.key === ",") {
-        e.preventDefault();
-        ui.openDialog("prefs");
-        return;
-      }
+      // Note: ⌘O / ⌘⇧O (add file/magnet) and ⌘, (Preferences) are owned by the
+      // native menu, which intercepts them before the webview — see menu.rs.
 
       // The rest are single-key and must not fire while typing.
       if (typingInField()) return;

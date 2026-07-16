@@ -37,6 +37,8 @@ pub struct AppState {
     pub conn: RwLock<ConnState>,
     /// Notified to request an immediate extra poll (after a user action).
     pub repoll: Notify,
+    /// Path to the persisted since-install transfer counters (see `stats.rs`).
+    pub stats_path: PathBuf,
 }
 
 impl AppState {
@@ -51,6 +53,11 @@ impl AppState {
             error: None,
             retry_in_seconds: None,
         };
+        // Persist the all-time counters next to the settings file.
+        let stats_path = settings_path
+            .parent()
+            .map(|p| p.join("stats.json"))
+            .unwrap_or_else(|| PathBuf::from("stats.json"));
         Self {
             backend: RwLock::new(Arc::from(backend)),
             settings: RwLock::new(settings),
@@ -60,6 +67,7 @@ impl AppState {
             detail_watch: std::sync::Mutex::new(None),
             conn: RwLock::new(conn),
             repoll: Notify::new(),
+            stats_path,
         }
     }
 

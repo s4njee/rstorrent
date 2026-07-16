@@ -93,6 +93,22 @@ pub struct RawGlobal {
     pub dht_nodes: i64,
 }
 
+/// Raw figures for the Statistics dialog. Session totals come from rtorrent's
+/// `throttle.global_*.total` (reset each daemon session); the command layer
+/// derives the persisted "since install" totals from these. `None` fields are
+/// ones this rtorrent build doesn't expose.
+#[derive(Debug, Clone, Default)]
+pub struct RawStats {
+    pub session_down: i64,
+    pub session_up: i64,
+    pub connected_peers: i64,
+    pub session_waste: i64,
+    pub buffer_size: Option<i64>,
+    pub cache_hit_pct: Option<f64>,
+    pub cache_overload_pct: Option<f64>,
+    pub queued_io: Option<i64>,
+}
+
 /// Options for a load/add request, translated into rtorrent commands.
 #[derive(Debug, Clone)]
 pub struct LoadOptions {
@@ -155,6 +171,15 @@ pub trait RtorrentApi: Send + Sync {
 
     /// Set the global up/down throttle in KiB/s (0 = unlimited).
     async fn set_throttles(&self, down_kb: i64, up_kb: i64) -> Result<()>;
+
+    /// Set the incoming listen port range, e.g. "6881-6899".
+    async fn set_port_range(&self, range: &str) -> Result<()>;
+
+    /// Enable or disable the DHT.
+    async fn set_dht(&self, enabled: bool) -> Result<()>;
+
+    /// Aggregate figures for the Statistics dialog.
+    async fn statistics(&self) -> Result<RawStats>;
 }
 
 /// Build the appropriate backend for the given settings. When `mock` is set (or

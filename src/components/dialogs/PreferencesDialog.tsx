@@ -178,6 +178,33 @@ export function PreferencesDialog() {
                 label="Keep incomplete torrents in a separate folder"
                 title="requires rtorrent watch/move configuration (v2)"
               />
+              <span
+                className={forms.fieldLabel}
+                style={{ width: "auto", marginTop: 4 }}
+              >
+                Watched folder (auto-add .torrent files; takes effect on
+                restart)
+              </span>
+              <div className={forms.field}>
+                <input
+                  className={forms.input}
+                  value={draft.watchFolder}
+                  onChange={(e) =>
+                    patch({ watchFolder: e.currentTarget.value })
+                  }
+                  placeholder="(disabled)"
+                  spellCheck={false}
+                />
+                <button
+                  className={forms.browse}
+                  onClick={async () => {
+                    const dir = await open({ directory: true });
+                    if (typeof dir === "string") patch({ watchFolder: dir });
+                  }}
+                >
+                  Browse…
+                </button>
+              </div>
             </Group>
           )}
 
@@ -211,9 +238,26 @@ export function PreferencesDialog() {
 
           {section === "bittorrent" && (
             <Group title="BitTorrent">
+              <div className={forms.field}>
+                <span className={forms.fieldLabel} style={{ width: 120 }}>
+                  Listen port range
+                </span>
+                <input
+                  className={forms.input}
+                  value={draft.portRange}
+                  onChange={(e) => patch({ portRange: e.currentTarget.value })}
+                  placeholder="6881-6899"
+                  spellCheck={false}
+                />
+              </div>
+              <Checkbox
+                checked={draft.dhtEnabled}
+                onChange={(dhtEnabled) => patch({ dhtEnabled })}
+                label="Enable DHT (distributed hash table)"
+              />
               <span className={styles.warn}>
-                Port and DHT configuration are planned; not yet wired to the
-                daemon.
+                Port and DHT changes may require an rtorrent restart to take
+                full effect.
               </span>
             </Group>
           )}
