@@ -50,7 +50,7 @@ export function ContextMenu() {
 
   // Clamp so the menu stays within the window.
   const x = Math.min(menu.x, window.innerWidth - 220);
-  const y = Math.min(menu.y, window.innerHeight - 320);
+  const y = Math.min(menu.y, window.innerHeight - 340);
 
   const run = (fn: () => void) => {
     fn();
@@ -107,6 +107,15 @@ export function ContextMenu() {
             <RecheckIcon size={12} />
           </span>
           Force recheck
+        </div>
+        <div
+          className={styles.item}
+          onClick={() => run(() => actions.forceReannounce(hashes))}
+        >
+          <span className={styles.icon}>
+            <RecheckIcon size={12} />
+          </span>
+          Force reannounce
         </div>
 
         <div

@@ -7,12 +7,23 @@
  * App via `onDetail`); Speed/Log are placeholders until E10-S6/S7.
  */
 
+import { useState, type FormEvent } from "react";
 import { useTorrents } from "../../store/torrents";
 import { useUi } from "../../store/ui";
 import { useDetail } from "../../store/detail";
 import { useLog } from "../../store/log";
-import { setFilePriority } from "../../ipc/commands";
-import type { DetailTab, FileNode, TorrentDto } from "../../ipc/types";
+import {
+  addTracker,
+  removeTracker,
+  setFilePriority,
+  setTrackerEnabled,
+} from "../../ipc/commands";
+import type {
+  DetailTab,
+  FileNode,
+  TorrentDto,
+  TrackerRow,
+} from "../../ipc/types";
 import {
   formatBytes,
   formatRate,
@@ -20,6 +31,8 @@ import {
   formatRatio,
 } from "../../utils/format";
 import { SpeedChart } from "./SpeedChart";
+import { PauseIcon, PlayIcon, RemoveIcon } from "../icons";
+import menuStyles from "../menu/ContextMenu.module.css";
 import styles from "./DetailTabs.module.css";
 
 const TABS: DetailTab[] = [
@@ -88,15 +101,10 @@ function TabContent({
       return <General torrent={torrent} />;
     case "trackers":
       return (
-        <SimpleTable
-          headers={["Tracker", "Status", "Seeds", "Leeches"]}
-          rows={(forThis?.trackers ?? []).map((t) => [
-            t.url,
-            t.status,
-            String(t.seeds),
-            String(t.leeches),
-          ])}
-          empty="no tracker data"
+        <TrackersTable
+          key={torrent.hash}
+          hash={torrent.hash}
+          trackers={forThis?.trackers ?? []}
         />
       );
     case "peers":
@@ -123,6 +131,159 @@ function TabContent({
     default:
       return <div className={styles.placeholder}>{tab} — coming soon</div>;
   }
+}
+
+interface TrackerMenuState {
+  x: number;
+  y: number;
+  tracker: TrackerRow;
+}
+
+/** Tracker detail rows with inline add and row-level management. */
+function TrackersTable({
+  hash,
+  trackers,
+}: {
+  hash: string;
+  trackers: TrackerRow[];
+}) {
+  const [url, setUrl] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [menu, setMenu] = useState<TrackerMenuState | null>(null);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const announceUrl = url.trim();
+    if (!announceUrl || adding) return;
+    setAdding(true);
+    try {
+      await addTracker(hash, announceUrl);
+      setUrl("");
+    } catch {
+      // The Rust command writes the failure to the app log.
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const runMenuAction = async (action: () => Promise<void>) => {
+    setMenu(null);
+    try {
+      await action();
+    } catch {
+      // The Rust command writes the failure to the app log.
+    }
+  };
+
+  return (
+    <div className={styles.trackerPane}>
+      <form
+        className={styles.trackerAdd}
+        onSubmit={(event) => void submit(event)}
+      >
+        <input
+          aria-label="Tracker announce URL"
+          placeholder="announce URL…"
+          value={url}
+          onChange={(event) => setUrl(event.currentTarget.value)}
+        />
+        <button type="submit" disabled={!url.trim() || adding}>
+          {adding ? "adding…" : "add tracker"}
+        </button>
+      </form>
+
+      {trackers.length === 0 ? (
+        <div className={styles.placeholder}>no tracker data</div>
+      ) : (
+        <table className={styles.dtable}>
+          <thead>
+            <tr>
+              <th>Tracker</th>
+              <th>Status</th>
+              <th>Seeds</th>
+              <th>Leeches</th>
+              <th>Last announce</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trackers.map((tracker) => (
+              <tr
+                key={`${tracker.index}:${tracker.url}`}
+                className={tracker.enabled ? "" : styles.trackerDisabled}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setMenu({
+                    x: event.clientX,
+                    y: event.clientY,
+                    tracker,
+                  });
+                }}
+              >
+                <td>{tracker.url}</td>
+                <td>{tracker.status}</td>
+                <td>{tracker.seeds}</td>
+                <td>{tracker.leeches}</td>
+                <td>{tracker.lastAnnounce || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {menu && (
+        <>
+          <div
+            className={menuStyles.overlay}
+            onMouseDown={() => setMenu(null)}
+            onContextMenu={(event) => event.preventDefault()}
+          />
+          <div
+            className={menuStyles.menu}
+            style={{
+              left: Math.min(menu.x, window.innerWidth - 220),
+              top: Math.min(menu.y, window.innerHeight - 110),
+            }}
+          >
+            <div
+              className={menuStyles.item}
+              onClick={() =>
+                void runMenuAction(() =>
+                  setTrackerEnabled(
+                    hash,
+                    menu.tracker.index,
+                    !menu.tracker.enabled,
+                  ),
+                )
+              }
+            >
+              <span className={menuStyles.icon}>
+                {menu.tracker.enabled ? (
+                  <PauseIcon size={11} />
+                ) : (
+                  <PlayIcon size={11} />
+                )}
+              </span>
+              {menu.tracker.enabled ? "Disable" : "Enable"}
+            </div>
+            <div className={menuStyles.sep} />
+            <div
+              className={`${menuStyles.item} ${menuStyles.danger}`}
+              onClick={() =>
+                void runMenuAction(() =>
+                  removeTracker(hash, menu.tracker.index),
+                )
+              }
+            >
+              <span className={menuStyles.icon}>
+                <RemoveIcon size={11} />
+              </span>
+              Remove
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** Priority label cycle for the Content tab (0 off → 1 normal → 2 high). */

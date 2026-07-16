@@ -113,6 +113,131 @@ pub async fn recheck(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Resu
 }
 
 #[tauri::command]
+pub async fn force_reannounce(
+    app: AppHandle,
+    state: St<'_>,
+    hashes: Vec<String>,
+) -> Result<(), String> {
+    if let Err(err) = state.backend().force_reannounce(&hashes).await {
+        state.log(
+            &app,
+            LogLevel::Error,
+            format!("force reannounce failed: {err}"),
+            None,
+        );
+        return Err(e(err));
+    }
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("forced reannounce for {} torrent(s)", hashes.len()),
+        None,
+    );
+    state.repoll.notify_one();
+    state.detail_repoll.notify_one();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn add_tracker(
+    app: AppHandle,
+    state: St<'_>,
+    hash: String,
+    url: String,
+) -> Result<(), String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err("tracker URL cannot be empty".into());
+    }
+    if let Err(err) = state.backend().add_tracker(&hash, url).await {
+        state.log(
+            &app,
+            LogLevel::Error,
+            format!("add tracker failed: {err}"),
+            Some(hash),
+        );
+        return Err(e(err));
+    }
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("added tracker {url}"),
+        Some(hash.clone()),
+    );
+    refresh_trackers(&state, &hash);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_tracker(
+    app: AppHandle,
+    state: St<'_>,
+    hash: String,
+    tracker_index: usize,
+) -> Result<(), String> {
+    if let Err(err) = state.backend().remove_tracker(&hash, tracker_index).await {
+        state.log(
+            &app,
+            LogLevel::Error,
+            format!("remove tracker failed: {err}"),
+            Some(hash),
+        );
+        return Err(e(err));
+    }
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("removed or disabled tracker {tracker_index}"),
+        Some(hash.clone()),
+    );
+    refresh_trackers(&state, &hash);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_tracker_enabled(
+    app: AppHandle,
+    state: St<'_>,
+    hash: String,
+    tracker_index: usize,
+    enabled: bool,
+) -> Result<(), String> {
+    if let Err(err) = state
+        .backend()
+        .set_tracker_enabled(&hash, tracker_index, enabled)
+        .await
+    {
+        state.log(
+            &app,
+            LogLevel::Error,
+            format!(
+                "{} tracker failed: {err}",
+                if enabled { "enable" } else { "disable" }
+            ),
+            Some(hash),
+        );
+        return Err(e(err));
+    }
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!(
+            "{} tracker {tracker_index}",
+            if enabled { "enabled" } else { "disabled" }
+        ),
+        Some(hash.clone()),
+    );
+    refresh_trackers(&state, &hash);
+    Ok(())
+}
+
+fn refresh_trackers(state: &AppState, hash: &str) {
+    state.tracker_cache.lock().unwrap().remove(hash);
+    state.repoll.notify_one();
+    state.detail_repoll.notify_one();
+}
+
+#[tauri::command]
 pub async fn remove(
     app: AppHandle,
     state: St<'_>,
@@ -291,11 +416,14 @@ pub fn retry_connection(state: St<'_>) {
 
 #[tauri::command]
 pub fn set_detail_watch(state: St<'_>, hash: Option<String>, tab: Option<DetailTab>) {
-    let mut w = state.detail_watch.lock().unwrap();
-    *w = match (hash, tab) {
-        (Some(h), Some(t)) => Some((h, t)),
-        _ => None,
-    };
+    {
+        let mut w = state.detail_watch.lock().unwrap();
+        *w = match (hash, tab) {
+            (Some(h), Some(t)) => Some((h, t)),
+            _ => None,
+        };
+    }
+    state.detail_repoll.notify_one();
 }
 
 #[tauri::command]

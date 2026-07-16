@@ -7,11 +7,12 @@
 }
 .menu {
   position: fixed;
+  z-index: 201;
   min-width: 200px;
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 28px var(--shadow-menu);
   padding: 5px 0;
   font-size: var(--fs-title);
 }
@@ -31,7 +32,7 @@
   opacity: 0.4;
 }
 .item.danger {
-  color: #e0a5a5;
+  color: var(--danger-text);
 }
 .icon {
   width: 14px;
@@ -65,7 +66,7 @@
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 28px var(--shadow-menu);
   padding: 5px 0;
 }
 .newLabel {

@@ -104,7 +104,10 @@ pub enum DetailTab {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackerRow {
+    /// Zero-based position in rtorrent's tracker list (`HASH:tINDEX`).
+    pub index: usize,
     pub url: String,
+    pub enabled: bool,
     pub status: String,
     pub seeds: i64,
     pub leeches: i64,

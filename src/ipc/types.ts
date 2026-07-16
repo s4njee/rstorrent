@@ -96,8 +96,11 @@ export type DetailTab =
 
 /** A tracker row for the Trackers detail tab. */
 export interface TrackerRow {
+  /** Zero-based position in rtorrent's tracker list (`HASH:tINDEX`). */
+  index: number;
   url: string;
-  status: string; // "working" | "updating" | "error" | ...
+  enabled: boolean;
+  status: string; // "working" | "updating" | "disabled" | "error" | ...
   seeds: number;
   leeches: number;
   lastAnnounce: string;

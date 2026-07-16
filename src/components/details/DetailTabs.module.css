@@ -77,3 +77,43 @@
   padding: 2px 8px 2px 0;
   white-space: nowrap;
 }
+
+.trackerPane {
+  min-height: 100%;
+}
+
+.trackerAdd {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.trackerAdd input {
+  width: min(360px, 55%);
+  box-sizing: border-box;
+  padding: 3px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-field);
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--fs-cell);
+}
+
+.trackerAdd button {
+  padding: 3px 8px;
+  border: 1px solid var(--accent-cyan);
+  border-radius: var(--radius-input);
+  background: var(--bg-selected);
+  color: var(--accent-cyan-bright);
+  font: inherit;
+  font-size: var(--fs-cell);
+}
+
+.trackerAdd button:disabled {
+  opacity: 0.4;
+}
+
+.trackerDisabled {
+  opacity: 0.45;
+}
