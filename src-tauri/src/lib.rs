@@ -37,6 +37,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Persist and restore the window's size/position across launches.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             // Settings live in the app's config dir; fall back to a temp path if
             // that can't be resolved (keeps the app usable regardless).

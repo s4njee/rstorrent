@@ -22,6 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"            # open paths / URLs
 tauri-plugin-dialog = "2"            # native file/folder pickers
 tauri-plugin-clipboard-manager = "2" # copy magnet links
+tauri-plugin-window-state = "2"      # remember window size/position (E13-S3)
 
 # --- Serialization (IPC + settings) ---
 serde = { version = "1", features = ["derive"] }

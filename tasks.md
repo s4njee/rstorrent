@@ -432,7 +432,7 @@ Deps: E3-S6, E2-S1.
 
 Deps: all M1–M5 epics.
 
-- [ ] **E13-S1 · Disconnected / first-run experience** (M)
+- [x] **E13-S1 · Disconnected / first-run experience** (M)
   When `ConnState` ≠ connected: table area shows a centered card — "can't reach rtorrent at {endpoint}", retry countdown, buttons Open Preferences / Retry now, and a collapsible `.rtorrent.rc` snippet (from docs). Toolbar actions disabled; title bar shows disconnected.
   **AC:** fresh install with no daemon lands here (not a blank/broken UI); recovers automatically when daemon appears.
   **Verify:** launch without rtorrent, then start it.
