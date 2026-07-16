@@ -64,7 +64,8 @@ export function useKeyboardShortcuts() {
 
       // Escape — unwind context menu → dialog → selection.
       if (e.key === "Escape") {
-        if (ui.contextMenu) ui.closeContextMenu();
+        if (ui.columnMenu) ui.closeColumnMenu();
+        else if (ui.contextMenu) ui.closeContextMenu();
         else if (ui.dialog) ui.closeDialog();
         else ui.clearSelection();
         return;

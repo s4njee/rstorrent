@@ -16,6 +16,9 @@
   padding: 5px 0;
   font-size: var(--fs-title);
 }
+.columnMenu {
+  min-width: 180px;
+}
 .item {
   display: flex;
   align-items: center;
@@ -40,6 +43,12 @@
   justify-content: center;
   color: var(--text-muted);
   flex: none;
+}
+.check {
+  width: 14px;
+  flex: none;
+  color: var(--accent-cyan);
+  text-align: center;
 }
 .item.danger .icon {
   color: var(--accent-red);

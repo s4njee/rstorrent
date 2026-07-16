@@ -9,6 +9,7 @@
 
 import { memo } from "react";
 import type { Status, TorrentDto } from "../../ipc/types";
+import type { ColumnId } from "./columns";
 import {
   formatBytes,
   formatDownCell,
@@ -40,6 +41,7 @@ interface RowProps {
   torrent: TorrentDto;
   alt: boolean;
   selected: boolean;
+  visibleColumnIds: readonly ColumnId[];
   onMouseDown: (hash: string, e: React.MouseEvent) => void;
   onContextMenu: (hash: string, e: React.MouseEvent) => void;
 }
@@ -48,12 +50,80 @@ function RowInner({
   torrent: t,
   alt,
   selected,
+  visibleColumnIds,
   onMouseDown,
   onContextMenu,
 }: RowProps) {
   const cls = `${styles.grid} ${styles.row} ${alt ? styles.alt : ""} ${
     selected ? styles.selected : ""
   }`;
+  const cells: Record<ColumnId, React.ReactNode> = {
+    name: (
+      <span key="name" className={styles.name} title={t.name}>
+        {t.name}
+      </span>
+    ),
+    size: (
+      <span key="size" className={styles.num}>
+        {formatBytes(t.size)}
+      </span>
+    ),
+    done: (
+      <span key="done">
+        <ProgressBar percent={t.percent} status={t.status} />
+      </span>
+    ),
+    status: (
+      <span
+        key="status"
+        style={{ color: STATUS_COLOR[t.status] }}
+        title={t.statusMsg || undefined}
+      >
+        {statusLabel(t)}
+      </span>
+    ),
+    seeds: (
+      <span key="seeds" className={styles.num}>
+        {t.seedsSwarm}
+      </span>
+    ),
+    peers: (
+      <span key="peers" className={styles.num}>
+        {t.peersSwarm}
+      </span>
+    ),
+    down: (
+      <span key="down" className={styles.down}>
+        {formatDownCell(t.downRate, t.status)}
+      </span>
+    ),
+    up: (
+      <span key="up" className={styles.up}>
+        {formatUpCell(t.upRate)}
+      </span>
+    ),
+    eta: (
+      <span key="eta" className={styles.num}>
+        {formatEta(t.etaSeconds, t.status)}
+      </span>
+    ),
+    ratio: (
+      <span key="ratio" className={styles.num}>
+        {formatRatio(t.ratio)}
+      </span>
+    ),
+    label: (
+      <span key="label" className={styles.dim} title={t.label}>
+        {t.label}
+      </span>
+    ),
+    tracker: (
+      <span key="tracker" className={styles.dim} title={t.trackerHost}>
+        {t.trackerHost}
+      </span>
+    ),
+  };
+
   return (
     <div
       id={`torrent-row-${t.hash}`}
@@ -61,33 +131,7 @@ function RowInner({
       onMouseDown={(e) => onMouseDown(t.hash, e)}
       onContextMenu={(e) => onContextMenu(t.hash, e)}
     >
-      <span className={styles.name} title={t.name}>
-        {t.name}
-      </span>
-      <span className={styles.num}>{formatBytes(t.size)}</span>
-      <span>
-        <ProgressBar percent={t.percent} status={t.status} />
-      </span>
-      <span
-        style={{ color: STATUS_COLOR[t.status] }}
-        title={t.statusMsg || undefined}
-      >
-        {statusLabel(t)}
-      </span>
-      <span className={styles.num}>{t.seedsSwarm}</span>
-      <span className={styles.num}>{t.peersSwarm}</span>
-      <span className={styles.down}>
-        {formatDownCell(t.downRate, t.status)}
-      </span>
-      <span className={styles.up}>{formatUpCell(t.upRate)}</span>
-      <span className={styles.num}>{formatEta(t.etaSeconds, t.status)}</span>
-      <span className={styles.num}>{formatRatio(t.ratio)}</span>
-      <span className={styles.dim} title={t.label}>
-        {t.label}
-      </span>
-      <span className={styles.dim} title={t.trackerHost}>
-        {t.trackerHost}
-      </span>
+      {visibleColumnIds.map((id) => cells[id])}
     </div>
   );
 }

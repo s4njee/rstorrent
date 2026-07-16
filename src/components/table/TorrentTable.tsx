@@ -1,100 +1,201 @@
 /**
- * The torrent table: sortable header + scrollable body of rows.
- *
- * Selection follows native list conventions (click, ⌘-click toggle, ⇧-click
- * range). The visible row list (filter + search + sort) comes from the pure
- * selectors, memoized against the store inputs. Empty and no-match states are
- * rendered in place of the body.
+ * Sortable torrent table with persisted column visibility and live resizing.
+ * Selection follows native list conventions (click, ⌘-click, ⇧-click range).
  */
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useTorrents } from "../../store/torrents";
 import { useUi, type SortColumn } from "../../store/ui";
 import { selectVisible } from "../../store/selectors";
+import {
+  COLUMN_DEFINITIONS,
+  gridTemplateColumns,
+  type ColumnId,
+} from "./columns";
 import { Row } from "./Row";
 import styles from "./TorrentTable.module.css";
 
-/** Header columns; `sort` marks which are clickable and by what key. */
-const COLUMNS: Array<{ label: string; sort?: SortColumn; right?: boolean }> = [
-  { label: "Name", sort: "name" },
-  { label: "Size", sort: "size", right: true },
-  { label: "Done", sort: "percent" },
-  { label: "Status", sort: "status" },
-  { label: "S", right: true },
-  { label: "P", right: true },
-  { label: "Down", sort: "downRate", right: true },
-  { label: "Up", sort: "upRate", right: true },
-  { label: "ETA", sort: "etaSeconds", right: true },
-  { label: "Ratio", sort: "ratio", right: true },
-  { label: "Label" },
-  { label: "Tracker" },
-];
+const SORT_COLUMNS: Partial<Record<ColumnId, SortColumn>> = {
+  name: "name",
+  size: "size",
+  done: "percent",
+  status: "status",
+  down: "downRate",
+  up: "upRate",
+  eta: "etaSeconds",
+  ratio: "ratio",
+};
+
+const RIGHT_COLUMNS = new Set<ColumnId>([
+  "size",
+  "seeds",
+  "peers",
+  "down",
+  "up",
+  "eta",
+  "ratio",
+]);
+
+interface ResizeSession {
+  id: ColumnId;
+  pointerId: number;
+  startX: number;
+  startWidth: number;
+  moved: boolean;
+}
 
 export function TorrentTable() {
-  const torrents = useTorrents((s) => s.torrents);
-  const connection = useTorrents((s) => s.connection);
-  const { filter, search, sortColumn, sortDir } = useUi(
-    useShallow((s) => ({
-      filter: s.filter,
-      search: s.search,
-      sortColumn: s.sortColumn,
-      sortDir: s.sortDir,
+  const torrents = useTorrents((state) => state.torrents);
+  const connection = useTorrents((state) => state.connection);
+  const { filter, search, sortColumn, sortDir, columns } = useUi(
+    useShallow((state) => ({
+      filter: state.filter,
+      search: state.search,
+      sortColumn: state.sortColumn,
+      sortDir: state.sortDir,
+      columns: state.columns,
     })),
   );
-  const selection = useUi((s) => s.selection);
-  const setSort = useUi((s) => s.setSort);
-  const select = useUi((s) => s.select);
-  const toggle = useUi((s) => s.toggle);
-  const selectRange = useUi((s) => s.selectRange);
-  const openContextMenu = useUi((s) => s.openContextMenu);
+  const selection = useUi((state) => state.selection);
+  const setSort = useUi((state) => state.setSort);
+  const resizeColumn = useUi((state) => state.resizeColumn);
+  const select = useUi((state) => state.select);
+  const toggle = useUi((state) => state.toggle);
+  const selectRange = useUi((state) => state.selectRange);
+  const openContextMenu = useUi((state) => state.openContextMenu);
+  const openColumnMenu = useUi((state) => state.openColumnMenu);
+
+  const resizeSession = useRef<ResizeSession | null>(null);
+  const suppressSort = useRef(false);
 
   const visible = useMemo(
     () => selectVisible(torrents, filter, search, sortColumn, sortDir),
     [torrents, filter, search, sortColumn, sortDir],
   );
+  const columnVisibility = columns.visibility;
+  const shownColumns = useMemo(
+    () => COLUMN_DEFINITIONS.filter((column) => columnVisibility[column.id]),
+    [columnVisibility],
+  );
+  const visibleColumnIds = useMemo(
+    () => shownColumns.map((column) => column.id),
+    [shownColumns],
+  );
+  const gridTemplate = useMemo(() => gridTemplateColumns(columns), [columns]);
 
   /** Row mouse-down: apply click / ⌘-toggle / ⇧-range selection. */
-  const onRowMouseDown = (hash: string, e: React.MouseEvent) => {
-    if (e.shiftKey) {
-      selectRange(
-        hash,
-        visible.map((t) => t.hash),
-      );
-    } else if (e.metaKey || e.ctrlKey) {
-      toggle(hash);
-    } else {
-      select(hash);
-    }
+  const onRowMouseDown = useCallback(
+    (hash: string, event: React.MouseEvent) => {
+      if (event.shiftKey) {
+        selectRange(
+          hash,
+          visible.map((torrent) => torrent.hash),
+        );
+      } else if (event.metaKey || event.ctrlKey) {
+        toggle(hash);
+      } else {
+        select(hash);
+      }
+    },
+    [select, selectRange, toggle, visible],
+  );
+
+  /** Right-click selects the row (if needed), then opens its action menu. */
+  const onRowContextMenu = useCallback(
+    (hash: string, event: React.MouseEvent) => {
+      event.preventDefault();
+      if (!selection.has(hash)) select(hash);
+      openContextMenu(event.clientX, event.clientY);
+    },
+    [openContextMenu, select, selection],
+  );
+
+  const startResize = (
+    id: ColumnId,
+    event: React.PointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressSort.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const cellWidth =
+      event.currentTarget.parentElement?.getBoundingClientRect().width ??
+      columns.widths[id];
+    resizeSession.current = {
+      id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: cellWidth,
+      moved: false,
+    };
   };
 
-  /** Right-click selects the row (if not already selected) then opens the menu. */
-  const onRowContextMenu = (hash: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!selection.has(hash)) select(hash);
-    openContextMenu(e.clientX, e.clientY);
+  const moveResize = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const session = resizeSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    const delta = event.clientX - session.startX;
+    if (Math.abs(delta) >= 2) session.moved = true;
+    resizeColumn(session.id, session.startWidth + delta);
+  };
+
+  const finishResize = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const session = resizeSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    event.stopPropagation();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    resizeSession.current = null;
+    suppressSort.current = session.moved;
+    window.setTimeout(() => {
+      suppressSort.current = false;
+    }, 0);
+  };
+
+  const onHeaderContextMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    openColumnMenu(event.clientX, event.clientY);
   };
 
   const header = (
-    <div className={`${styles.grid} ${styles.header}`}>
-      {COLUMNS.map((c) => (
-        <span
-          key={c.label}
-          className={`${c.sort ? styles.sortable : ""} ${c.right ? styles.right : ""}`}
-          onClick={() => c.sort && setSort(c.sort)}
-        >
-          {c.label}
-          {c.sort === sortColumn && (
-            <span className={styles.arrow}>
-              {sortDir === "asc" ? "▲" : "▼"}
-            </span>
-          )}
-        </span>
-      ))}
+    <div
+      className={`${styles.grid} ${styles.header}`}
+      onContextMenu={onHeaderContextMenu}
+    >
+      {shownColumns.map((column) => {
+        const sort = SORT_COLUMNS[column.id];
+        return (
+          <span
+            key={column.id}
+            className={`${sort ? styles.sortable : ""} ${
+              RIGHT_COLUMNS.has(column.id) ? styles.right : ""
+            }`}
+            onClick={() => {
+              if (sort && !suppressSort.current) setSort(sort);
+            }}
+          >
+            {column.label}
+            {sort === sortColumn && (
+              <span className={styles.arrow}>
+                {sortDir === "asc" ? "▲" : "▼"}
+              </span>
+            )}
+            <span
+              className={styles.resizeHandle}
+              title={`Resize ${column.label} column`}
+              onPointerDown={(event) => startResize(column.id, event)}
+              onPointerMove={moveResize}
+              onPointerUp={finishResize}
+              onPointerCancel={finishResize}
+              onClick={(event) => event.stopPropagation()}
+            />
+          </span>
+        );
+      })}
     </div>
   );
 
-  // Empty states: distinguish "no torrents at all" from "filter matched none".
   let body: React.ReactNode;
   if (visible.length === 0 && connection.phase === "connected") {
     if (torrents.length === 0) {
@@ -117,12 +218,13 @@ export function TorrentTable() {
   } else {
     body = (
       <div className={styles.body}>
-        {visible.map((t, i) => (
+        {visible.map((torrent, index) => (
           <Row
-            key={t.hash}
-            torrent={t}
-            alt={i % 2 === 1}
-            selected={selection.has(t.hash)}
+            key={torrent.hash}
+            torrent={torrent}
+            alt={index % 2 === 1}
+            selected={selection.has(torrent.hash)}
+            visibleColumnIds={visibleColumnIds}
             onMouseDown={onRowMouseDown}
             onContextMenu={onRowContextMenu}
           />
@@ -132,7 +234,10 @@ export function TorrentTable() {
   }
 
   return (
-    <div className={styles.table}>
+    <div
+      className={styles.table}
+      style={{ "--torrent-grid-template": gridTemplate } as React.CSSProperties}
+    >
       {header}
       {body}
     </div>
