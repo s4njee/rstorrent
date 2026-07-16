@@ -76,6 +76,13 @@ export const DownIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const RateLimitIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M1.5 3h9M1.5 9h9" />
+    <path d="m3.5 1.5-2 1.5 2 1.5M8.5 7.5l2 1.5-2 1.5" />
+  </Svg>
+);
+
 export const RecheckIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M10 3.5A4.5 4.5 0 1 0 10.5 7" />

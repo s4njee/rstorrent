@@ -16,7 +16,7 @@ use std::sync::{Arc, RwLock};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Notify;
 
-use crate::ipc::{ConnPhase, ConnState, DetailTab, LogLevel, Settings};
+use crate::ipc::{ConnPhase, ConnState, DetailTab, LogLevel, NamedThrottle, Settings};
 use crate::log::LogBuffer;
 use crate::rtorrent::{make_backend, RtorrentApi};
 use crate::settings;
@@ -106,6 +106,27 @@ impl AppState {
             self.repoll.notify_one();
         }
         next
+    }
+
+    /// Insert or replace one persisted app-owned named-throttle definition.
+    pub fn save_throttle_definition(
+        &self,
+        definition: NamedThrottle,
+    ) -> std::io::Result<()> {
+        let next = {
+            let mut settings = self.settings.write().unwrap();
+            if let Some(existing) = settings
+                .torrent_throttles
+                .iter_mut()
+                .find(|item| item.name == definition.name)
+            {
+                *existing = definition;
+            } else {
+                settings.torrent_throttles.push(definition);
+            }
+            settings.clone()
+        };
+        settings::save(&self.settings_path, &next)
     }
 
     /// Current tracker host for a hash, if the slow poll has resolved it.

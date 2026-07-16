@@ -63,6 +63,29 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                 let continuing_session =
                     failures == 0 && state.conn().phase == ConnPhase::Connected;
                 if failures > 0 || state.conn().phase != ConnPhase::Connected {
+                    // The assignment is persisted by rtorrent, but named
+                    // throttle definitions are not. Replay our small pool on
+                    // every initial connection and reconnect.
+                    for definition in &state.settings().torrent_throttles {
+                        if let Err(error) = backend
+                            .define_named_throttle(
+                                &definition.name,
+                                definition.down_kb,
+                                definition.up_kb,
+                            )
+                            .await
+                        {
+                            state.log(
+                                &app,
+                                LogLevel::Error,
+                                format!(
+                                    "could not restore rate limit {}: {error}",
+                                    definition.name
+                                ),
+                                None,
+                            );
+                        }
+                    }
                     // (Re)connected: learn the version and log the transition.
                     let version = backend.client_version().await.ok();
                     let s = state.settings();
@@ -160,15 +183,22 @@ async fn resolve_trackers(_app: &AppHandle, state: &Arc<AppState>, raw: &[crate:
 
 /// Turn raw torrents + globals into the DTO snapshot for the frontend.
 fn build_snapshot(state: &AppState, raw: Vec<crate::rtorrent::RawTorrent>, g: RawGlobal) -> Snapshot {
+    let settings = state.settings();
     let torrents: Vec<TorrentDto> = raw
         .iter()
-        .map(|t| derive::to_dto(t, &state.tracker_host(&t.hash)))
+        .map(|t| {
+            let limits = settings
+                .torrent_throttles
+                .iter()
+                .find(|definition| definition.name == t.throttle_name)
+                .map(|definition| (definition.down_kb, definition.up_kb));
+            derive::to_dto(t, &state.tracker_host(&t.hash), limits)
+        })
         .collect();
 
-    let s = state.settings();
     // Free space is only meaningful for a local daemon; a real statvfs is a
     // follow-up, so we surface the mock's fixed value and otherwise None.
-    let free_space = if s.mock {
+    let free_space = if settings.mock {
         Some(412 * 1_073_741_824_i64)
     } else {
         None

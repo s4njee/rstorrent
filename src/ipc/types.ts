@@ -55,6 +55,11 @@ export interface TorrentDto {
   /** rtorrent priority 0..3, reused as the queue-order approximation. */
   priority: number;
   isPrivate: boolean;
+  /** App-owned named throttle, empty when global limits apply. */
+  throttleName: string;
+  /** Named limits in bytes/s; null means inherit the corresponding global. */
+  downRateLimit: number | null;
+  upRateLimit: number | null;
 }
 
 /** Global counters shown in the status bar and General detail tab. */
@@ -188,7 +193,15 @@ export interface Settings {
   watchFolder: string; // auto-add .torrent files from here; empty = disabled
   /** Labels whose completed torrents should not produce a notification. */
   completionNotificationExcludedLabels: string[];
+  /** App-owned throttle definitions replayed after daemon restarts. */
+  torrentThrottles: NamedThrottle[];
   mock: boolean;
+}
+
+export interface NamedThrottle {
+  name: string;
+  downKb: number;
+  upKb: number;
 }
 
 /** Aggregate figures for the Statistics dialog; nulls render as "—". */

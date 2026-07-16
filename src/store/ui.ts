@@ -40,7 +40,13 @@ export type ActiveFilter =
   | null;
 
 export type DialogKind =
-  null | "add-file" | "add-magnet" | "prefs" | "stats" | "remove";
+  | null
+  | "add-file"
+  | "add-magnet"
+  | "prefs"
+  | "stats"
+  | "remove"
+  | "rate-limit";
 
 export interface ExternalAddRequest {
   id: number;

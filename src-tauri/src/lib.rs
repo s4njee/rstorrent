@@ -25,6 +25,7 @@ mod settings;
 mod state;
 mod stats;
 mod torrent_file;
+mod throttles;
 mod watcher;
 
 use std::sync::Arc;
@@ -84,6 +85,7 @@ pub fn run() {
             commands::set_tracker_enabled,
             commands::remove,
             commands::set_label,
+            commands::set_torrent_limits,
             commands::set_location,
             commands::queue_move,
             commands::copy_magnet,

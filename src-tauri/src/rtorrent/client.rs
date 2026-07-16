@@ -36,6 +36,7 @@ const LIST_COMMANDS: &[&str] = &[
     "d.peers_connected=", // 17
     "d.priority=",        // 18
     "d.is_private=",      // 19
+    "d.throttle_name=",   // 20
 ];
 
 /// rtorrent client that talks to a live daemon over SCGI.
@@ -176,6 +177,36 @@ fn tracker_announce_call(hash: &str) -> (&'static str, Vec<Value>) {
     ("d.tracker_announce", vec![Value::Str(hash.into())])
 }
 
+fn named_throttle_calls(
+    name: &str,
+    down_kb: i64,
+    up_kb: i64,
+) -> [(&'static str, Vec<Value>); 2] {
+    [
+        (
+            "throttle.down",
+            vec![Value::Str(name.into()), Value::Str(down_kb.to_string())],
+        ),
+        (
+            "throttle.up",
+            vec![Value::Str(name.into()), Value::Str(up_kb.to_string())],
+        ),
+    ]
+}
+
+fn throttle_assignment_calls(hashes: &[String], name: Option<&str>) -> Vec<(&'static str, Vec<Value>)> {
+    let name = name.unwrap_or("");
+    hashes
+        .iter()
+        .map(|hash| {
+            (
+                "d.throttle_name.set",
+                vec![Value::Str(hash.clone()), Value::Str(name.into())],
+            )
+        })
+        .collect()
+}
+
 /// Map one `d.multicall2` row (a positional array) into a [`RawTorrent`].
 fn row_to_raw(row: &[Value]) -> RawTorrent {
     let s = |i: usize| row.get(i).and_then(Value::as_str).unwrap_or("").to_string();
@@ -202,6 +233,7 @@ fn row_to_raw(row: &[Value]) -> RawTorrent {
         peers_connected: n(17),
         priority: n(18),
         is_private: b(19),
+        throttle_name: s(20),
     }
 }
 
@@ -542,6 +574,30 @@ impl RtorrentApi for ScgiClient {
             .to_string())
     }
 
+    async fn define_named_throttle(&self, name: &str, down_kb: i64, up_kb: i64) -> Result<()> {
+        for result in self.multicall(&named_throttle_calls(name, down_kb, up_kb)).await? {
+            result?;
+        }
+        Ok(())
+    }
+
+    async fn assign_throttle(&self, hashes: &[String], name: Option<&str>) -> Result<()> {
+        let calls = throttle_assignment_calls(hashes, name);
+        for result in self.multicall(&calls).await? {
+            result?;
+        }
+        Ok(())
+    }
+
+    async fn torrent_throttle_name(&self, hash: &str) -> Result<String> {
+        Ok(self
+            .call("d.throttle_name", &[Value::Str(hash.into())])
+            .await?
+            .as_str()
+            .unwrap_or("")
+            .to_string())
+    }
+
     async fn set_port_range(&self, range: &str) -> Result<()> {
         self.call(
             "network.port_range.set",
@@ -675,12 +731,14 @@ mod tests {
             Value::Int(12),
             Value::Int(2),
             Value::Int(0),
+            Value::Str("rstorrent_1".into()),
         ];
         let t = row_to_raw(&row);
         assert_eq!(t.hash, "ABCD");
         assert_eq!(t.name, "ubuntu.iso");
         assert_eq!(t.down_rate, 42);
         assert_eq!(t.label, "linux-iso");
+        assert_eq!(t.throttle_name, "rstorrent_1");
         assert!(t.is_active && t.is_open && !t.complete);
     }
 
@@ -697,6 +755,30 @@ mod tests {
         assert_eq!(cmds[0], "d.directory.set=/srv/dl");
         assert!(cmds.contains(&"d.custom1.set=iso".to_string()));
         assert!(cmds.contains(&"d.priority.set=3".to_string()));
+    }
+
+    #[test]
+    fn named_throttle_calls_use_string_rates_and_clear_with_empty_name() {
+        assert_eq!(
+            named_throttle_calls("rstorrent_2", 512, 0),
+            [
+                (
+                    "throttle.down",
+                    vec![Value::Str("rstorrent_2".into()), Value::Str("512".into())]
+                ),
+                (
+                    "throttle.up",
+                    vec![Value::Str("rstorrent_2".into()), Value::Str("0".into())]
+                ),
+            ]
+        );
+        assert_eq!(
+            throttle_assignment_calls(&["ABC".into()], None),
+            vec![(
+                "d.throttle_name.set",
+                vec![Value::Str("ABC".into()), Value::Str(String::new())]
+            )]
+        );
     }
 
     #[test]

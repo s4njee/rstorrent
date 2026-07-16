@@ -38,7 +38,7 @@ Things a real user hits in the first week of daily use.
   Badge with active-download count; dock menu with global pause/resume and
   current ↓/↑ rates. Cheap, very visible.
 
-- [ ] **B4 · Per-torrent speed limits** (M)
+- [x] **B4 · Per-torrent speed limits** (M)
   `d.throttle_name.set` against named throttles (rtorrent has no true per-torrent
   cap, so: manage a small pool of named throttle groups). Context menu ▸ Limit
   download/upload… Surfaced in the General tab.

@@ -25,6 +25,8 @@ const KIB: f64 = 1_024.0;
 struct State {
     torrents: Vec<RawTorrent>,
     trackers: HashMap<String, Vec<MockTracker>>,
+    natural_rates: HashMap<String, (i64, i64)>,
+    throttles: HashMap<String, (i64, i64)>,
     last_tick: Instant,
 }
 
@@ -77,10 +79,21 @@ impl MockClient {
                 )
             })
             .collect();
+        let natural_rates = torrents
+            .iter()
+            .map(|torrent| {
+                (
+                    torrent.hash.clone(),
+                    (torrent.down_rate, torrent.up_rate),
+                )
+            })
+            .collect();
         Self {
             state: Mutex::new(State {
                 torrents,
                 trackers,
+                natural_rates,
+                throttles: HashMap::new(),
                 last_tick: Instant::now(),
             }),
         }
@@ -91,14 +104,24 @@ impl MockClient {
         let now = Instant::now();
         let dt = now.duration_since(state.last_tick).as_secs_f64();
         state.last_tick = now;
-        for t in &mut state.torrents {
-            if t.is_active && !t.complete && t.down_rate > 0 {
-                t.bytes_done += (t.down_rate as f64 * dt) as i64;
+        let State {
+            torrents,
+            natural_rates,
+            throttles,
+            ..
+        } = state;
+        for t in torrents {
+            let (down_rate, _) = effective_rates(t, natural_rates, throttles);
+            if t.is_active && !t.complete && down_rate > 0 {
+                t.bytes_done += (down_rate as f64 * dt) as i64;
                 if t.bytes_done >= t.size_bytes {
                     // Finished: flip to a seeding state.
                     t.bytes_done = t.size_bytes;
                     t.complete = true;
                     t.down_rate = 0;
+                    if let Some(rates) = natural_rates.get_mut(&t.hash) {
+                        rates.0 = 0;
+                    }
                 }
             }
         }
@@ -123,13 +146,34 @@ impl RtorrentApi for MockClient {
     async fn list_snapshot(&self) -> Result<Vec<RawTorrent>> {
         let mut state = self.state.lock().unwrap();
         Self::tick(&mut state);
-        Ok(state.torrents.clone())
+        Ok(state
+            .torrents
+            .iter()
+            .cloned()
+            .map(|mut torrent| {
+                let rates = effective_rates(
+                    &torrent,
+                    &state.natural_rates,
+                    &state.throttles,
+                );
+                torrent.down_rate = rates.0;
+                torrent.up_rate = rates.1;
+                torrent
+            })
+            .collect())
     }
 
     async fn global_stats(&self) -> Result<RawGlobal> {
         let state = self.state.lock().unwrap();
-        let down_rate = state.torrents.iter().map(|t| t.down_rate).sum();
-        let up_rate = state.torrents.iter().map(|t| t.up_rate).sum();
+        let rates = state
+            .torrents
+            .iter()
+            .map(|torrent| {
+                effective_rates(torrent, &state.natural_rates, &state.throttles)
+            });
+        let (down_rate, up_rate) = rates.fold((0, 0), |sum, rate| {
+            (sum.0 + rate.0, sum.1 + rate.1)
+        });
         Ok(RawGlobal {
             down_rate,
             up_rate,
@@ -279,6 +323,9 @@ impl RtorrentApi for MockClient {
         state
             .trackers
             .retain(|hash, _| !hashes.iter().any(|h| h.eq_ignore_ascii_case(hash)));
+        state
+            .natural_rates
+            .retain(|hash, _| !hashes.iter().any(|h| h.eq_ignore_ascii_case(hash)));
         Ok(())
     }
 
@@ -289,6 +336,9 @@ impl RtorrentApi for MockClient {
             torrent.hash.clone(),
             vec![mock_tracker(tracker_url(&torrent.hash))],
         );
+        state
+            .natural_rates
+            .insert(torrent.hash.clone(), (torrent.down_rate, torrent.up_rate));
         state.torrents.push(torrent);
         Ok(())
     }
@@ -306,6 +356,9 @@ impl RtorrentApi for MockClient {
             torrent.hash.clone(),
             vec![mock_tracker(tracker_url(&torrent.hash))],
         );
+        state
+            .natural_rates
+            .insert(torrent.hash.clone(), (torrent.down_rate, torrent.up_rate));
         state.torrents.push(torrent);
         Ok(())
     }
@@ -339,6 +392,31 @@ impl RtorrentApi for MockClient {
             .unwrap_or_default())
     }
 
+    async fn define_named_throttle(&self, name: &str, down_kb: i64, up_kb: i64) -> Result<()> {
+        self.state
+            .lock()
+            .unwrap()
+            .throttles
+            .insert(name.to_string(), (down_kb, up_kb));
+        Ok(())
+    }
+
+    async fn assign_throttle(&self, hashes: &[String], name: Option<&str>) -> Result<()> {
+        let name = name.unwrap_or("").to_string();
+        self.with_hash(hashes, |torrent| torrent.throttle_name.clone_from(&name));
+        Ok(())
+    }
+
+    async fn torrent_throttle_name(&self, hash: &str) -> Result<String> {
+        let state = self.state.lock().unwrap();
+        Ok(state
+            .torrents
+            .iter()
+            .find(|torrent| torrent.hash.eq_ignore_ascii_case(hash))
+            .map(|torrent| torrent.throttle_name.clone())
+            .unwrap_or_default())
+    }
+
     async fn set_throttles(&self, _down_kb: i64, _up_kb: i64) -> Result<()> {
         Ok(())
     }
@@ -365,6 +443,35 @@ impl RtorrentApi for MockClient {
             cache_overload_pct: Some(0.0),
             queued_io: Some(3),
         })
+    }
+}
+
+fn effective_rates(
+    torrent: &RawTorrent,
+    natural_rates: &HashMap<String, (i64, i64)>,
+    throttles: &HashMap<String, (i64, i64)>,
+) -> (i64, i64) {
+    if !torrent.is_active {
+        return (0, 0);
+    }
+    let natural = natural_rates
+        .get(&torrent.hash)
+        .copied()
+        .unwrap_or((torrent.down_rate, torrent.up_rate));
+    let Some((down_kb, up_kb)) = throttles.get(&torrent.throttle_name).copied() else {
+        return natural;
+    };
+    (
+        cap_rate(natural.0, down_kb),
+        cap_rate(natural.1, up_kb),
+    )
+}
+
+fn cap_rate(natural: i64, limit_kb: i64) -> i64 {
+    if limit_kb == 0 {
+        natural
+    } else {
+        natural.min(limit_kb.saturating_mul(1024))
     }
 }
 
@@ -471,6 +578,7 @@ fn t(
         peers_connected: conn,
         priority: 2,
         is_private: false,
+        throttle_name: String::new(),
     }
 }
 
@@ -559,5 +667,48 @@ mod tests {
 
         c.remove_tracker("C3", 1).await.unwrap();
         assert!(!c.trackers("C3").await.unwrap()[1].enabled);
+    }
+
+    #[tokio::test]
+    async fn named_throttle_assignments_cap_simulated_rates() {
+        let c = MockClient::new();
+        c.define_named_throttle("rstorrent_1", 512, 100)
+            .await
+            .unwrap();
+        c.assign_throttle(&["C3".into()], Some("rstorrent_1"))
+            .await
+            .unwrap();
+
+        let before = {
+            let mut state = c.state.lock().unwrap();
+            state.last_tick = Instant::now() - std::time::Duration::from_secs(2);
+            state
+                .torrents
+                .iter()
+                .find(|row| row.hash == "C3")
+                .unwrap()
+                .bytes_done
+        };
+
+        let rows = c.list_snapshot().await.unwrap();
+        let fedora = rows.iter().find(|row| row.hash == "C3").unwrap();
+        assert_eq!(fedora.down_rate, 512 * 1024);
+        assert_eq!(fedora.up_rate, 100 * 1024);
+        let progressed = fedora.bytes_done - before;
+        assert!(progressed >= 2 * 512 * 1024);
+        assert!(progressed < 3 * 512 * 1024);
+        assert_eq!(c.torrent_throttle_name("C3").await.unwrap(), "rstorrent_1");
+
+        c.assign_throttle(&["C3".into()], None).await.unwrap();
+        let rows = c.list_snapshot().await.unwrap();
+        let fedora = rows.iter().find(|row| row.hash == "C3").unwrap();
+        assert_eq!(fedora.down_rate, (8.4 * MIB) as i64);
+        assert_eq!(fedora.throttle_name, "");
+    }
+
+    #[test]
+    fn zero_direction_is_unlimited_in_mock_throttle() {
+        assert_eq!(cap_rate(900_000, 0), 900_000);
+        assert_eq!(cap_rate(900_000, 512), 512 * 1024);
     }
 }

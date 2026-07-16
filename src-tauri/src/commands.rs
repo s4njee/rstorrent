@@ -8,6 +8,7 @@
 //! Command names and argument shapes must match `src/ipc/commands.ts`.
 
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use tauri::{AppHandle, State};
 
@@ -15,10 +16,11 @@ use crate::ipc::{
     AddOptions, AddSource, DetailTab, LogLevel, Settings, Statistics, TorrentMeta, Transport,
 };
 use crate::open_requests::OpenRequestState;
-use crate::rtorrent::{client::ScgiClient, LoadOptions, RtorrentApi};
+use crate::rtorrent::{client::ScgiClient, LoadOptions, RtorrentApi, RtorrentError};
 use crate::settings;
 use crate::state::AppState;
 use crate::torrent_file;
+use crate::throttles;
 
 /// Shorthand for the shared-state extractor.
 type St<'a> = State<'a, Arc<AppState>>;
@@ -290,6 +292,137 @@ pub async fn set_label(
 ) -> Result<(), String> {
     state.backend().set_label(&hashes, &label).await.map_err(e)?;
     state.log(&app, LogLevel::Info, format!("set label '{label}'"), None);
+    state.repoll.notify_one();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_torrent_limits(
+    app: AppHandle,
+    state: St<'_>,
+    hashes: Vec<String>,
+    down_kb: i64,
+    up_kb: i64,
+) -> Result<(), String> {
+    if hashes.is_empty() {
+        return Ok(());
+    }
+    if down_kb < 0 || up_kb < 0 {
+        let error = "rate limits must be zero or greater";
+        state.log(&app, LogLevel::Error, error, None);
+        return Err(error.into());
+    }
+
+    let backend = state.backend();
+    if down_kb == 0 && up_kb == 0 {
+        let clear_result = async {
+            backend.assign_throttle(&hashes, None).await?;
+            let assignment = backend.torrent_throttle_name(&hashes[0]).await?;
+            if assignment.is_empty() {
+                Ok(())
+            } else {
+                Err(RtorrentError::Unexpected(format!(
+                    "torrent still uses throttle {assignment}"
+                )))
+            }
+        }
+        .await;
+        if let Err(error) = clear_result {
+            state.log(
+                &app,
+                LogLevel::Error,
+                format!("clearing per-torrent rate limit failed: {error}"),
+                None,
+            );
+            return Err(e(error));
+        }
+        state.log(
+            &app,
+            LogLevel::Info,
+            format!("cleared rate limit for {} torrent(s)", hashes.len()),
+            None,
+        );
+        state.repoll.notify_one();
+        return Ok(());
+    }
+
+    let rows = match backend.list_snapshot().await {
+        Ok(rows) => rows,
+        Err(error) => {
+            state.log(
+                &app,
+                LogLevel::Error,
+                format!("setting per-torrent rate limit failed: {error}"),
+                None,
+            );
+            return Err(e(error));
+        }
+    };
+    let active_names: HashSet<String> = rows
+        .iter()
+        .map(|torrent| torrent.throttle_name.clone())
+        .filter(|name| !name.is_empty())
+        .collect();
+    let (definition, changed) = match throttles::allocate(
+        &state.settings().torrent_throttles,
+        &active_names,
+        down_kb,
+        up_kb,
+    ) {
+        Ok(allocation) => allocation,
+        Err(error) => {
+            state.log(&app, LogLevel::Error, error, None);
+            return Err(error.into());
+        }
+    };
+
+    let result = async {
+        backend
+            .define_named_throttle(&definition.name, down_kb, up_kb)
+            .await?;
+        backend
+            .assign_throttle(&hashes, Some(&definition.name))
+            .await?;
+        let assignment = backend.torrent_throttle_name(&hashes[0]).await?;
+        if assignment == definition.name {
+            Ok(())
+        } else {
+            Err(RtorrentError::Unexpected(format!(
+                "torrent uses throttle '{assignment}' after assignment"
+            )))
+        }
+    }
+    .await;
+    if let Err(error) = result {
+        state.log(
+            &app,
+            LogLevel::Error,
+            format!("setting per-torrent rate limit failed: {error}"),
+            None,
+        );
+        return Err(e(error));
+    }
+
+    if changed {
+        if let Err(error) = state.save_throttle_definition(definition) {
+            state.log(
+                &app,
+                LogLevel::Error,
+                format!("could not persist per-torrent rate limit: {error}"),
+                None,
+            );
+            return Err(e(error));
+        }
+    }
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!(
+            "set rate limit for {} torrent(s): down {down_kb} KiB/s, up {up_kb} KiB/s",
+            hashes.len()
+        ),
+        None,
+    );
     state.repoll.notify_one();
     Ok(())
 }

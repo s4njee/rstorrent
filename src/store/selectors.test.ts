@@ -36,6 +36,9 @@ function mk(
     savePath: "",
     priority: 2,
     isPrivate: false,
+    throttleName: "",
+    downRateLimit: null,
+    upRateLimit: null,
   };
 }
 
@@ -146,5 +149,16 @@ describe("reconcile", () => {
     const merged = reconcile(prev, next);
     expect(merged[2]).toBe(next[2]);
     expect(merged[0]).toBe(prev[0]);
+  });
+  it("uses the new object when a per-torrent limit changes", () => {
+    const prev = [...fixture];
+    const limited = {
+      ...fixture[0],
+      throttleName: "rstorrent_1",
+      downRateLimit: 512 * 1024,
+      upRateLimit: 512 * 1024,
+    };
+    const merged = reconcile(prev, [limited, ...fixture.slice(1)]);
+    expect(merged[0]).toBe(limited);
   });
 });
