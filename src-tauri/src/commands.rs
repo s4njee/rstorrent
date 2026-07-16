@@ -14,6 +14,7 @@ use tauri::{AppHandle, State};
 use crate::ipc::{
     AddOptions, AddSource, DetailTab, LogLevel, Settings, Statistics, TorrentMeta, Transport,
 };
+use crate::open_requests::OpenRequestState;
 use crate::rtorrent::{client::ScgiClient, LoadOptions, RtorrentApi};
 use crate::settings;
 use crate::state::AppState;
@@ -41,6 +42,13 @@ fn load_opts(opts: &AddOptions) -> LoadOptions {
 #[tauri::command]
 pub fn read_torrent_metadata(path: String) -> Result<TorrentMeta, String> {
     torrent_file::read_metadata(&path)
+}
+
+/// Drain file/deep-link requests retained while the frontend was loading.
+/// Calling this also marks the frontend ready for live open-request events.
+#[tauri::command]
+pub fn take_open_requests(state: State<'_, OpenRequestState>) -> Vec<String> {
+    state.take_initial()
 }
 
 #[tauri::command]

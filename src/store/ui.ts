@@ -8,6 +8,7 @@
  */
 
 import { create } from "zustand";
+import type { AddSource } from "../ipc/commands";
 import type { DetailTab } from "../ipc/types";
 
 /** Columns the table can sort by (subset of visible columns that make sense). */
@@ -32,6 +33,13 @@ export type ActiveFilter =
 export type DialogKind =
   null | "add-file" | "add-magnet" | "prefs" | "stats" | "remove";
 
+export interface ExternalAddRequest {
+  id: number;
+  source: AddSource;
+}
+
+let nextExternalRequestId = 1;
+
 interface UiState {
   selection: Set<string>;
   anchor: string | null;
@@ -41,6 +49,8 @@ interface UiState {
   sortDir: SortDir;
   activeTab: DetailTab;
   dialog: DialogKind;
+  externalAddRequest: ExternalAddRequest | null;
+  externalAddComplete: (() => void) | null;
   /** Cursor position for the context menu, or null when closed. */
   contextMenu: { x: number; y: number } | null;
 
@@ -61,6 +71,7 @@ interface UiState {
 
   // --- dialogs / menu ---
   openDialog: (d: DialogKind) => void;
+  openExternalAdd: (source: AddSource, onComplete: () => void) => void;
   closeDialog: () => void;
   openContextMenu: (x: number, y: number) => void;
   closeContextMenu: () => void;
@@ -121,6 +132,8 @@ export const useUi = create<UiState>((set, get) => {
     sortDir: initial.sortDir,
     activeTab: initial.activeTab,
     dialog: null,
+    externalAddRequest: null,
+    externalAddComplete: null,
     contextMenu: null,
 
     select: (hash) => set({ selection: new Set([hash]), anchor: hash }),
@@ -179,8 +192,28 @@ export const useUi = create<UiState>((set, get) => {
       persist();
     },
 
-    openDialog: (dialog) => set({ dialog, contextMenu: null }),
-    closeDialog: () => set({ dialog: null }),
+    openDialog: (dialog) => {
+      // A queued Finder/deep-link dialog owns the modal until it is completed
+      // or cancelled; menu actions must not strand its queue promise.
+      if (get().externalAddRequest) return;
+      set({ dialog, contextMenu: null });
+    },
+    openExternalAdd: (source, onComplete) =>
+      set({
+        dialog: source.kind === "file" ? "add-file" : "add-magnet",
+        externalAddRequest: { id: nextExternalRequestId++, source },
+        externalAddComplete: onComplete,
+        contextMenu: null,
+      }),
+    closeDialog: () => {
+      const complete = get().externalAddComplete;
+      set({
+        dialog: null,
+        externalAddRequest: null,
+        externalAddComplete: null,
+      });
+      complete?.();
+    },
     openContextMenu: (x, y) => set({ contextMenu: { x, y } }),
     closeContextMenu: () => set({ contextMenu: null }),
   };

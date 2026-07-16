@@ -25,17 +25,27 @@ function isValidSource(text: string): boolean {
 
 export function AddMagnetDialog() {
   const closeDialog = useUi((s) => s.closeDialog);
+  const external = useUi((s) => s.externalAddRequest);
   const settings = useSettings((s) => s.settings);
+  const externalUri =
+    external?.source.kind === "magnet" ? external.source.uri : "";
 
-  const [uri, setUri] = useState("");
+  const [uri, setUri] = useState(externalUri);
   const [savePath, setSavePath] = useState("");
   const [label, setLabel] = useState("");
   const [start, setStart] = useState(true);
   const [topOfQueue, setTopOfQueue] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Default the save path from settings, and prefill a magnet from the clipboard.
+  // Default the save path from settings.
   useEffect(() => {
     if (settings) setSavePath(settings.defaultSavePath);
+  }, [settings]);
+
+  // External links win over the clipboard fallback used by the toolbar flow.
+  useEffect(() => {
+    if (externalUri) return;
     void readText()
       .then((clip) => {
         if (clip && isValidSource(clip)) setUri(clip.trim());
@@ -43,45 +53,60 @@ export function AddMagnetDialog() {
       .catch(() => {
         // clipboard may be empty/unavailable; ignore
       });
-  }, [settings]);
+  }, [externalUri]);
 
   const valid = isValidSource(uri);
 
-  const add = () => {
-    if (!valid) return;
-    void addTorrent(
-      { kind: "magnet", uri: uri.trim() },
-      {
-        savePath,
-        label,
-        start,
-        topOfQueue,
-        sequential: false,
-        skipHashCheck: false,
-        unselectedIndexes: [],
-      },
-    );
-    closeDialog();
+  const add = async () => {
+    if (adding || !valid) return;
+    setAdding(true);
+    setError(null);
+    try {
+      await addTorrent(
+        { kind: "magnet", uri: uri.trim() },
+        {
+          savePath,
+          label,
+          start,
+          topOfQueue,
+          sequential: false,
+          skipHashCheck: false,
+          unselectedIndexes: [],
+        },
+      );
+      closeDialog();
+    } catch (e) {
+      setError(String(e));
+      setAdding(false);
+    }
+  };
+  const cancel = () => {
+    if (!adding) closeDialog();
   };
 
   return (
     <ModalBase
       title="Add magnet link"
       width={460}
-      onCancel={closeDialog}
-      onPrimary={add}
+      onCancel={cancel}
+      onPrimary={() => void add()}
       footer={
         <>
-          <Button variant="secondary" onClick={closeDialog}>
+          <Button variant="secondary" onClick={cancel} disabled={adding}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={add} disabled={!valid}>
-            Add
+          <Button
+            variant="primary"
+            onClick={() => void add()}
+            disabled={!valid || adding}
+          >
+            {adding ? "Adding…" : "Add"}
           </Button>
         </>
       }
     >
       <div className={forms.col}>
+        {error && <div className={forms.error}>{error}</div>}
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span className={forms.fieldLabel} style={{ width: "auto" }}>
             Magnet URI or torrent URL

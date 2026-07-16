@@ -10,7 +10,7 @@
  * supported by the current backend path; see plan.md non-goals.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useUi } from "../../store/ui";
 import { useSettings } from "../../store/settings";
@@ -31,7 +31,10 @@ import styles from "./AddTorrentDialog.module.css";
 
 export function AddTorrentDialog() {
   const closeDialog = useUi((s) => s.closeDialog);
+  const external = useUi((s) => s.externalAddRequest);
   const settings = useSettings((s) => s.settings);
+  const externalPath =
+    external?.source.kind === "file" ? external.source.path : null;
 
   const [path, setPath] = useState<string | null>(null);
   const [meta, setMeta] = useState<TorrentMeta | null>(null);
@@ -41,18 +44,28 @@ export function AddTorrentDialog() {
   const [start, setStart] = useState(true);
   const [skipHash, setSkipHash] = useState(false);
   const [topOfQueue, setTopOfQueue] = useState(false);
+  const [adding, setAdding] = useState(false);
   // Selected file indexes (all selected initially).
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  // On mount, prompt for a file and load its metadata.
+  // Apply the configured destination even if settings finish loading after us.
   useEffect(() => {
     if (settings) setSavePath(settings.defaultSavePath);
+  }, [settings]);
+
+  // Finder-provided files skip the picker and go straight to metadata parsing.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     void (async () => {
-      const chosen = await open({
-        multiple: false,
-        filters: [{ name: "Torrent", extensions: ["torrent"] }],
-      });
+      const chosen =
+        externalPath ??
+        (await open({
+          multiple: false,
+          filters: [{ name: "Torrent", extensions: ["torrent"] }],
+        }));
       if (typeof chosen !== "string") {
         closeDialog();
         return;
@@ -75,8 +88,7 @@ export function AddTorrentDialog() {
         setError(String(e));
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [closeDialog, externalPath]);
 
   const tree = useMemo(() => (meta ? buildTree(meta.files) : []), [meta]);
 
@@ -99,41 +111,55 @@ export function AddTorrentDialog() {
     setSelected(on && meta ? new Set(meta.files.map((_, i) => i)) : new Set());
   };
 
-  const add = () => {
-    if (!path || !meta) return;
+  const add = async () => {
+    if (adding || !path || !meta) return;
     const unselectedIndexes = meta.files
       .map((_, i) => i)
       .filter((i) => !selected.has(i));
-    void addTorrent(
-      { kind: "file", path },
-      {
-        savePath,
-        label,
-        start,
-        topOfQueue,
-        sequential: false,
-        skipHashCheck: skipHash,
-        unselectedIndexes,
-      },
-    );
-    closeDialog();
+    setAdding(true);
+    setError(null);
+    try {
+      await addTorrent(
+        { kind: "file", path },
+        {
+          savePath,
+          label,
+          start,
+          topOfQueue,
+          sequential: false,
+          skipHashCheck: skipHash,
+          unselectedIndexes,
+        },
+      );
+      closeDialog();
+    } catch (e) {
+      setError(String(e));
+      setAdding(false);
+    }
   };
 
   const totalSelected = meta ? selectedSize(meta.files, selected) : 0;
+  const cancel = () => {
+    if (!adding) closeDialog();
+  };
 
   return (
     <ModalBase
       title="Add torrent"
       width={620}
-      onCancel={closeDialog}
-      onPrimary={add}
+      onCancel={cancel}
+      onPrimary={() => void add()}
       footer={
         <>
-          <Button variant="secondary" onClick={closeDialog}>
+          <Button variant="secondary" onClick={cancel} disabled={adding}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={add} disabled={!meta}>
-            Add
+          <Button
+            variant="primary"
+            onClick={() => void add()}
+            disabled={!meta || adding}
+          >
+            {adding ? "Adding…" : "Add"}
           </Button>
         </>
       }

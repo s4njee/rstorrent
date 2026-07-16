@@ -31,3 +31,10 @@ export function onMenuAction(
 ): Promise<UnlistenFn> {
   return listen<string>("menu://action", (e) => cb(e.payload));
 }
+
+/** Files or deep links opened after the frontend completed startup. */
+export function onOpenRequests(
+  cb: (urls: string[]) => void,
+): Promise<UnlistenFn> {
+  return listen<string[]>("app://open-requests", (e) => cb(e.payload));
+}
