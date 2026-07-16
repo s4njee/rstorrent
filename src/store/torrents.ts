@@ -58,7 +58,10 @@ function sameTorrent(a: TorrentDto, b: TorrentDto): boolean {
     a.label === b.label &&
     a.trackerHost === b.trackerHost &&
     a.priority === b.priority &&
-    a.name === b.name
+    a.name === b.name &&
+    a.throttleName === b.throttleName &&
+    a.downRateLimit === b.downRateLimit &&
+    a.upRateLimit === b.upRateLimit
   );
 }
 

@@ -371,7 +371,10 @@ function LogView({ hash }: { hash: string }) {
 
 /** General tab: 4-column label/value grid from the snapshot. */
 function General({ torrent: t }: { torrent: TorrentDto }) {
-  const g = useTorrents.getState().globals;
+  const g = useTorrents((state) => state.globals);
+  const downLimit = t.downRateLimit ?? g.downRateLimit;
+  const upLimit = t.upRateLimit ?? g.upRateLimit;
+  const limitSource = t.throttleName ? " · torrent" : " · global";
   const pairs: Array<[string, string]> = [
     ["downloaded", formatBytes(t.bytesDone)],
     ["size", formatBytes(t.size)],
@@ -379,8 +382,8 @@ function General({ torrent: t }: { torrent: TorrentDto }) {
     ["ratio", formatRatio(t.ratio)],
     ["eta", formatEta(t.etaSeconds, t.status)],
     ["conns", String(t.peersConnected)],
-    ["dl-limit", g.downRateLimit ? formatRate(g.downRateLimit) : "∞"],
-    ["ul-limit", g.upRateLimit ? formatRate(g.upRateLimit) : "∞"],
+    ["dl-limit", (downLimit ? formatRate(downLimit) : "∞") + limitSource],
+    ["ul-limit", (upLimit ? formatRate(upLimit) : "∞") + limitSource],
   ];
   return (
     <div className={styles.general}>

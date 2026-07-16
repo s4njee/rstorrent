@@ -85,6 +85,15 @@ export function setLabel(hashes: string[], label: string): Promise<void> {
   return invoke("set_label", { hashes, label });
 }
 
+/** Apply a per-torrent named throttle (KiB/s); two zeroes clear it. */
+export function setTorrentLimits(
+  hashes: string[],
+  downKb: number,
+  upKb: number,
+): Promise<void> {
+  return invoke("set_torrent_limits", { hashes, downKb, upKb });
+}
+
 export function setLocation(hash: string, path: string): Promise<void> {
   return invoke("set_location", { hash, path });
 }

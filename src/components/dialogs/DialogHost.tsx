@@ -9,6 +9,7 @@ import { AddTorrentDialog } from "./AddTorrentDialog";
 import { AddMagnetDialog } from "./AddMagnetDialog";
 import { PreferencesDialog } from "./PreferencesDialog";
 import { StatisticsDialog } from "./StatisticsDialog";
+import { RateLimitDialog } from "./RateLimitDialog";
 
 export function DialogHost() {
   const dialog = useUi((s) => s.dialog);
@@ -25,6 +26,8 @@ export function DialogHost() {
       return <PreferencesDialog />;
     case "stats":
       return <StatisticsDialog />;
+    case "rate-limit":
+      return <RateLimitDialog />;
     default:
       return null;
   }

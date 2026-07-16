@@ -33,6 +33,7 @@ impl Default for Settings {
             dht_enabled: false,
             watch_folder: String::new(),
             completion_notification_excluded_labels: Vec::new(),
+            torrent_throttles: Vec::new(),
             // Honour the env var so `RSTORRENT_MOCK=1` flips the default on.
             mock: std::env::var("RSTORRENT_MOCK").is_ok(),
         }
@@ -107,6 +108,14 @@ mod tests {
         assert_eq!(patched.poll_ms, 2000);
         // Untouched field preserved.
         assert_eq!(patched.stall_window_s, s.stall_window_s);
+    }
+
+    #[test]
+    fn old_settings_without_torrent_throttles_still_load() {
+        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("torrentThrottles");
+        let loaded: Settings = serde_json::from_value(value).unwrap();
+        assert!(loaded.torrent_throttles.is_empty());
     }
 
     #[test]

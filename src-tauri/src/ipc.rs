@@ -46,6 +46,13 @@ pub struct TorrentDto {
     pub save_path: String,
     pub priority: i64,
     pub is_private: bool,
+    /// App-owned named throttle assigned to this torrent, empty when it uses
+    /// the global limits.
+    pub throttle_name: String,
+    /// Named-throttle limits in bytes/s. `None` means use the corresponding
+    /// global limit; `Some(0)` is an unlimited direction within a named group.
+    pub down_rate_limit: Option<i64>,
+    pub up_rate_limit: Option<i64>,
 }
 
 /// Global counters for the status bar and General tab.
@@ -234,7 +241,22 @@ pub struct Settings {
     /// Labels whose completed torrents should not produce a notification.
     #[serde(default)]
     pub completion_notification_excluded_labels: Vec<String>,
+    /// Definitions for the small app-owned named-throttle pool. rtorrent does
+    /// not persist definitions across daemon restarts, so the poller replays
+    /// these whenever it connects.
+    #[serde(default)]
+    pub torrent_throttles: Vec<NamedThrottle>,
     pub mock: bool,
+}
+
+/// One app-owned rtorrent named-throttle definition. Rates are KiB/s and zero
+/// means unlimited for that direction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedThrottle {
+    pub name: String,
+    pub down_kb: i64,
+    pub up_kb: i64,
 }
 
 fn default_port_range() -> String {

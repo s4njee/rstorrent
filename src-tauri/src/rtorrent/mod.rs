@@ -81,6 +81,8 @@ pub struct RawTorrent {
     pub peers_connected: i64,
     pub priority: i64,
     pub is_private: bool,
+    /// `d.throttle_name`: empty means the torrent uses the global throttle.
+    pub throttle_name: String,
 }
 
 /// Raw global counters fetched alongside the torrent list each poll.
@@ -177,6 +179,18 @@ pub trait RtorrentApi: Send + Sync {
     async fn set_priority(&self, hash: &str, priority: i64) -> Result<()>;
     async fn set_file_priority(&self, hash: &str, index: usize, priority: i64)
         -> Result<()>;
+
+    /// Define or update both directions of a named throttle (rates in KiB/s,
+    /// zero = unlimited). rtorrent requires rate arguments to be strings.
+    async fn define_named_throttle(&self, name: &str, down_kb: i64, up_kb: i64)
+        -> Result<()>;
+
+    /// Assign a named throttle to all hashes. `None` clears the assignment and
+    /// returns those torrents to the global throttle.
+    async fn assign_throttle(&self, hashes: &[String], name: Option<&str>) -> Result<()>;
+
+    /// Read one torrent's current named-throttle assignment.
+    async fn torrent_throttle_name(&self, hash: &str) -> Result<String>;
 
     /// Read a torrent's on-disk base path (needed before "delete data").
     async fn base_path(&self, hash: &str) -> Result<String>;

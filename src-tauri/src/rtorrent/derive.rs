@@ -62,7 +62,11 @@ pub fn ratio(t: &RawTorrent) -> f64 {
 
 /// Assemble the full DTO the frontend consumes. `tracker_host` comes from the
 /// slow poll's per-hash cache and may be empty until resolved.
-pub fn to_dto(t: &RawTorrent, tracker_host: &str) -> TorrentDto {
+pub fn to_dto(
+    t: &RawTorrent,
+    tracker_host: &str,
+    named_limits: Option<(i64, i64)>,
+) -> TorrentDto {
     let st = status(t);
     TorrentDto {
         hash: t.hash.clone(),
@@ -89,6 +93,9 @@ pub fn to_dto(t: &RawTorrent, tracker_host: &str) -> TorrentDto {
         },
         priority: t.priority,
         is_private: t.is_private,
+        throttle_name: t.throttle_name.clone(),
+        down_rate_limit: named_limits.map(|limits| limits.0.saturating_mul(1024)),
+        up_rate_limit: named_limits.map(|limits| limits.1.saturating_mul(1024)),
     }
 }
 
@@ -182,5 +189,15 @@ mod tests {
         assert!((percent(&t) - 100.0).abs() < 1e-9);
         t.size_bytes = 0;
         assert_eq!(percent(&t), 0.0);
+    }
+
+    #[test]
+    fn dto_includes_named_throttle_limits_in_bytes() {
+        let mut t = raw();
+        t.throttle_name = "rstorrent_1".into();
+        let dto = to_dto(&t, "tracker.example", Some((512, 0)));
+        assert_eq!(dto.throttle_name, "rstorrent_1");
+        assert_eq!(dto.down_rate_limit, Some(512 * 1024));
+        assert_eq!(dto.up_rate_limit, Some(0));
     }
 }

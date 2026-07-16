@@ -13,7 +13,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useUi } from "../../store/ui";
 import { useTorrents } from "../../store/torrents";
 import * as actions from "../../actions";
-import { setLabel, setLocation } from "../../ipc/commands";
+import { setLabel, setLocation, setTorrentLimits } from "../../ipc/commands";
 import {
   PlayIcon,
   PauseIcon,
@@ -24,6 +24,7 @@ import {
   OpenIcon,
   RemoveIcon,
   ChevronRight,
+  RateLimitIcon,
 } from "../icons";
 import styles from "./ContextMenu.module.css";
 
@@ -36,6 +37,7 @@ export function ContextMenu() {
 
   const [labelOpen, setLabelOpen] = useState(false);
   const [newLabel, setNewLabel] = useState("");
+  const [rateOpen, setRateOpen] = useState(false);
 
   // Distinct existing labels for the submenu.
   const labels = useMemo(
@@ -59,6 +61,15 @@ export function ContextMenu() {
 
   const applyLabel = (value: string) => {
     if (hashes.length) void setLabel(hashes, value);
+    close();
+  };
+
+  const applyRate = (downKb: number, upKb: number) => {
+    if (hashes.length) {
+      void setTorrentLimits(hashes, downKb, upKb).catch(() => {
+        // The Rust command records the failure in the app log.
+      });
+    }
     close();
   };
 
@@ -158,6 +169,53 @@ export function ContextMenu() {
                       applyLabel(newLabel.trim());
                   }}
                 />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div
+          className={styles.item}
+          onMouseEnter={() => setRateOpen(true)}
+          onMouseLeave={() => setRateOpen(false)}
+        >
+          <span className={styles.icon}>
+            <RateLimitIcon size={12} />
+          </span>
+          Limit rates
+          <span className={styles.grow} />
+          <span className={styles.arrow}>
+            <ChevronRight size={10} />
+          </span>
+          {rateOpen && (
+            <div className={styles.submenu}>
+              <div className={styles.item} onClick={() => applyRate(512, 512)}>
+                512 KiB/s
+              </div>
+              <div
+                className={styles.item}
+                onClick={() => applyRate(1024, 1024)}
+              >
+                1 MiB/s
+              </div>
+              <div
+                className={styles.item}
+                onClick={() => applyRate(5120, 5120)}
+              >
+                5 MiB/s
+              </div>
+              <div className={styles.sep} />
+              <div
+                className={styles.item}
+                onClick={() => {
+                  close();
+                  openDialog("rate-limit");
+                }}
+              >
+                Custom…
+              </div>
+              <div className={styles.item} onClick={() => applyRate(0, 0)}>
+                Unlimited
               </div>
             </div>
           )}
