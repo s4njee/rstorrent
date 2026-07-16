@@ -1,5 +1,6 @@
 dist
 src-tauri/target
+.claude
 design
 package-lock.json
 src-tauri/gen
