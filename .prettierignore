@@ -2,3 +2,8 @@ dist
 src-tauri/target
 design
 package-lock.json
+README.md
+plan.md
+tasks.md
+docs/rtorrent-setup.md
+src-tauri/gen

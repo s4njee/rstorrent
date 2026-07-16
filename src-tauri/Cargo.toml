@@ -44,6 +44,12 @@ notify = "7"          # watched-folder auto-add (E11-S5)
 thiserror = "2"       # typed error enums across the rtorrent layer
 async-trait = "0.1"   # dyn-compatible async RtorrentApi trait (Scgi vs Mock)
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Native notifications with a click response. The official Tauri notification
+# plugin only exposes notification actions on mobile, so it cannot implement
+# B2's click-to-select behavior on macOS.
+mac-notification-sys = "=0.6.8"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "test-util"] }
 

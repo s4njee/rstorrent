@@ -31,3 +31,10 @@ export function onMenuAction(
 ): Promise<UnlistenFn> {
   return listen<string>("menu://action", (e) => cb(e.payload));
 }
+
+/** The user clicked a native download-completion notification. */
+export function onNotificationClick(
+  cb: (hash: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>("torrent://notification-clicked", (e) => cb(e.payload));
+}

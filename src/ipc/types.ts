@@ -183,6 +183,8 @@ export interface Settings {
   portRange: string; // e.g. "6881-6899"
   dhtEnabled: boolean;
   watchFolder: string; // auto-add .torrent files from here; empty = disabled
+  /** Labels whose completed torrents should not produce a notification. */
+  completionNotificationExcludedLabels: string[];
   mock: boolean;
 }
 

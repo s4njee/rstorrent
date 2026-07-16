@@ -7,7 +7,13 @@
  */
 
 import { useEffect } from "react";
-import { onSnapshot, onDetail, onLog, onMenuAction } from "./ipc/events";
+import {
+  onSnapshot,
+  onDetail,
+  onLog,
+  onMenuAction,
+  onNotificationClick,
+} from "./ipc/events";
 import { setDetailWatch, getLog, retryConnection } from "./ipc/commands";
 import { useKeyboardShortcuts } from "./hooks/useKeyboard";
 import { useTorrents } from "./store/torrents";
@@ -64,6 +70,18 @@ export default function App() {
           .getState()
           .openDialog(action as "prefs" | "add-file" | "add-magnet" | "stats"),
       ),
+      onNotificationClick((hash) => {
+        const ui = useUi.getState();
+        ui.closeDialog();
+        ui.setFilter(null);
+        ui.setSearch("");
+        ui.select(hash);
+        requestAnimationFrame(() => {
+          document
+            .getElementById(`torrent-row-${hash}`)
+            ?.scrollIntoView({ block: "nearest" });
+        });
+      }),
     ];
     return () => {
       unsubs.forEach((p) => void p.then((un) => un()));
