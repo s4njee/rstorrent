@@ -40,12 +40,17 @@ connects to the live daemon and polls cleanly. (Note: rtorrent 0.16 crashes on a
 malformed all-zero-hash magnet — an upstream bug, documented in
 `docs/rtorrent-setup.md`; use real magnets.)
 
+**Packaged:** `npm run tauri build` produces a branded `rstorrent.app` (5.4 MB)
+and `rstorrent_0.1.0_aarch64.dmg`; the release `.app` launches cleanly in mock
+mode. Build/signing steps are in `docs/release.md`.
+
 Still open (M6): `E13` polish — perf/virtualization (`E13-S2`), fuller
 disconnected/first-run card (`E13-S1`), accessibility (`E13-S4`), UI-state
-persistence (`E13-S3`), QA checklist (`E13-S5`) — and `E14` packaging (app icon +
-`.dmg`). `E12`'s cache-overload stat has no rtorrent source (stays "—"). Still to
-verify live against an *actively downloading* torrent: per-file priorities, Speed
-chart, peers/trackers population.
+persistence beyond the current sort/filter/tab (`E13-S3`), and *running* the
+`docs/qa-checklist.md` on a clean account (`E13-S5`); and `E14-S2` (clean-account
+release QA + Developer-ID signing, when a cert exists). `E12`'s cache-overload
+stat has no rtorrent source (stays "—"). Still to verify live against an *actively
+downloading* torrent: per-file priorities, Speed chart, peers/trackers population.
 
 ---
 
@@ -458,7 +463,7 @@ Deps: all M1–M5 epics.
 
 Deps: E13.
 
-- [ ] **E14-S1 · App icon & bundle config** (S)
+- [x] **E14-S1 · App icon & bundle config** (S)
   Dark-ops app icon (rounded-square `#14161a`, cyan down-arrow glyph) via `tauri icon`; bundle metadata (name, version 0.1.0, copyright, category public.app-category.utilities); dmg target.
   **AC:** `npm run tauri build` yields a branded `.app` + `.dmg`.
   **Verify:** build + open dmg.
