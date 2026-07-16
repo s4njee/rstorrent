@@ -27,6 +27,11 @@ export function readTorrentMetadata(path: string): Promise<TorrentMeta> {
   return invoke("read_torrent_metadata", { path });
 }
 
+/** Drain file/deep-link requests that arrived before the webview was ready. */
+export function takeOpenRequests(): Promise<string[]> {
+  return invoke("take_open_requests");
+}
+
 /** Add a torrent (file or magnet) with the given options. */
 export function addTorrent(source: AddSource, opts: AddOptions): Promise<void> {
   return invoke("add_torrent", { source, opts });

@@ -12,14 +12,15 @@ import { StatisticsDialog } from "./StatisticsDialog";
 
 export function DialogHost() {
   const dialog = useUi((s) => s.dialog);
+  const external = useUi((s) => s.externalAddRequest);
 
   switch (dialog) {
     case "remove":
       return <RemoveDialog />;
     case "add-file":
-      return <AddTorrentDialog />;
+      return <AddTorrentDialog key={external?.id ?? "manual-file"} />;
     case "add-magnet":
-      return <AddMagnetDialog />;
+      return <AddMagnetDialog key={external?.id ?? "manual-magnet"} />;
     case "prefs":
       return <PreferencesDialog />;
     case "stats":

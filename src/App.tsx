@@ -7,8 +7,25 @@
  */
 
 import { useEffect } from "react";
-import { onSnapshot, onDetail, onLog, onMenuAction } from "./ipc/events";
-import { setDetailWatch, getLog, retryConnection } from "./ipc/commands";
+import {
+  onSnapshot,
+  onDetail,
+  onLog,
+  onMenuAction,
+  onOpenRequests,
+} from "./ipc/events";
+import {
+  addTorrent,
+  setDetailWatch,
+  getLog,
+  retryConnection,
+  takeOpenRequests,
+} from "./ipc/commands";
+import {
+  defaultAddOptions,
+  OpenRequestQueue,
+  parseOpenRequests,
+} from "./externalOpen";
 import { useKeyboardShortcuts } from "./hooks/useKeyboard";
 import { useTorrents } from "./store/torrents";
 import { useUi } from "./store/ui";
@@ -46,7 +63,6 @@ export default function App() {
     const prune = useUi.getState().pruneSelection;
     const setDetail = useDetail.getState().setDetail;
     const recordRates = useRateHistory.getState().record;
-    void useSettings.getState().load();
     // Hydrate the log from the ring buffer, then keep it live.
     void getLog().then((entries) => useLog.getState().hydrate(entries));
 
@@ -67,6 +83,57 @@ export default function App() {
     ];
     return () => {
       unsubs.forEach((p) => void p.then((un) => un()));
+    };
+  }, []);
+
+  // Serialize Finder-opened .torrent files and magnet: deep links. The Rust
+  // handoff does not emit warm events until takeOpenRequests marks us ready,
+  // so subscribing before that command closes the startup race completely.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    const queue = new OpenRequestQueue(
+      async (source) => {
+        let settings = useSettings.getState().settings;
+        if (!settings) {
+          await useSettings.getState().load();
+          settings = useSettings.getState().settings;
+        }
+        if (!settings) throw new Error("settings did not load");
+
+        if (settings.showAddDialog) {
+          await new Promise<void>((resolve) =>
+            useUi.getState().openExternalAdd(source, resolve),
+          );
+        } else {
+          await addTorrent(source, defaultAddOptions(settings));
+        }
+      },
+      (error, source) => {
+        console.error("could not handle external add request", source, error);
+      },
+    );
+
+    void (async () => {
+      if (!useSettings.getState().settings) {
+        await useSettings.getState().load();
+      }
+      if (cancelled) return;
+
+      unlisten = await onOpenRequests((urls) =>
+        queue.enqueue(parseOpenRequests(urls)),
+      );
+      if (cancelled) {
+        unlisten();
+        return;
+      }
+
+      queue.enqueue(parseOpenRequests(await takeOpenRequests()));
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
     };
   }, []);
 
