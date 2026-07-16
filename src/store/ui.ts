@@ -9,6 +9,15 @@
 
 import { create } from "zustand";
 import type { DetailTab } from "../ipc/types";
+import {
+  defaultColumnState,
+  deserializeColumnState,
+  resizeColumn as resizeColumnState,
+  serializeColumnState,
+  toggleColumn as toggleColumnState,
+  type ColumnId,
+  type ColumnState,
+} from "../components/table/columns";
 
 /** Columns the table can sort by (subset of visible columns that make sense). */
 export type SortColumn =
@@ -39,10 +48,13 @@ interface UiState {
   search: string;
   sortColumn: SortColumn;
   sortDir: SortDir;
+  columns: ColumnState;
   activeTab: DetailTab;
   dialog: DialogKind;
   /** Cursor position for the context menu, or null when closed. */
   contextMenu: { x: number; y: number } | null;
+  /** Cursor position for the header column menu, or null when closed. */
+  columnMenu: { x: number; y: number } | null;
 
   // --- selection ---
   select: (hash: string) => void;
@@ -57,6 +69,9 @@ interface UiState {
   setFilter: (f: ActiveFilter) => void;
   setSearch: (s: string) => void;
   setSort: (col: SortColumn) => void;
+  resizeColumn: (id: ColumnId, width: number) => void;
+  toggleColumn: (id: ColumnId) => void;
+  resetColumns: () => void;
   setActiveTab: (t: DetailTab) => void;
 
   // --- dialogs / menu ---
@@ -64,6 +79,8 @@ interface UiState {
   closeDialog: () => void;
   openContextMenu: (x: number, y: number) => void;
   closeContextMenu: () => void;
+  openColumnMenu: (x: number, y: number) => void;
+  closeColumnMenu: () => void;
 }
 
 // --- localStorage persistence for view prefs ---
@@ -73,21 +90,38 @@ interface PersistedView {
   sortDir: SortDir;
   filter: ActiveFilter;
   activeTab: DetailTab;
+  columns: string;
 }
 
-function loadView(): PersistedView {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw) as PersistedView;
-  } catch {
-    // ignore malformed storage
-  }
-  return {
+interface LoadedView extends Omit<PersistedView, "columns"> {
+  columns: ColumnState;
+}
+
+function loadView(): LoadedView {
+  const fallback: LoadedView = {
     sortColumn: "name",
     sortDir: "asc",
     filter: null,
     activeTab: "general",
+    columns: defaultColumnState(),
   };
+
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PersistedView>;
+      return {
+        sortColumn: parsed.sortColumn ?? fallback.sortColumn,
+        sortDir: parsed.sortDir ?? fallback.sortDir,
+        filter: parsed.filter ?? fallback.filter,
+        activeTab: parsed.activeTab ?? fallback.activeTab,
+        columns: deserializeColumnState(parsed.columns),
+      };
+    }
+  } catch {
+    // ignore malformed storage
+  }
+  return fallback;
 }
 
 function saveView(v: PersistedView) {
@@ -109,6 +143,7 @@ export const useUi = create<UiState>((set, get) => {
       sortDir: s.sortDir,
       filter: s.filter,
       activeTab: s.activeTab,
+      columns: serializeColumnState(s.columns),
     });
   };
 
@@ -119,9 +154,11 @@ export const useUi = create<UiState>((set, get) => {
     search: "",
     sortColumn: initial.sortColumn,
     sortDir: initial.sortDir,
+    columns: initial.columns,
     activeTab: initial.activeTab,
     dialog: null,
     contextMenu: null,
+    columnMenu: null,
 
     select: (hash) => set({ selection: new Set([hash]), anchor: hash }),
 
@@ -174,14 +211,29 @@ export const useUi = create<UiState>((set, get) => {
       });
       persist();
     },
+    resizeColumn: (id, width) => {
+      set((s) => ({ columns: resizeColumnState(s.columns, id, width) }));
+      persist();
+    },
+    toggleColumn: (id) => {
+      set((s) => ({ columns: toggleColumnState(s.columns, id) }));
+      persist();
+    },
+    resetColumns: () => {
+      set({ columns: defaultColumnState() });
+      persist();
+    },
     setActiveTab: (t) => {
       set({ activeTab: t });
       persist();
     },
 
-    openDialog: (dialog) => set({ dialog, contextMenu: null }),
+    openDialog: (dialog) =>
+      set({ dialog, contextMenu: null, columnMenu: null }),
     closeDialog: () => set({ dialog: null }),
-    openContextMenu: (x, y) => set({ contextMenu: { x, y } }),
+    openContextMenu: (x, y) => set({ contextMenu: { x, y }, columnMenu: null }),
     closeContextMenu: () => set({ contextMenu: null }),
+    openColumnMenu: (x, y) => set({ columnMenu: { x, y }, contextMenu: null }),
+    closeColumnMenu: () => set({ columnMenu: null }),
   };
 });

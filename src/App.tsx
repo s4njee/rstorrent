@@ -24,6 +24,7 @@ import { TorrentTable } from "./components/table/TorrentTable";
 import { DetailTabs } from "./components/details/DetailTabs";
 import { DialogHost } from "./components/dialogs/DialogHost";
 import { ContextMenu } from "./components/menu/ContextMenu";
+import { ColumnMenu } from "./components/menu/ColumnMenu";
 import styles from "./App.module.css";
 
 /** Minimal `~/.rtorrent.rc` shown on the disconnected card (see docs/rtorrent-setup.md). */
@@ -126,6 +127,7 @@ export default function App() {
       <DetailTabs />
       <StatusBar />
       <ContextMenu />
+      <ColumnMenu />
       <DialogHost />
     </div>
   );

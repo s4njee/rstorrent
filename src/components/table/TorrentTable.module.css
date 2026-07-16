@@ -1,6 +1,5 @@
-/* Torrent table. The 12-column grid template is copied verbatim from the design
-   spec so column widths match the mockup exactly. The header row is sticky and
-   only the body scrolls. */
+/* Torrent table. The header and rows inherit the same persisted grid template;
+   the body remains the only scrolling region. */
 .table {
   flex: 1;
   min-width: 0;
@@ -12,9 +11,7 @@
 
 .grid {
   display: grid;
-  grid-template-columns:
-    minmax(200px, 1fr)
-    70px 92px 84px 52px 52px 76px 76px 62px 46px 72px 110px;
+  grid-template-columns: var(--torrent-grid-template);
   align-items: center;
 }
 
@@ -29,10 +26,23 @@
   flex: none;
 }
 .header > span {
+  position: relative;
   padding: 5px 6px;
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
+}
+.resizeHandle {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  padding: 0 !important;
+  cursor: col-resize;
+  touch-action: none;
+  overflow: visible !important;
 }
 .header > span:first-child {
   padding-left: 10px;
