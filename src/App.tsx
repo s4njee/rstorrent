@@ -8,7 +8,7 @@
 
 import { useEffect } from "react";
 import { onSnapshot, onDetail, onLog, onMenuAction } from "./ipc/events";
-import { setDetailWatch, getLog } from "./ipc/commands";
+import { setDetailWatch, getLog, retryConnection } from "./ipc/commands";
 import { useKeyboardShortcuts } from "./hooks/useKeyboard";
 import { useTorrents } from "./store/torrents";
 import { useUi } from "./store/ui";
@@ -25,6 +25,15 @@ import { DetailTabs } from "./components/details/DetailTabs";
 import { DialogHost } from "./components/dialogs/DialogHost";
 import { ContextMenu } from "./components/menu/ContextMenu";
 import styles from "./App.module.css";
+
+/** Minimal `~/.rtorrent.rc` shown on the disconnected card (see docs/rtorrent-setup.md). */
+const RTORRENT_RC_SNIPPET = `# ~/.rtorrent.rc  (absolute paths; replace /Users/you)
+session.path.set = /Users/you/.rtorrent/session
+network.scgi.open_local = /Users/you/.rtorrent/rpc.socket
+
+# then, in a terminal:
+#   mkdir -p ~/.rtorrent/session
+#   tmux new-session -d -s rtorrent 'rtorrent'`;
 
 export default function App() {
   const connection = useTorrents((s) => s.connection);
@@ -94,6 +103,22 @@ export default function App() {
               <span className={styles.retry}>
                 retrying in {connection.retryInSeconds}s…
               </span>
+            )}
+            {connection.phase === "disconnected" && (
+              <>
+                <div className={styles.actions}>
+                  <button onClick={() => void retryConnection()}>
+                    Retry now
+                  </button>
+                  <button onClick={() => useUi.getState().openDialog("prefs")}>
+                    Open Preferences
+                  </button>
+                </div>
+                <details className={styles.hint}>
+                  <summary>rtorrent not running? Show setup snippet</summary>
+                  <pre>{RTORRENT_RC_SNIPPET}</pre>
+                </details>
+              </>
             )}
           </div>
         )}

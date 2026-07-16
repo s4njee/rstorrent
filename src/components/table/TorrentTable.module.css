@@ -12,10 +12,9 @@
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(
-      200px,
-      1fr
-    ) 70px 92px 84px 52px 52px 76px 76px 62px 46px 72px 110px;
+  grid-template-columns:
+    minmax(200px, 1fr)
+    70px 92px 84px 52px 52px 76px 76px 62px 46px 72px 110px;
   align-items: center;
 }
 

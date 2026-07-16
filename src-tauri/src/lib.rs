@@ -74,6 +74,7 @@ pub fn run() {
             commands::get_settings,
             commands::apply_settings,
             commands::test_connection,
+            commands::retry_connection,
             commands::set_detail_watch,
             commands::get_log,
             commands::get_statistics,

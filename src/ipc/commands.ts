@@ -113,3 +113,8 @@ export function getStatistics(): Promise<Statistics> {
 export function getLog(): Promise<LogEntry[]> {
   return invoke("get_log");
 }
+
+/** Ask the poller to attempt a reconnect immediately. */
+export function retryConnection(): Promise<void> {
+  return invoke("retry_connection");
+}

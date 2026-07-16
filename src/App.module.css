@@ -38,3 +38,41 @@
   color: var(--accent-cyan);
   font-size: var(--fs-cell);
 }
+.disconnected .actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.disconnected .actions button {
+  padding: 5px 14px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-track);
+  color: var(--text-body);
+  border-radius: var(--radius-input);
+  font-size: var(--fs-title);
+  cursor: default;
+}
+.disconnected .actions button:first-child {
+  border-color: var(--accent-cyan);
+  background: var(--bg-selected);
+  color: var(--accent-cyan-bright);
+}
+.disconnected .hint {
+  margin-top: 8px;
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+  max-width: 460px;
+}
+.disconnected .hint summary {
+  cursor: default;
+}
+.disconnected .hint pre {
+  text-align: left;
+  background: var(--bg-field);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-input);
+  padding: 8px 10px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  overflow-x: auto;
+}

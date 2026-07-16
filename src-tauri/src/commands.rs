@@ -283,6 +283,12 @@ pub async fn test_connection(transport: Transport) -> Result<String, String> {
         .map_err(e)
 }
 
+/// Wake the poller immediately (used by the disconnected card's "Retry now").
+#[tauri::command]
+pub fn retry_connection(state: St<'_>) {
+    state.repoll.notify_one();
+}
+
 #[tauri::command]
 pub fn set_detail_watch(state: St<'_>, hash: Option<String>, tab: Option<DetailTab>) {
     let mut w = state.detail_watch.lock().unwrap();
