@@ -178,6 +178,17 @@ export type Transport =
   | { kind: "unixSocket"; path: string }
   | { kind: "tcp"; host: string; port: number };
 
+/** Ratio/time limits for completed torrents. Zero disables either rule. */
+export interface SeedGoal {
+  stopRatio: number;
+  seedHours: number;
+}
+
+/** A label-specific replacement for the global seed goal. */
+export interface LabelSeedGoal extends SeedGoal {
+  label: string;
+}
+
 /** App settings shared with the frontend Preferences UI. */
 export interface Settings {
   transport: Transport;
@@ -195,6 +206,8 @@ export interface Settings {
   completionNotificationExcludedLabels: string[];
   /** App-owned throttle definitions replayed after daemon restarts. */
   torrentThrottles: NamedThrottle[];
+  globalSeedGoal: SeedGoal;
+  labelSeedGoals: LabelSeedGoal[];
   mock: boolean;
 }
 

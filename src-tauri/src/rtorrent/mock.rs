@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 
@@ -99,7 +99,7 @@ impl MockClient {
         }
     }
 
-    /// Advance simulated progress by the real time elapsed since the last call.
+    /// Advance simulated download progress and seeding ratios by elapsed time.
     fn tick(state: &mut State) {
         let now = Instant::now();
         let dt = now.duration_since(state.last_tick).as_secs_f64();
@@ -122,7 +122,13 @@ impl MockClient {
                     if let Some(rates) = natural_rates.get_mut(&t.hash) {
                         rates.0 = 0;
                     }
+                    t.finished_at = unix_now();
                 }
+            } else if t.is_active && t.complete && t.up_rate > 0 && t.size_bytes > 0 {
+                // Run seeding faster than wall time so a low goal is easy to
+                // exercise during a short mock-mode development session.
+                let uploaded = t.up_rate as f64 * dt * 20.0;
+                t.ratio_permille += (uploaded * 1000.0 / t.size_bytes as f64) as i64;
             }
         }
     }
@@ -485,6 +491,13 @@ fn tracker_url(hash: &str) -> &'static str {
     }
 }
 
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
+}
+
 fn tracker_host(url: &str) -> String {
     let after_scheme = url.split("://").nth(1).unwrap_or(url);
     after_scheme
@@ -557,12 +570,13 @@ fn t(
     message: &str,
 ) -> RawTorrent {
     let size_bytes = size as i64;
+    let complete = done_pct >= 100.0;
     RawTorrent {
         hash: hash.to_string(),
         name: name.to_string(),
         size_bytes,
         bytes_done: (size * done_pct / 100.0) as i64,
-        complete: done_pct >= 100.0,
+        complete,
         is_active: active,
         is_open: open,
         hashing: false,
@@ -579,6 +593,7 @@ fn t(
         priority: 2,
         is_private: false,
         throttle_name: String::new(),
+        finished_at: if complete { unix_now() - 3 * 3600 } else { 0 },
     }
 }
 
@@ -636,6 +651,17 @@ mod tests {
         let fedora = rows.iter().find(|r| r.hash == "C3").unwrap();
         assert!(!fedora.is_active);
         assert_eq!(derive::status(fedora), Status::Paused);
+    }
+
+    #[tokio::test]
+    async fn active_seed_ratios_grow() {
+        let c = MockClient::new();
+        let before = c.state.lock().unwrap().torrents[0].ratio_permille;
+        c.state.lock().unwrap().last_tick =
+            Instant::now() - std::time::Duration::from_secs(1);
+
+        let rows = c.list_snapshot().await.unwrap();
+        assert!(rows[0].ratio_permille > before);
     }
 
     #[tokio::test]

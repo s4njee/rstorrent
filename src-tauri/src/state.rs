@@ -103,8 +103,10 @@ impl AppState {
                 error: None,
                 retry_in_seconds: None,
             });
-            self.repoll.notify_one();
         }
+        // Every setting is live; in particular, seed goals are enforced by the
+        // next snapshot without rebuilding or restarting the backend.
+        self.repoll.notify_one();
         next
     }
 

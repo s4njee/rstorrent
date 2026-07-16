@@ -217,6 +217,23 @@ pub enum Transport {
     Tcp { host: String, port: u16 },
 }
 
+/// Ratio/time limits applied to a completed torrent. Zero disables a rule.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeedGoal {
+    pub stop_ratio: f64,
+    pub seed_hours: f64,
+}
+
+/// A label-specific replacement for the global seed goal.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelSeedGoal {
+    pub label: String,
+    pub stop_ratio: f64,
+    pub seed_hours: f64,
+}
+
 /// App settings shared with the Preferences UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -246,6 +263,12 @@ pub struct Settings {
     /// these whenever it connects.
     #[serde(default)]
     pub torrent_throttles: Vec<NamedThrottle>,
+    /// Default seeding limits; both zero means no limit.
+    #[serde(default)]
+    pub global_seed_goal: SeedGoal,
+    /// Per-label replacements for the global goal, including explicit no-limit rows.
+    #[serde(default)]
+    pub label_seed_goals: Vec<LabelSeedGoal>,
     pub mock: bool,
 }
 

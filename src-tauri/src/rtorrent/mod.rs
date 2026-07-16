@@ -83,6 +83,8 @@ pub struct RawTorrent {
     pub is_private: bool,
     /// `d.throttle_name`: empty means the torrent uses the global throttle.
     pub throttle_name: String,
+    /// `d.timestamp.finished`: Unix seconds, or zero when unavailable.
+    pub finished_at: i64,
 }
 
 /// Raw global counters fetched alongside the torrent list each poll.

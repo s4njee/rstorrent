@@ -11,16 +11,18 @@
 //! A user action calls `state.repoll.notify_one()` to trigger an immediate extra
 //! fast poll so the UI reflects the change without waiting a full interval.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter};
 
 use crate::ipc::{
-    ConnPhase, ConnState, DetailPayload, DetailTab, GlobalStats, LogLevel, Snapshot, TorrentDto,
+    ConnPhase, ConnState, DetailPayload, DetailTab, GlobalStats, LabelSeedGoal, LogLevel, SeedGoal,
+    Snapshot, TorrentDto,
 };
 use crate::notifications::{self, CompletionTracker};
-use crate::rtorrent::{derive, RawGlobal};
+use crate::rtorrent::{derive, RawGlobal, RawTorrent};
 use crate::settings;
 use crate::state::AppState;
 
@@ -28,6 +30,94 @@ use crate::state::AppState;
 const BACKOFF: [u64; 4] = [1, 2, 5, 10];
 /// Max new tracker hosts resolved per fast poll, to avoid a burst on first load.
 const TRACKERS_PER_TICK: usize = 5;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GoalStopRecord {
+    ratio_permille: i64,
+    finished_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SeedGoalDecision {
+    hash: String,
+    message: String,
+    record: GoalStopRecord,
+}
+
+/// Pure seed-goal policy: select completed, active torrents whose applicable
+/// ratio or elapsed-time rule has been reached.
+///
+/// A successful goal-stop is remembered at its ratio and completion timestamp.
+/// If the user manually starts that torrent again, the same completion is not
+/// stopped immediately. It becomes eligible again only after its ratio grows,
+/// or after rtorrent reports a new completion timestamp (a fresh completion).
+fn seed_goal_decisions(
+    torrents: &[RawTorrent],
+    global: &SeedGoal,
+    overrides: &[LabelSeedGoal],
+    already_stopped: &HashMap<String, GoalStopRecord>,
+    now: i64,
+) -> Vec<SeedGoalDecision> {
+    let mut seen = HashSet::new();
+    torrents
+        .iter()
+        .filter(|torrent| {
+            torrent.complete && torrent.is_active && seen.insert(torrent.hash.clone())
+        })
+        .filter_map(|torrent| {
+            let goal = overrides
+                .iter()
+                .find(|goal| goal.label == torrent.label)
+                .map(|goal| SeedGoal {
+                    stop_ratio: goal.stop_ratio,
+                    seed_hours: goal.seed_hours,
+                })
+                .unwrap_or_else(|| global.clone());
+
+            if goal.stop_ratio <= 0.0 && goal.seed_hours <= 0.0 {
+                return None;
+            }
+
+            if already_stopped.get(&torrent.hash).is_some_and(|record| {
+                record.finished_at == torrent.finished_at
+                    && torrent.ratio_permille <= record.ratio_permille
+            }) {
+                return None;
+            }
+
+            let ratio = torrent.ratio_permille as f64 / 1000.0;
+            let ratio_met = goal.stop_ratio > 0.0 && ratio >= goal.stop_ratio;
+            let seeded_seconds = (torrent.finished_at > 0 && now >= torrent.finished_at)
+                .then_some(now - torrent.finished_at);
+            let time_met = goal.seed_hours > 0.0
+                && seeded_seconds.is_some_and(|seconds| seconds as f64 >= goal.seed_hours * 3600.0);
+
+            let message = if ratio_met {
+                format!(
+                    "seed goal reached: ratio {ratio:.1} ≥ {:.1} — stopped",
+                    goal.stop_ratio
+                )
+            } else if time_met {
+                format!(
+                    "seed goal reached: seeded {:.1} h ≥ {:.1} h — stopped",
+                    seeded_seconds.unwrap_or_default() as f64 / 3600.0,
+                    goal.seed_hours
+                )
+            } else {
+                return None;
+            };
+
+            Some(SeedGoalDecision {
+                hash: torrent.hash.clone(),
+                message,
+                record: GoalStopRecord {
+                    ratio_permille: torrent.ratio_permille,
+                    finished_at: torrent.finished_at,
+                },
+            })
+        })
+        .collect()
+}
 
 /// Spawn the fast and detail polling loops.
 ///
@@ -45,6 +135,7 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
 async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
     let mut failures: usize = 0;
     let mut completion_tracker = CompletionTracker::default();
+    let mut goal_stops: HashMap<String, GoalStopRecord> = HashMap::new();
 
     loop {
         let backend = state.backend();
@@ -102,6 +193,7 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
 
                 if !continuing_session {
                     completion_tracker.reset();
+                    goal_stops.clear();
                 }
 
                 let settings = state.settings();
@@ -112,6 +204,39 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                     notifications::post_completion(app.clone(), completion);
                 }
 
+                let decisions = seed_goal_decisions(
+                    &raw,
+                    &settings.global_seed_goal,
+                    &settings.label_seed_goals,
+                    &goal_stops,
+                    unix_now(),
+                );
+                if !decisions.is_empty() {
+                    let hashes: Vec<String> = decisions
+                        .iter()
+                        .map(|decision| decision.hash.clone())
+                        .collect();
+                    match backend.stop(&hashes).await {
+                        Ok(()) => {
+                            for decision in decisions {
+                                goal_stops.insert(decision.hash.clone(), decision.record);
+                                state.log(
+                                    &app,
+                                    LogLevel::Info,
+                                    decision.message,
+                                    Some(decision.hash),
+                                );
+                            }
+                        }
+                        Err(error) => state.log(
+                            &app,
+                            LogLevel::Error,
+                            format!("could not stop torrent at seed goal: {error}"),
+                            None,
+                        ),
+                    }
+                }
+
                 resolve_trackers(&app, &state, &raw).await;
                 let snapshot = build_snapshot(&state, raw, globals);
                 let _ = app.emit("state://snapshot", &snapshot);
@@ -119,6 +244,7 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
             Err(e) => {
                 failures += 1;
                 completion_tracker.reset();
+                goal_stops.clear();
                 notifications::set_dock_badge(&app, 0);
                 let delay = BACKOFF[(failures - 1).min(BACKOFF.len() - 1)];
                 let s = state.settings();
@@ -150,6 +276,13 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
 
         wait(poll_ms, &state).await;
     }
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
 }
 
 /// Sleep for `ms`, waking early if an immediate re-poll is requested.
@@ -271,5 +404,189 @@ async fn detail_loop(app: AppHandle, state: Arc<AppState>) {
         if let Some(p) = payload {
             let _ = app.emit("state://detail", &p);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOW: i64 = 1_000_000;
+
+    fn torrent(
+        ratio_permille: i64,
+        finished_at: i64,
+        label: &str,
+        complete: bool,
+        active: bool,
+    ) -> RawTorrent {
+        RawTorrent {
+            hash: "HASH".into(),
+            ratio_permille,
+            finished_at,
+            label: label.into(),
+            complete,
+            is_active: active,
+            ..RawTorrent::default()
+        }
+    }
+
+    #[test]
+    fn seed_goal_policy_is_table_driven() {
+        struct Case {
+            name: &'static str,
+            torrent: RawTorrent,
+            global: SeedGoal,
+            overrides: Vec<LabelSeedGoal>,
+            stopped: HashMap<String, GoalStopRecord>,
+            should_stop: bool,
+        }
+
+        let ratio_goal = SeedGoal {
+            stop_ratio: 2.0,
+            seed_hours: 0.0,
+        };
+        let time_goal = SeedGoal {
+            stop_ratio: 0.0,
+            seed_hours: 2.0,
+        };
+        let stopped_at_two = HashMap::from([(
+            "HASH".into(),
+            GoalStopRecord {
+                ratio_permille: 2_000,
+                finished_at: NOW - 10_800,
+            },
+        )]);
+        let cases = vec![
+            Case {
+                name: "ratio met",
+                torrent: torrent(2_000, NOW - 60, "", true, true),
+                global: ratio_goal.clone(),
+                overrides: vec![],
+                stopped: HashMap::new(),
+                should_stop: true,
+            },
+            Case {
+                name: "time met",
+                torrent: torrent(100, NOW - 10_800, "", true, true),
+                global: time_goal.clone(),
+                overrides: vec![],
+                stopped: HashMap::new(),
+                should_stop: true,
+            },
+            Case {
+                name: "both configured use OR semantics",
+                torrent: torrent(500, NOW - 10_800, "", true, true),
+                global: SeedGoal {
+                    stop_ratio: 2.0,
+                    seed_hours: 2.0,
+                },
+                overrides: vec![],
+                stopped: HashMap::new(),
+                should_stop: true,
+            },
+            Case {
+                name: "label override beats met global goal",
+                torrent: torrent(2_500, NOW - 60, "video", true, true),
+                global: ratio_goal.clone(),
+                overrides: vec![LabelSeedGoal {
+                    label: "video".into(),
+                    stop_ratio: 5.0,
+                    seed_hours: 0.0,
+                }],
+                stopped: HashMap::new(),
+                should_stop: false,
+            },
+            Case {
+                name: "explicit label no-limit beats global",
+                torrent: torrent(5_000, NOW - 10_800, "archive", true, true),
+                global: ratio_goal.clone(),
+                overrides: vec![LabelSeedGoal {
+                    label: "archive".into(),
+                    stop_ratio: 0.0,
+                    seed_hours: 0.0,
+                }],
+                stopped: HashMap::new(),
+                should_stop: false,
+            },
+            Case {
+                name: "global no-limit",
+                torrent: torrent(9_000, NOW - 86_400, "", true, true),
+                global: SeedGoal::default(),
+                overrides: vec![],
+                stopped: HashMap::new(),
+                should_stop: false,
+            },
+            Case {
+                name: "missing finished timestamp skips time rule",
+                torrent: torrent(100, 0, "", true, true),
+                global: time_goal,
+                overrides: vec![],
+                stopped: HashMap::new(),
+                should_stop: false,
+            },
+            Case {
+                name: "incomplete torrent",
+                torrent: torrent(3_000, NOW - 10_800, "", false, true),
+                global: ratio_goal.clone(),
+                overrides: vec![],
+                stopped: HashMap::new(),
+                should_stop: false,
+            },
+            Case {
+                name: "already inactive torrent",
+                torrent: torrent(3_000, NOW - 10_800, "", true, false),
+                global: ratio_goal.clone(),
+                overrides: vec![],
+                stopped: HashMap::new(),
+                should_stop: false,
+            },
+            Case {
+                name: "manually restarted goal-stop at same ratio",
+                torrent: torrent(2_000, NOW - 10_800, "", true, true),
+                global: ratio_goal.clone(),
+                overrides: vec![],
+                stopped: stopped_at_two,
+                should_stop: false,
+            },
+            Case {
+                name: "restarted goal-stop after ratio advances",
+                torrent: torrent(2_001, NOW - 10_800, "", true, true),
+                global: ratio_goal,
+                overrides: vec![],
+                stopped: HashMap::from([(
+                    "HASH".into(),
+                    GoalStopRecord {
+                        ratio_permille: 2_000,
+                        finished_at: NOW - 10_800,
+                    },
+                )]),
+                should_stop: true,
+            },
+        ];
+
+        for case in cases {
+            let decisions = seed_goal_decisions(
+                &[case.torrent],
+                &case.global,
+                &case.overrides,
+                &case.stopped,
+                NOW,
+            );
+            assert_eq!(!decisions.is_empty(), case.should_stop, "{}", case.name);
+        }
+
+        let duplicate = torrent(2_000, NOW - 60, "", true, true);
+        let decisions = seed_goal_decisions(
+            &[duplicate.clone(), duplicate],
+            &SeedGoal {
+                stop_ratio: 2.0,
+                seed_hours: 0.0,
+            },
+            &[],
+            &HashMap::new(),
+            NOW,
+        );
+        assert_eq!(decisions.len(), 1, "a hash is stopped at most once per poll");
     }
 }

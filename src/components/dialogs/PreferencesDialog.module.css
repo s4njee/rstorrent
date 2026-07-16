@@ -81,3 +81,73 @@
   border-radius: var(--radius-input);
   background: var(--bg-field);
 }
+
+.seedLimitLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-body);
+}
+
+.limitInput {
+  width: 72px;
+  flex: none;
+  box-sizing: border-box;
+}
+
+.seedOverrideBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-mid);
+}
+
+.seedOverrideHeader,
+.seedOverrideRow {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 72px 72px 24px;
+  align-items: center;
+  gap: 8px;
+}
+
+.seedOverrideHeader {
+  color: var(--text-dim);
+  font-size: var(--fs-header);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.removeOverride {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-track);
+  color: var(--text-muted);
+  font-size: var(--fs-body);
+  cursor: default;
+}
+
+.removeOverride:hover {
+  color: var(--accent-red);
+  border-color: var(--danger-border);
+}
+
+.addOverride {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-track);
+  color: var(--text-body);
+  font-size: var(--fs-title);
+  cursor: default;
+}
+
+.addOverride:disabled {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
