@@ -442,7 +442,7 @@ Deps: all M1–M5 epics.
   **AC:** 1,000 rows scroll at 60 fps; CPU near-idle when backgrounded.
   **Verify:** Instruments/Activity Monitor before/after.
 
-- [ ] **E13-S3 · UI-state persistence & window memory** (S)
+- [x] **E13-S3 · UI-state persistence & window memory** (S)
   Persist and restore: window size/position, sort, active filter, detail tab, last save-path per label (nice-to-have: skip if >S).
   **AC:** relaunch restores everything.
   **Verify:** manual relaunch.
