@@ -36,6 +36,7 @@ const LIST_COMMANDS: &[&str] = &[
     "d.peers_connected=", // 17
     "d.priority=",        // 18
     "d.is_private=",      // 19
+    "d.timestamp.finished=", // 20
 ];
 
 /// rtorrent client that talks to a live daemon over SCGI.
@@ -202,6 +203,7 @@ fn row_to_raw(row: &[Value]) -> RawTorrent {
         peers_connected: n(17),
         priority: n(18),
         is_private: b(19),
+        finished_at: n(20),
     }
 }
 
@@ -675,12 +677,14 @@ mod tests {
             Value::Int(12),
             Value::Int(2),
             Value::Int(0),
+            Value::Int(1_700_000_000),
         ];
         let t = row_to_raw(&row);
         assert_eq!(t.hash, "ABCD");
         assert_eq!(t.name, "ubuntu.iso");
         assert_eq!(t.down_rate, 42);
         assert_eq!(t.label, "linux-iso");
+        assert_eq!(t.finished_at, 1_700_000_000);
         assert!(t.is_active && t.is_open && !t.complete);
     }
 

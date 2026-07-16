@@ -173,6 +173,17 @@ export type Transport =
   | { kind: "unixSocket"; path: string }
   | { kind: "tcp"; host: string; port: number };
 
+/** Ratio/time limits for completed torrents. Zero disables either rule. */
+export interface SeedGoal {
+  stopRatio: number;
+  seedHours: number;
+}
+
+/** A label-specific replacement for the global seed goal. */
+export interface LabelSeedGoal extends SeedGoal {
+  label: string;
+}
+
 /** App settings shared with the frontend Preferences UI. */
 export interface Settings {
   transport: Transport;
@@ -188,6 +199,8 @@ export interface Settings {
   watchFolder: string; // auto-add .torrent files from here; empty = disabled
   /** Labels whose completed torrents should not produce a notification. */
   completionNotificationExcludedLabels: string[];
+  globalSeedGoal: SeedGoal;
+  labelSeedGoals: LabelSeedGoal[];
   mock: boolean;
 }
 

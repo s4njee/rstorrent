@@ -55,9 +55,9 @@ Things a real user hits in the first week of daily use.
   Tauri updater plugin + GitHub Releases feed. Requires Developer-ID signing
   (E14-S2) first. Menu: "Check for Updates…".
 
-- [ ] **B8 · Ratio groups / seed-goal automation** (L)
-  Per-label or per-torrent stop conditions: stop (or remove) at ratio X or after
-  seeding N hours, mapped onto rtorrent's ratio scheduler (`group.seeding.*`).
+- [x] **B8 · Ratio groups / seed-goal automation** (L)
+  Global and per-label stop conditions: stop at ratio X or after seeding N
+  hours, enforced by the app poller against rtorrent snapshot data.
   Prefs ▸ BitTorrent section grows a "Seeding limits" block.
 
 ---

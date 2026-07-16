@@ -65,10 +65,16 @@ export function PreferencesDialog() {
   const labels = useMemo(() => {
     const known = torrents.map((torrent) => torrent.label).filter(Boolean);
     const excluded = draft?.completionNotificationExcludedLabels ?? [];
-    return [...new Set([...known, ...excluded])].sort((a, b) =>
+    const overrides =
+      draft?.labelSeedGoals.map((goal) => goal.label).filter(Boolean) ?? [];
+    return [...new Set([...known, ...excluded, ...overrides])].sort((a, b) =>
       a.localeCompare(b),
     );
-  }, [torrents, draft?.completionNotificationExcludedLabels]);
+  }, [
+    torrents,
+    draft?.completionNotificationExcludedLabels,
+    draft?.labelSeedGoals,
+  ]);
 
   if (!draft) {
     return (
@@ -284,29 +290,184 @@ export function PreferencesDialog() {
           )}
 
           {section === "bittorrent" && (
-            <Group title="BitTorrent">
-              <div className={forms.field}>
-                <span className={forms.fieldLabel} style={{ width: 120 }}>
-                  Listen port range
-                </span>
-                <input
-                  className={forms.input}
-                  value={draft.portRange}
-                  onChange={(e) => patch({ portRange: e.currentTarget.value })}
-                  placeholder="6881-6899"
-                  spellCheck={false}
+            <>
+              <Group title="BitTorrent">
+                <div className={forms.field}>
+                  <span className={forms.fieldLabel} style={{ width: 120 }}>
+                    Listen port range
+                  </span>
+                  <input
+                    className={forms.input}
+                    value={draft.portRange}
+                    onChange={(e) =>
+                      patch({ portRange: e.currentTarget.value })
+                    }
+                    placeholder="6881-6899"
+                    spellCheck={false}
+                  />
+                </div>
+                <Checkbox
+                  checked={draft.dhtEnabled}
+                  onChange={(dhtEnabled) => patch({ dhtEnabled })}
+                  label="Enable DHT (distributed hash table)"
                 />
-              </div>
-              <Checkbox
-                checked={draft.dhtEnabled}
-                onChange={(dhtEnabled) => patch({ dhtEnabled })}
-                label="Enable DHT (distributed hash table)"
-              />
-              <span className={styles.warn}>
-                Port and DHT changes may require an rtorrent restart to take
-                full effect.
-              </span>
-            </Group>
+                <span className={styles.warn}>
+                  Port and DHT changes may require an rtorrent restart to take
+                  full effect.
+                </span>
+              </Group>
+
+              <Group title="Seeding limits">
+                <div className={styles.seedLimitLine}>
+                  <span>Stop at ratio</span>
+                  <SeedLimitInput
+                    ariaLabel="Global stop ratio"
+                    value={draft.globalSeedGoal.stopRatio}
+                    onChange={(stopRatio) =>
+                      patch({
+                        globalSeedGoal: {
+                          ...draft.globalSeedGoal,
+                          stopRatio,
+                        },
+                      })
+                    }
+                  />
+                  <span>or after</span>
+                  <SeedLimitInput
+                    ariaLabel="Global seeding hours"
+                    value={draft.globalSeedGoal.seedHours}
+                    onChange={(seedHours) =>
+                      patch({
+                        globalSeedGoal: {
+                          ...draft.globalSeedGoal,
+                          seedHours,
+                        },
+                      })
+                    }
+                  />
+                  <span>hours seeding</span>
+                </div>
+                <span className={forms.meta}>
+                  Empty or 0 disables a rule. The first reached rule stops the
+                  torrent.
+                </span>
+
+                <div className={styles.seedOverrideBlock}>
+                  <div className={styles.seedOverrideHeader}>
+                    <span>Label override</span>
+                    <span>Ratio</span>
+                    <span>Hours</span>
+                    <span />
+                  </div>
+                  {draft.labelSeedGoals.map((goal, index) => {
+                    const usedLabels = new Set(
+                      draft.labelSeedGoals
+                        .filter((_, row) => row !== index)
+                        .map((row) => row.label),
+                    );
+                    return (
+                      <div
+                        className={styles.seedOverrideRow}
+                        key={`${goal.label}-${index}`}
+                      >
+                        <select
+                          className={forms.input}
+                          value={goal.label}
+                          aria-label="Seed goal override label"
+                          onChange={(event) => {
+                            const next = [...draft.labelSeedGoals];
+                            next[index] = {
+                              ...goal,
+                              label: event.currentTarget.value,
+                            };
+                            patch({ labelSeedGoals: next });
+                          }}
+                        >
+                          {labels
+                            .filter(
+                              (label) =>
+                                label === goal.label || !usedLabels.has(label),
+                            )
+                            .map((label) => (
+                              <option key={label} value={label}>
+                                {label}
+                              </option>
+                            ))}
+                        </select>
+                        <SeedLimitInput
+                          ariaLabel={`${goal.label} stop ratio`}
+                          value={goal.stopRatio}
+                          onChange={(stopRatio) => {
+                            const next = [...draft.labelSeedGoals];
+                            next[index] = { ...goal, stopRatio };
+                            patch({ labelSeedGoals: next });
+                          }}
+                        />
+                        <SeedLimitInput
+                          ariaLabel={`${goal.label} seeding hours`}
+                          value={goal.seedHours}
+                          onChange={(seedHours) => {
+                            const next = [...draft.labelSeedGoals];
+                            next[index] = { ...goal, seedHours };
+                            patch({ labelSeedGoals: next });
+                          }}
+                        />
+                        <button
+                          className={styles.removeOverride}
+                          title={`Remove ${goal.label} override`}
+                          aria-label={`Remove ${goal.label} override`}
+                          onClick={() =>
+                            patch({
+                              labelSeedGoals: draft.labelSeedGoals.filter(
+                                (_, row) => row !== index,
+                              ),
+                            })
+                          }
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {draft.labelSeedGoals.length === 0 && (
+                    <span className={forms.meta}>No label overrides.</span>
+                  )}
+                </div>
+
+                {(() => {
+                  const used = new Set(
+                    draft.labelSeedGoals.map((goal) => goal.label),
+                  );
+                  const nextLabel = labels.find((label) => !used.has(label));
+                  return (
+                    <button
+                      className={styles.addOverride}
+                      disabled={!nextLabel}
+                      title={
+                        nextLabel
+                          ? undefined
+                          : "No unused torrent labels are currently known"
+                      }
+                      onClick={() => {
+                        if (!nextLabel) return;
+                        patch({
+                          labelSeedGoals: [
+                            ...draft.labelSeedGoals,
+                            { label: nextLabel, stopRatio: 0, seedHours: 0 },
+                          ],
+                        });
+                      }}
+                    >
+                      + Add label override
+                    </button>
+                  );
+                })()}
+                <span className={forms.meta}>
+                  A row replaces the global goal; leave both fields empty for an
+                  explicit no-limit label.
+                </span>
+              </Group>
+            </>
           )}
 
           {(section === "rss" || section === "webui") && (
@@ -376,6 +537,32 @@ function NumberRow({
         }
       />
     </div>
+  );
+}
+
+function SeedLimitInput({
+  ariaLabel,
+  value,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <input
+      className={`${forms.input} ${styles.limitInput}`}
+      type="number"
+      min={0}
+      step="0.1"
+      inputMode="decimal"
+      aria-label={ariaLabel}
+      placeholder="—"
+      value={value > 0 ? value : ""}
+      onChange={(event) =>
+        onChange(Math.max(0, Number(event.currentTarget.value) || 0))
+      }
+    />
   );
 }
 

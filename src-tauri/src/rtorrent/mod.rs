@@ -81,6 +81,8 @@ pub struct RawTorrent {
     pub peers_connected: i64,
     pub priority: i64,
     pub is_private: bool,
+    /// `d.timestamp.finished`: Unix seconds, or zero when unavailable.
+    pub finished_at: i64,
 }
 
 /// Raw global counters fetched alongside the torrent list each poll.

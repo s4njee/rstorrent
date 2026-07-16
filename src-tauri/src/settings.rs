@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::ipc::{Settings, Transport};
+use crate::ipc::{SeedGoal, Settings, Transport};
 
 impl Default for Settings {
     fn default() -> Self {
@@ -33,6 +33,8 @@ impl Default for Settings {
             dht_enabled: false,
             watch_folder: String::new(),
             completion_notification_excluded_labels: Vec::new(),
+            global_seed_goal: SeedGoal::default(),
+            label_seed_goals: Vec::new(),
             // Honour the env var so `RSTORRENT_MOCK=1` flips the default on.
             mock: std::env::var("RSTORRENT_MOCK").is_ok(),
         }
