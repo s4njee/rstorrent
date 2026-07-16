@@ -1,0 +1,83 @@
+/* Floating right-click menu (design screen 06). A transparent full-window
+   overlay sits behind it to capture click-away. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+.menu {
+  position: fixed;
+  min-width: 200px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  padding: 5px 0;
+  font-size: var(--fs-title);
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 14px;
+  color: var(--text-body);
+  cursor: default;
+  position: relative;
+}
+.item:hover {
+  background: var(--bg-selected);
+}
+.item.disabled {
+  opacity: 0.4;
+}
+.item.danger {
+  color: #e0a5a5;
+}
+.icon {
+  width: 14px;
+  display: flex;
+  justify-content: center;
+  color: var(--text-muted);
+  flex: none;
+}
+.item.danger .icon {
+  color: var(--accent-red);
+}
+.grow {
+  flex: 1;
+}
+.arrow {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+.sep {
+  height: 1px;
+  background: var(--border-strong);
+  margin: 5px 8px;
+}
+
+/* Set-label submenu, opened to the right on hover. */
+.submenu {
+  position: absolute;
+  left: 100%;
+  top: -6px;
+  min-width: 150px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  padding: 5px 0;
+}
+.newLabel {
+  padding: 4px 10px;
+}
+.newInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-field);
+  color: var(--text-body);
+  font-size: var(--fs-title);
+}

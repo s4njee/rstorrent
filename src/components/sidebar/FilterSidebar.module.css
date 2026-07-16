@@ -1,0 +1,55 @@
+/* Left filter sidebar: fixed 150px, three grouped sections (Status, Labels,
+   Trackers). The active row gets the selected fill, a cyan left border, and
+   bright text; counts sit right-aligned in the dim tertiary color. */
+.sidebar {
+  width: 150px;
+  flex: none;
+  border-right: 1px solid var(--border-mid);
+  padding: 8px 4px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-size: var(--fs-cell);
+}
+
+.group {
+  padding: 10px 8px 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.group:first-child {
+  padding-top: 2px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 8px;
+  border-left: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: default;
+  white-space: nowrap;
+}
+.row:hover {
+  color: var(--text-body);
+}
+.row .count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Active filter row. */
+.active {
+  background: var(--bg-selected);
+  border-left-color: var(--accent-cyan);
+  color: var(--accent-cyan-bright);
+}
+.active .count {
+  color: var(--accent-cyan-bright);
+}

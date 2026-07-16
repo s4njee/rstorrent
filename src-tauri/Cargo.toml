@@ -1,0 +1,53 @@
+[package]
+name = "rstorrent"
+version = "0.1.0"
+description = "Native macOS desktop client for the rtorrent daemon"
+authors = ["rstorrent"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# The `_lib` suffix keeps the library name distinct from the binary target so
+# they don't collide on Windows (see rust-lang/cargo#8519). `main.rs` calls
+# `rstorrent_lib::run()`.
+name = "rstorrent_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# --- Tauri shell + plugins ---
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"            # open paths / URLs
+tauri-plugin-dialog = "2"            # native file/folder pickers
+tauri-plugin-clipboard-manager = "2" # copy magnet links
+
+# --- Serialization (IPC + settings) ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# --- Async runtime for SCGI I/O and the polling loop ---
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+
+# --- rtorrent protocol plumbing ---
+quick-xml = "0.37"    # minimal hand-rolled XML-RPC encode/parse (handles <i8>)
+base64 = "0.22"       # load.raw payloads
+lava_torrent = "0.11" # .torrent metadata parsing for the Add dialog
+
+# --- Filesystem side-effects ---
+trash = "5"           # "delete data" moves files to the macOS Trash, never rm
+
+# --- Errors ---
+thiserror = "2"       # typed error enums across the rtorrent layer
+async-trait = "0.1"   # dyn-compatible async RtorrentApi trait (Scgi vs Mock)
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "test-util"] }
+
+[profile.release]
+# Smaller, faster release binaries for the packaged .app.
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

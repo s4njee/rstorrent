@@ -1,0 +1,387 @@
+//! [`MockClient`] — an in-memory rtorrent stand-in.
+//!
+//! Backs [`RtorrentApi`] with the ten torrents from the design reference
+//! (`design/rTorrent Client 1c.dc.html`), so the entire UI runs and demos with
+//! no daemon (`RSTORRENT_MOCK=1`). Downloading torrents advance their progress on
+//! each `list_snapshot` based on real elapsed time, and mutating calls (stop,
+//! start, erase, set_label…) actually change the fixture state, so the app feels
+//! live. It's also the fixture source for the transport/derive tests.
+
+use std::sync::Mutex;
+use std::time::Instant;
+
+use async_trait::async_trait;
+
+use super::{LoadOptions, RawGlobal, RawTorrent, Result, RtorrentApi};
+use crate::ipc::{FileNode, PeerRow, TrackerRow};
+
+const GIB: f64 = 1_073_741_824.0;
+const MIB: f64 = 1_048_576.0;
+const KIB: f64 = 1_024.0;
+
+/// Mutable fixture state guarded by a mutex (locks are held only for the brief,
+/// non-awaiting critical sections that read or mutate the torrent list).
+struct State {
+    torrents: Vec<RawTorrent>,
+    last_tick: Instant,
+}
+
+pub struct MockClient {
+    state: Mutex<State>,
+}
+
+impl Default for MockClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MockClient {
+    pub fn new() -> Self {
+        Self {
+            state: Mutex::new(State {
+                torrents: fixtures(),
+                last_tick: Instant::now(),
+            }),
+        }
+    }
+
+    /// Advance simulated progress by the real time elapsed since the last call.
+    fn tick(state: &mut State) {
+        let now = Instant::now();
+        let dt = now.duration_since(state.last_tick).as_secs_f64();
+        state.last_tick = now;
+        for t in &mut state.torrents {
+            if t.is_active && !t.complete && t.down_rate > 0 {
+                t.bytes_done += (t.down_rate as f64 * dt) as i64;
+                if t.bytes_done >= t.size_bytes {
+                    // Finished: flip to a seeding state.
+                    t.bytes_done = t.size_bytes;
+                    t.complete = true;
+                    t.down_rate = 0;
+                }
+            }
+        }
+    }
+
+    fn with_hash<F: FnMut(&mut RawTorrent)>(&self, hashes: &[String], mut f: F) {
+        let mut state = self.state.lock().unwrap();
+        for t in &mut state.torrents {
+            if hashes.iter().any(|h| h.eq_ignore_ascii_case(&t.hash)) {
+                f(t);
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl RtorrentApi for MockClient {
+    async fn client_version(&self) -> Result<String> {
+        Ok("0.9.8".to_string())
+    }
+
+    async fn list_snapshot(&self) -> Result<Vec<RawTorrent>> {
+        let mut state = self.state.lock().unwrap();
+        Self::tick(&mut state);
+        Ok(state.torrents.clone())
+    }
+
+    async fn global_stats(&self) -> Result<RawGlobal> {
+        let state = self.state.lock().unwrap();
+        let down_rate = state.torrents.iter().map(|t| t.down_rate).sum();
+        let up_rate = state.torrents.iter().map(|t| t.up_rate).sum();
+        Ok(RawGlobal {
+            down_rate,
+            up_rate,
+            down_rate_limit: 0,               // ∞
+            up_rate_limit: (5.0 * MIB) as i64, // 5.0 MiB/s (matches design footer)
+            dht_nodes: 387,
+        })
+    }
+
+    async fn primary_tracker(&self, hash: &str) -> Result<String> {
+        // Fixed host per fixture, matching the design's Tracker column.
+        let host = match hash {
+            "A1" => "torrent.ubuntu.com",
+            "B2" => "bttracker.debian.org",
+            "F6" | "G7" | "J10" => "tracker.blender.org",
+            "I9" => "downloads.raspberrypi.org",
+            _ => "linuxtracker.org",
+        };
+        Ok(host.to_string())
+    }
+
+    async fn trackers(&self, _hash: &str) -> Result<Vec<TrackerRow>> {
+        Ok(vec![TrackerRow {
+            url: "https://linuxtracker.org/announce".into(),
+            status: "working".into(),
+            seeds: 34,
+            leeches: 12,
+            last_announce: "2m ago".into(),
+        }])
+    }
+
+    async fn peers(&self, _hash: &str) -> Result<Vec<PeerRow>> {
+        Ok(vec![
+            PeerRow {
+                address: "203.0.113.7".into(),
+                client: "libtorrent 2.0.9".into(),
+                progress: 84.0,
+                down_rate: (1.2 * MIB) as i64,
+                up_rate: (120.0 * KIB) as i64,
+                flags: "EI".into(),
+            },
+            PeerRow {
+                address: "198.51.100.42".into(),
+                client: "qBittorrent 4.6".into(),
+                progress: 61.0,
+                down_rate: (640.0 * KIB) as i64,
+                up_rate: 0,
+                flags: "E".into(),
+            },
+        ])
+    }
+
+    async fn files(&self, _hash: &str) -> Result<Vec<FileNode>> {
+        Ok(vec![
+            FileNode {
+                path: "Fedora-Workstation-Live.iso".into(),
+                size: (2.29 * GIB) as i64,
+                priority: 1,
+                progress: 67.0,
+                is_dir: false,
+            },
+            FileNode {
+                path: "CHECKSUM".into(),
+                size: 1400,
+                priority: 1,
+                progress: 100.0,
+                is_dir: false,
+            },
+        ])
+    }
+
+    async fn start(&self, hashes: &[String]) -> Result<()> {
+        self.with_hash(hashes, |t| {
+            t.is_active = true;
+            t.is_open = true;
+            t.message.clear();
+        });
+        Ok(())
+    }
+
+    async fn stop(&self, hashes: &[String]) -> Result<()> {
+        self.with_hash(hashes, |t| {
+            t.is_active = false;
+            t.is_open = false;
+            t.down_rate = 0;
+            t.up_rate = 0;
+        });
+        Ok(())
+    }
+
+    async fn recheck(&self, hashes: &[String]) -> Result<()> {
+        self.with_hash(hashes, |t| t.hashing = true);
+        Ok(())
+    }
+
+    async fn erase(&self, hashes: &[String]) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state
+            .torrents
+            .retain(|t| !hashes.iter().any(|h| h.eq_ignore_ascii_case(&t.hash)));
+        Ok(())
+    }
+
+    async fn load_raw(&self, _bytes: Vec<u8>, opts: LoadOptions) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state.torrents.push(new_download("added-from-file.iso", &opts));
+        Ok(())
+    }
+
+    async fn load_magnet(&self, uri: &str, opts: LoadOptions) -> Result<()> {
+        // Pull a display name out of the magnet's `dn=` if present.
+        let name = uri
+            .split(['&', '?'])
+            .find_map(|p| p.strip_prefix("dn="))
+            .unwrap_or("magnet-download")
+            .to_string();
+        let mut state = self.state.lock().unwrap();
+        state.torrents.push(new_download(&name, &opts));
+        Ok(())
+    }
+
+    async fn set_label(&self, hashes: &[String], label: &str) -> Result<()> {
+        self.with_hash(hashes, |t| t.label = label.to_string());
+        Ok(())
+    }
+
+    async fn set_directory(&self, hash: &str, path: &str) -> Result<()> {
+        self.with_hash(&[hash.to_string()], |t| t.directory = path.to_string());
+        Ok(())
+    }
+
+    async fn set_priority(&self, hash: &str, priority: i64) -> Result<()> {
+        self.with_hash(&[hash.to_string()], |t| t.priority = priority);
+        Ok(())
+    }
+
+    async fn set_file_priority(&self, _hash: &str, _index: usize, _priority: i64) -> Result<()> {
+        Ok(())
+    }
+
+    async fn base_path(&self, hash: &str) -> Result<String> {
+        let state = self.state.lock().unwrap();
+        Ok(state
+            .torrents
+            .iter()
+            .find(|t| t.hash.eq_ignore_ascii_case(hash))
+            .map(|t| t.base_path.clone())
+            .unwrap_or_default())
+    }
+
+    async fn set_throttles(&self, _down_kb: i64, _up_kb: i64) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Construct a freshly-added downloading torrent for load_* calls.
+fn new_download(name: &str, opts: &LoadOptions) -> RawTorrent {
+    RawTorrent {
+        hash: format!("{:016X}", fxhash(name)),
+        name: name.to_string(),
+        size_bytes: (1.5 * GIB) as i64,
+        bytes_done: 0,
+        complete: false,
+        is_active: opts.start,
+        is_open: opts.start,
+        down_rate: if opts.start { (3.0 * MIB) as i64 } else { 0 },
+        up_rate: 0,
+        ratio_permille: 0,
+        label: opts.label.clone(),
+        directory: opts.directory.clone(),
+        base_path: format!("{}/{}", opts.directory, name),
+        peers_complete: 20,
+        peers_accounted: 8,
+        peers_connected: 6,
+        priority: if opts.top_of_queue { 3 } else { 2 },
+        ..Default::default()
+    }
+}
+
+/// Tiny stable hash so added torrents get a deterministic pseudo info-hash.
+fn fxhash(s: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in s.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Helper to build one fixture row concisely.
+#[allow(clippy::too_many_arguments)]
+fn t(
+    hash: &str,
+    name: &str,
+    size: f64,
+    done_pct: f64,
+    active: bool,
+    open: bool,
+    down: i64,
+    up: i64,
+    ratio_permille: i64,
+    label: &str,
+    swarm_seeds: i64,
+    swarm_peers: i64,
+    conn: i64,
+    message: &str,
+) -> RawTorrent {
+    let size_bytes = size as i64;
+    RawTorrent {
+        hash: hash.to_string(),
+        name: name.to_string(),
+        size_bytes,
+        bytes_done: (size * done_pct / 100.0) as i64,
+        complete: done_pct >= 100.0,
+        is_active: active,
+        is_open: open,
+        hashing: false,
+        message: message.to_string(),
+        down_rate: down,
+        up_rate: up,
+        ratio_permille,
+        label: label.to_string(),
+        directory: "/srv/downloads".to_string(),
+        base_path: format!("/srv/downloads/{name}"),
+        peers_complete: swarm_seeds,
+        peers_accounted: swarm_peers,
+        peers_connected: conn,
+        priority: 2,
+        is_private: false,
+    }
+}
+
+/// The ten torrents shown in the design reference, with matching states.
+fn fixtures() -> Vec<RawTorrent> {
+    vec![
+        t("A1", "ubuntu-24.04.2-desktop-amd64.iso", 5.8 * GIB, 100.0, true, true, 0, (1.2 * MIB) as i64, 2410, "linux-iso", 142, 87, 34, ""),
+        t("B2", "debian-12.9.0-amd64-netinst.iso", 631.0 * MIB, 100.0, true, true, 0, (214.0 * KIB) as i64, 3870, "linux-iso", 98, 12, 10, ""),
+        t("C3", "Fedora-Workstation-Live-x86_64-41-1.4.iso", 2.3 * GIB, 67.4, true, true, (8.4 * MIB) as i64, (620.0 * KIB) as i64, 190, "linux-iso", 34, 12, 30, ""),
+        t("D4", "archlinux-2026.07.01-x86_64.iso", 1.1 * GIB, 23.1, true, true, (1.1 * MIB) as i64, (88.0 * KIB) as i64, 40, "linux-iso", 18, 6, 12, ""),
+        t("E5", "linuxmint-22.1-cinnamon-64bit.iso", 2.8 * GIB, 45.2, false, false, 0, 0, 110, "linux-iso", 63, 28, 0, ""),
+        t("F6", "Big.Buck.Bunny.2008.2160p.mkv", 7.9 * GIB, 100.0, true, true, 0, (980.0 * KIB) as i64, 5020, "video", 211, 140, 60, ""),
+        t("G7", "Sintel.2010.2160p.mkv", 5.1 * GIB, 91.8, true, true, (2.9 * MIB) as i64, (410.0 * KIB) as i64, 440, "video", 26, 9, 20, ""),
+        t("H8", "openSUSE-Tumbleweed-DVD-x86_64.iso", 4.4 * GIB, 12.0, true, true, 0, 0, 10, "linux-iso", 0, 2, 2, ""),
+        t("I9", "raspios-bookworm-arm64-full.img.xz", 2.7 * GIB, 100.0, false, false, 0, 0, 1080, "sbc", 57, 16, 0, ""),
+        t("J10", "Cosmos.Laundromat.2015.4K.mkv", 3.2 * GIB, 66.7, true, true, 0, 0, 310, "video", 0, 0, 0, "Tracker: [Failure reason \"unregistered torrent\"]"),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ipc::Status;
+    use crate::rtorrent::derive;
+
+    #[tokio::test]
+    async fn fixtures_match_design_row_states() {
+        // The fixtures reproduce the design's per-row data block exactly (its
+        // Name/Done/Status columns). Note: the design's sidebar counts
+        // (seeding 4, completed 5) are illustrative and do NOT reconcile with
+        // its own 10 rows — see plan.md §5.4. We assert the authoritative,
+        // row-derived truth instead: 3 downloading / 3 seeding / 2 paused /
+        // 1 stalled / 1 error, and 4 rows at 100%.
+        let c = MockClient::new();
+        let rows = c.list_snapshot().await.unwrap();
+        assert_eq!(rows.len(), 10);
+        let mut counts = std::collections::HashMap::new();
+        for r in &rows {
+            *counts.entry(derive::status(r)).or_insert(0) += 1;
+        }
+        assert_eq!(counts.get(&Status::Downloading), Some(&3)); // Fedora, arch, Sintel
+        assert_eq!(counts.get(&Status::Seeding), Some(&3)); // ubuntu, debian, BBB
+        assert_eq!(counts.get(&Status::Paused), Some(&2)); // mint, raspios
+        assert_eq!(counts.get(&Status::Stalled), Some(&1)); // openSUSE
+        assert_eq!(counts.get(&Status::Error), Some(&1)); // Cosmos
+        let complete = rows.iter().filter(|r| derive::percent(r) >= 100.0).count();
+        assert_eq!(complete, 4); // ubuntu, debian, BBB, raspios
+    }
+
+    #[tokio::test]
+    async fn stop_then_start_toggles_active() {
+        let c = MockClient::new();
+        c.stop(&["C3".into()]).await.unwrap();
+        let rows = c.list_snapshot().await.unwrap();
+        let fedora = rows.iter().find(|r| r.hash == "C3").unwrap();
+        assert!(!fedora.is_active);
+        assert_eq!(derive::status(fedora), Status::Paused);
+    }
+
+    #[tokio::test]
+    async fn erase_removes_torrent() {
+        let c = MockClient::new();
+        c.erase(&["A1".into()]).await.unwrap();
+        assert_eq!(c.list_snapshot().await.unwrap().len(), 9);
+    }
+}

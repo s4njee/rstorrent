@@ -1,0 +1,115 @@
+/* Torrent table. The 12-column grid template is copied verbatim from the design
+   spec so column widths match the mockup exactly. The header row is sticky and
+   only the body scrolls. */
+.table {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+  overflow: hidden;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(
+      200px,
+      1fr
+    ) 70px 92px 84px 52px 52px 76px 76px 62px 46px 72px 110px;
+  align-items: center;
+}
+
+/* Header row: uppercase dim labels; click to sort. */
+.header {
+  border-bottom: 1px solid var(--border-mid);
+  font-size: var(--fs-header);
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex: none;
+}
+.header > span {
+  padding: 5px 6px;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.header > span:first-child {
+  padding-left: 10px;
+}
+.header .sortable:hover {
+  color: var(--text-muted);
+}
+.right {
+  text-align: right;
+}
+.arrow {
+  color: var(--accent-cyan);
+  margin-left: 3px;
+}
+
+/* Scrollable body. */
+.body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Data row. */
+.row {
+  height: var(--row-height);
+  border-bottom: 1px solid var(--border-row);
+  cursor: default;
+}
+.row.alt {
+  background: var(--bg-row-alt);
+}
+.row.selected {
+  background: var(--bg-selected);
+}
+.row > span {
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-cell);
+  color: var(--text-muted);
+}
+.name {
+  padding-left: 10px !important;
+  color: var(--text-primary) !important;
+}
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.down {
+  color: var(--accent-cyan-bright) !important;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.up {
+  color: var(--accent-green-soft) !important;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dim {
+  color: var(--text-dim) !important;
+}
+
+/* Empty / no-match states. */
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 24px;
+  line-height: 1.7;
+}
+.empty a {
+  color: var(--accent-cyan);
+  cursor: default;
+}

@@ -1,0 +1,75 @@
+/*
+ * Design tokens for the "Dark Ops" (1c) theme.
+ *
+ * Every colour, font, and size the UI uses is declared here as a CSS custom
+ * property. Components MUST reference these variables (e.g. `var(--bg-app)`)
+ * and never hard-code a hex value, so the whole look can be retuned in one place
+ * and stays faithful to design/README.md. The raw hex values below are copied
+ * verbatim from that spec's token table and must remain the single source of
+ * truth for them.
+ */
+
+:root {
+  /* --- Backgrounds --- */
+  --bg-app: #14161a; /* main app background, table body */
+  --bg-panel: #191c21; /* title bar, toolbar, sidebar, footer, dialog chrome */
+  --bg-field: #0f1114; /* inputs, textareas, dropdowns */
+  --bg-row-alt: #171a1f; /* odd table rows (zebra) */
+  --bg-selected: #1d2b33; /* selected row, active nav, checked checkbox fill */
+  --bg-track: #22262d; /* progress-bar track; secondary button fill */
+
+  /* --- Borders --- */
+  --border-black: #000000; /* window outer border, dialog header/footer dividers */
+  --border-strong: #2a2f38; /* input borders, toolbar separators */
+  --border-mid: #23272e; /* panel/section dividers */
+  --border-row: #1a1d22; /* table row dividers */
+
+  /* --- Text --- */
+  --text-primary: #d6dae2; /* torrent names, dialog body headings */
+  --text-body: #c8cdd6; /* default body text, labels */
+  --text-muted: #8b93a2; /* secondary values, inactive nav */
+  --text-dim: #565e6b; /* column headers, captions, tertiary values, inactive tabs */
+
+  /* --- Accents --- */
+  --accent-cyan: #58c4dd; /* primary accent: add icon, active borders, DL bar */
+  --accent-cyan-bright: #8fdcee; /* active tab/nav text, download speed, primary button text */
+  --accent-green: #57d597; /* seeding bar */
+  --accent-green-soft: #7fd8a4; /* upload speed, good ratio */
+  --accent-amber: #d5a04c; /* stalled status/bar */
+  --accent-red: #e05d5d; /* error status/bar, destructive action */
+
+  /* --- Danger palette --- */
+  --danger-bg: #3a1f1f; /* destructive button fill, warning icon bg */
+  --danger-border: #6b2f2f; /* destructive button border */
+
+  /* --- Traffic lights (design reference only; real ones come from macOS) --- */
+  --tl-red: #f45c53;
+  --tl-amber: #f5b435;
+  --tl-green: #3fc24d;
+
+  /* --- Status → colour map (used by table status text & progress fills) --- */
+  --status-downloading: var(--accent-cyan);
+  --status-seeding: var(--accent-green);
+  --status-paused: #4a515c;
+  --status-stalled: var(--accent-amber);
+  --status-error: var(--accent-red);
+  --status-checking: var(--accent-cyan-bright);
+
+  /* --- Typography --- */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --fs-base: 11.5px; /* body text */
+  --fs-cell: 10.5px; /* table cells / numerals */
+  --fs-header: 10px; /* column headers & captions (uppercase) */
+  --fs-title: 11px; /* window titles */
+
+  /* --- Metrics --- */
+  --row-height: 23px; /* torrent table row height */
+  --titlebar-height: 34px; /* overlay drag strip; clears macOS traffic lights */
+  --toolbar-btn: 26px; /* toolbar button width */
+  --toolbar-btn-h: 24px; /* toolbar button height */
+  --radius-window: 9px;
+  --radius-control: 5px;
+  --radius-input: 4px;
+
+  color-scheme: dark;
+}

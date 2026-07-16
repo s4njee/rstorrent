@@ -1,0 +1,75 @@
+//! rstorrent library crate: app setup and wiring.
+//!
+//! `run()` builds the Tauri app — registers plugins, constructs the shared
+//! [`AppState`], starts the background poller, and exposes the command surface.
+//! Module map:
+//!   * [`ipc`]         — serde types shared with the frontend (mirrors `src/ipc/types.ts`).
+//!   * [`rtorrent`]    — all daemon communication (SCGI/XML-RPC) + the mock backend.
+//!   * [`state`]       — the shared `AppState` (backend, settings, log, caches).
+//!   * [`settings`]    — settings model + JSON persistence.
+//!   * [`log`]         — bounded app event log.
+//!   * [`poller`]      — background polling loops that push snapshots to the UI.
+//!   * [`commands`]    — `#[tauri::command]` handlers.
+//!   * [`torrent_file`]— `.torrent` metadata parsing for the Add dialog.
+
+pub mod ipc;
+
+mod commands;
+mod log;
+mod poller;
+mod rtorrent;
+mod settings;
+mod state;
+mod torrent_file;
+
+use std::sync::Arc;
+
+use tauri::Manager;
+
+use state::AppState;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .setup(|app| {
+            // Settings live in the app's config dir; fall back to a temp path if
+            // that can't be resolved (keeps the app usable regardless).
+            let settings_path = app
+                .path()
+                .app_config_dir()
+                .unwrap_or_else(|_| std::env::temp_dir())
+                .join("settings.json");
+
+            let app_state = Arc::new(AppState::new(settings_path));
+            app.manage(app_state.clone());
+
+            // Kick off the polling loops that keep the UI live.
+            poller::spawn(app.handle().clone(), app_state);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::read_torrent_metadata,
+            commands::add_torrent,
+            commands::start,
+            commands::stop,
+            commands::recheck,
+            commands::remove,
+            commands::set_label,
+            commands::set_location,
+            commands::queue_move,
+            commands::copy_magnet,
+            commands::open_destination,
+            commands::set_file_priority,
+            commands::get_settings,
+            commands::apply_settings,
+            commands::test_connection,
+            commands::set_detail_watch,
+            commands::get_log,
+            commands::get_statistics,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running rstorrent");
+}
