@@ -11,19 +11,8 @@ import { useEffect } from "react";
 import { useUi } from "../store/ui";
 import { useTorrents } from "../store/torrents";
 import { selectVisible } from "../store/selectors";
+import { typingInField } from "../utils/dom";
 import * as actions from "../actions";
-
-/** True when focus is in a text-entry element. */
-function typingInField(): boolean {
-  const el = document.activeElement;
-  if (!el) return false;
-  const tag = el.tagName;
-  return (
-    tag === "INPUT" ||
-    tag === "TEXTAREA" ||
-    (el as HTMLElement).isContentEditable
-  );
-}
 
 /** Current visible-row hashes (respecting filter/search/sort). */
 function visibleHashes(): string[] {

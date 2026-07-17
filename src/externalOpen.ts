@@ -1,41 +1,99 @@
-/** Pure parsing and serialization logic for macOS open-file/deep-link events. */
+/**
+ * Pure parsing for every "add these torrents" entry point: macOS
+ * open-file/deep-link events, drag & drop onto the window, and paste.
+ *
+ * All of them boil down to turning opaque strings (URLs, paths, clipboard text)
+ * into `AddSource`s, so they share one value parser and silently drop anything
+ * that isn't a torrent — an unrelated dropped file or pasted link must be a
+ * no-op, never an error dialog.
+ */
 
 import type { AddSource } from "./ipc/commands";
 import type { AddOptions, Settings } from "./ipc/types";
 
-/** Convert LaunchServices URLs into add sources, ignoring unrelated inputs. */
-export function parseOpenRequests(urls: string[]): AddSource[] {
-  return urls.flatMap<AddSource>((raw) => {
-    const value = raw.trim();
-    if (/^magnet:/i.test(value)) {
-      return [{ kind: "magnet" as const, uri: value }];
-    }
+/** Does this path/pathname name a `.torrent`? */
+function isTorrentPath(value: string): boolean {
+  return value.toLowerCase().endsWith(".torrent");
+}
 
-    // Supporting an absolute path as well as file:// makes local/dev event
-    // injection convenient without weakening the accepted file type.
-    if (value.startsWith("/") && value.toLowerCase().endsWith(".torrent")) {
-      return [{ kind: "file" as const, path: value }];
-    }
+/**
+ * Parse one value into at most one add source.
+ *
+ * `allowHttp` enables `http(s)://…/x.torrent` URLs, which only user-pasted or
+ * dropped text can carry (LaunchServices never delivers them). Such URLs are
+ * handed to rtorrent as a "magnet" source because its `load.start` takes a URL
+ * or a magnet interchangeably. We require the `.torrent` suffix: pasting an
+ * ordinary web link must not add anything. The add-magnet dialog stays more
+ * permissive — an explicit paste into that field is an explicit intent.
+ */
+function parseValue(raw: string, allowHttp: boolean): AddSource[] {
+  const value = raw.trim();
+  if (!value) return [];
 
+  if (/^magnet:/i.test(value)) {
+    return [{ kind: "magnet" as const, uri: value }];
+  }
+
+  if (allowHttp && /^https?:\/\//i.test(value)) {
     try {
-      const url = new URL(value);
-      if (
-        url.protocol !== "file:" ||
-        (url.hostname && url.hostname !== "localhost") ||
-        !url.pathname.toLowerCase().endsWith(".torrent")
-      ) {
-        return [];
-      }
-      return [
-        {
-          kind: "file" as const,
-          path: decodeURIComponent(url.pathname),
-        },
-      ];
+      // pathname excludes any query string, so ?id=1 suffixes don't defeat it.
+      return isTorrentPath(new URL(value).pathname)
+        ? [{ kind: "magnet" as const, uri: value }]
+        : [];
     } catch {
       return [];
     }
-  });
+  }
+
+  // Supporting an absolute path as well as file:// makes local/dev event
+  // injection convenient without weakening the accepted file type.
+  if (value.startsWith("/") && isTorrentPath(value)) {
+    return [{ kind: "file" as const, path: value }];
+  }
+
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "file:" ||
+      (url.hostname && url.hostname !== "localhost") ||
+      !isTorrentPath(url.pathname)
+    ) {
+      return [];
+    }
+    return [
+      {
+        kind: "file" as const,
+        path: decodeURIComponent(url.pathname),
+      },
+    ];
+  } catch {
+    return [];
+  }
+}
+
+/** Convert LaunchServices URLs into add sources, ignoring unrelated inputs. */
+export function parseOpenRequests(urls: string[]): AddSource[] {
+  return urls.flatMap((raw) => parseValue(raw, false));
+}
+
+/**
+ * Convert filesystem paths from a window drop into add sources. Tauri hands us
+ * real paths (unlike an HTML5 `File`), so these go down the same path-based
+ * route as a Finder open. Non-torrent files in the same drop are ignored.
+ */
+export function parseDroppedPaths(paths: string[]): AddSource[] {
+  return paths
+    .filter((path) => isTorrentPath(path.trim()))
+    .map((path) => ({ kind: "file" as const, path: path.trim() }));
+}
+
+/**
+ * Convert pasted (or text-dropped) clipboard content into add sources. Split on
+ * newlines rather than all whitespace so a pasted path containing spaces stays
+ * intact; magnets and URLs never contain raw spaces.
+ */
+export function parsePastedText(text: string): AddSource[] {
+  return text.split(/[\r\n]+/).flatMap((line) => parseValue(line, true));
 }
 
 /** The same defaults used when a user accepts either add dialog unchanged. */

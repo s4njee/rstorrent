@@ -76,3 +76,25 @@
   color: var(--text-muted);
   overflow-x: auto;
 }
+
+/* Drop overlay (C1): shown while a drag carrying .torrent files is over the
+   window. Purely a cue — the native drag-drop handler does the actual work. */
+.dropOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  /* Never intercept the drop itself. */
+  pointer-events: none;
+}
+.dropCard {
+  padding: 14px 22px;
+  border: 1px dashed var(--accent-cyan);
+  border-radius: var(--radius-control);
+  background: var(--bg-selected);
+  color: var(--accent-cyan-bright);
+  font-size: var(--fs-base);
+}

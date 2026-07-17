@@ -16,18 +16,16 @@ import {
   onOpenRequests,
 } from "./ipc/events";
 import {
-  addTorrent,
   setDetailWatch,
   getLog,
   retryConnection,
   takeOpenRequests,
 } from "./ipc/commands";
-import {
-  defaultAddOptions,
-  OpenRequestQueue,
-  parseOpenRequests,
-} from "./externalOpen";
+import { parseOpenRequests } from "./externalOpen";
+import { enqueueAddSources } from "./addQueue";
 import { useKeyboardShortcuts } from "./hooks/useKeyboard";
+import { useDragDrop } from "./hooks/useDragDrop";
+import { usePasteToAdd } from "./hooks/usePasteToAdd";
 import { useTorrents } from "./store/torrents";
 import { useUi } from "./store/ui";
 import { useDetail } from "./store/detail";
@@ -58,6 +56,8 @@ export default function App() {
   const connection = useTorrents((s) => s.connection);
 
   useKeyboardShortcuts();
+  usePasteToAdd();
+  const dragOver = useDragDrop();
 
   // Subscribe to backend push events once, on mount, and load initial state.
   useEffect(() => {
@@ -103,30 +103,10 @@ export default function App() {
   // Serialize Finder-opened .torrent files and magnet: deep links. The Rust
   // handoff does not emit warm events until takeOpenRequests marks us ready,
   // so subscribing before that command closes the startup race completely.
+  // Drag-drop and paste feed the same queue (see addQueue.ts).
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    const queue = new OpenRequestQueue(
-      async (source) => {
-        let settings = useSettings.getState().settings;
-        if (!settings) {
-          await useSettings.getState().load();
-          settings = useSettings.getState().settings;
-        }
-        if (!settings) throw new Error("settings did not load");
-
-        if (settings.showAddDialog) {
-          await new Promise<void>((resolve) =>
-            useUi.getState().openExternalAdd(source, resolve),
-          );
-        } else {
-          await addTorrent(source, defaultAddOptions(settings));
-        }
-      },
-      (error, source) => {
-        console.error("could not handle external add request", source, error);
-      },
-    );
 
     void (async () => {
       if (!useSettings.getState().settings) {
@@ -135,14 +115,14 @@ export default function App() {
       if (cancelled) return;
 
       unlisten = await onOpenRequests((urls) =>
-        queue.enqueue(parseOpenRequests(urls)),
+        enqueueAddSources(parseOpenRequests(urls)),
       );
       if (cancelled) {
         unlisten();
         return;
       }
 
-      queue.enqueue(parseOpenRequests(await takeOpenRequests()));
+      enqueueAddSources(parseOpenRequests(await takeOpenRequests()));
     })();
 
     return () => {
@@ -209,6 +189,11 @@ export default function App() {
       <ContextMenu />
       <ColumnMenu />
       <DialogHost />
+      {dragOver && (
+        <div className={styles.dropOverlay}>
+          <div className={styles.dropCard}>drop .torrent files to add</div>
+        </div>
+      )}
     </div>
   );
 }

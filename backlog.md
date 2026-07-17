@@ -51,16 +51,18 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 
 Things you notice in week two of real use.
 
-- [ ] **C1 · Drag & drop onto the window** (M)
-  Drop `.torrent` files, magnet text, or torrent URLs anywhere on the main
-  window → add dialog (or instant-add per prefs). Tauri's drag-drop events are
-  currently unhandled — file-association (B1) only covers Finder-open. The one
-  add path every other client has that we don't.
+- [x] **C1 · Drag & drop onto the window** (M)
+  Drop `.torrent` files anywhere on the main window → add dialog (or instant-add
+  per prefs), with a drop overlay while a torrent-carrying drag hovers. Uses
+  Tauri's native drag-drop for real file paths; dragged *text* (a magnet from a
+  browser) is handled best-effort via DOM events, since the native handler owns
+  file drags — paste (C2) is the reliable magnet route.
 
-- [ ] **C2 · Paste to add** (S)
-  ⌘V on the main window with a magnet/URL in the clipboard adds it directly
-  (respecting the show-dialog pref). The magnet dialog already prefills from
-  the clipboard; this removes the dialog step for the common case.
+- [x] **C2 · Paste to add** (S)
+  ⌘V on the main window with a magnet or `.torrent` URL in the clipboard adds it
+  (respecting the show-dialog pref). Hooks the DOM `paste` event, not a keydown:
+  the native Edit menu owns the ⌘V accelerator. Pastes into a text field, and
+  clipboard text that isn't a torrent, are left alone.
 
 - [ ] **C3 · Selection summary bar** (S)
   With ≥2 rows selected, a slim strip above the detail tabs: `4 selected ·
@@ -204,7 +206,7 @@ Things you notice in week two of real use.
 
 ## Suggested release slices
 
-- **v1.4 — "feels native"**: C1, C2, C3, C5, C6, C7 (+ C21 CI underneath)
+- **v1.4 — "feels native"**: ~~C1~~, ~~C2~~ (shipped), C3, C5, C6, C7 (+ C21 CI underneath)
 - **v1.5 — "automation"**: C9, C11, C12, C14, B7
 - **v1.6 — "depth"**: C8, C15, C16, C17 (+ E13-S2 with C22)
 - **v2.0 — "seedbox"**: B9, B10, B11, C10/B12
