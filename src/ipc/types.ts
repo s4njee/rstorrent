@@ -192,7 +192,13 @@ export interface AddOptions {
 /** Connection transport settings, persisted on the Rust side. */
 export type Transport =
   | { kind: "unixSocket"; path: string }
-  | { kind: "tcp"; host: string; port: number };
+  | { kind: "tcp"; host: string; port: number }
+  /**
+   * XML-RPC over HTTP(S) for a remote daemon behind nginx (B9). No password
+   * field: it lives in the macOS Keychain, never in the settings file. Use the
+   * `*HttpPassword` commands to manage it.
+   */
+  | { kind: "http"; url: string; username: string };
 
 /** Ratio/time limits for completed torrents. Zero disables either rule. */
 export interface SeedGoal {

@@ -1,4 +1,4 @@
-//! [`ScgiClient`] — the real rtorrent backend.
+//! [`RpcClient`] — the real rtorrent backend.
 //!
 //! Implements [`RtorrentApi`] by translating each call into rtorrent XML-RPC
 //! methods sent over SCGI ([`super::scgi`]). Batched mutations use
@@ -7,8 +7,9 @@
 //! response columns and [`RawTorrent`] stay in sync.
 
 use async_trait::async_trait;
+use tokio::sync::OnceCell;
 
-use super::scgi;
+use super::transport;
 use super::xmlrpc::Value;
 use super::{LoadOptions, RawGlobal, RawStats, RawTorrent, Result, RtorrentApi, RtorrentError};
 use crate::ipc::{FileNode, PeerRow, PieceInfo, Transport, TrackerRow};
@@ -40,19 +41,73 @@ const LIST_COMMANDS: &[&str] = &[
     "d.timestamp.finished=", // 21
 ];
 
-/// rtorrent client that talks to a live daemon over SCGI.
-pub struct ScgiClient {
+/// rtorrent client that talks to a live daemon, local (SCGI) or remote (HTTP).
+pub struct RpcClient {
     transport: Transport,
+    /// A password supplied directly (Preferences' "Test connection"), which
+    /// takes precedence over anything saved.
+    explicit_password: Option<String>,
+    /// Keychain password, fetched once on first use. Held in memory only; the
+    /// copy at rest is in the Keychain (`crate::secrets`), never settings.json.
+    cached_password: OnceCell<Option<String>>,
 }
 
-impl ScgiClient {
+impl RpcClient {
+    /// Build a client for a transport.
+    ///
+    /// Deliberately does no I/O: this runs on the main thread during app setup
+    /// and whenever settings change. Reading the Keychain here would block that
+    /// thread on macOS's approval dialog and hang startup — the password is
+    /// loaded lazily and off-thread instead (see [`Self::password`]).
     pub fn new(transport: Transport) -> Self {
-        Self { transport }
+        Self {
+            transport,
+            explicit_password: None,
+            cached_password: OnceCell::new(),
+        }
     }
 
-    /// Single XML-RPC call.
+    /// Build a client with an explicit password. Preferences' "Test connection"
+    /// needs this: it must probe the password the user just typed, which by
+    /// definition isn't saved yet.
+    pub fn with_password(transport: Transport, password: Option<String>) -> Self {
+        Self {
+            transport,
+            explicit_password: password,
+            cached_password: OnceCell::new(),
+        }
+    }
+
+    /// The basic-auth password for this client, if any.
+    ///
+    /// Keychain access is blocking and may put an approval dialog in front of
+    /// the user, so it happens on the blocking pool and only once per client.
+    async fn password(&self) -> Option<String> {
+        if let Some(p) = &self.explicit_password {
+            return Some(p.clone());
+        }
+        let Transport::Http { url, username } = &self.transport else {
+            return None;
+        };
+        if username.is_empty() {
+            return None;
+        }
+        let (url, username) = (url.clone(), username.clone());
+        self.cached_password
+            .get_or_init(|| async move {
+                tokio::task::spawn_blocking(move || crate::secrets::get_password(&url, &username))
+                    .await
+                    .ok()
+                    .flatten()
+            })
+            .await
+            .clone()
+    }
+
+    /// Single XML-RPC call, over whichever transport is configured.
     async fn call(&self, method: &str, params: &[Value]) -> Result<Value> {
-        scgi::call(&self.transport, method, params).await
+        let password = self.password().await;
+        transport::call(&self.transport, password.as_deref(), method, params).await
     }
 
     /// `system.multicall`: run several methods in one round-trip. Returns one
@@ -240,7 +295,7 @@ fn row_to_raw(row: &[Value]) -> RawTorrent {
 }
 
 #[async_trait]
-impl RtorrentApi for ScgiClient {
+impl RtorrentApi for RpcClient {
     async fn client_version(&self) -> Result<String> {
         Ok(self
             .call("system.client_version", &[])
@@ -868,10 +923,10 @@ mod live {
     use crate::ipc::Transport;
     use crate::rtorrent::derive;
 
-    fn client() -> Option<ScgiClient> {
+    fn client() -> Option<RpcClient> {
         std::env::var("RSTORRENT_TEST_SOCKET")
             .ok()
-            .map(|path| ScgiClient::new(Transport::UnixSocket { path }))
+            .map(|path| RpcClient::new(Transport::UnixSocket { path }))
     }
 
     #[tokio::test]
@@ -1070,6 +1125,57 @@ mod live {
         std::env::var("HOME")
             .map(|h| format!("{h}/Downloads"))
             .unwrap_or_else(|_| "/tmp".into())
+    }
+
+    /// B9: exercise the HTTP(S) transport end-to-end against an XML-RPC front
+    /// end (nginx `scgi_pass`, or the Python bridge in the scratchpad). Set:
+    ///   RSTORRENT_TEST_HTTP_URL=http://127.0.0.1:8099/RPC2
+    ///   RSTORRENT_TEST_HTTP_USER=alice RSTORRENT_TEST_HTTP_PASS=hunter2
+    #[tokio::test]
+    #[ignore]
+    async fn live_http_transport() {
+        let Some(url) = std::env::var("RSTORRENT_TEST_HTTP_URL").ok() else {
+            eprintln!("skip: set RSTORRENT_TEST_HTTP_URL");
+            return;
+        };
+        let username = std::env::var("RSTORRENT_TEST_HTTP_USER").unwrap_or_default();
+        let password = std::env::var("RSTORRENT_TEST_HTTP_PASS").ok();
+
+        let client = RpcClient::with_password(
+            Transport::Http {
+                url: url.clone(),
+                username: username.clone(),
+            },
+            password.clone(),
+        );
+
+        let version = client.client_version().await.expect("client_version over http");
+        println!("http: rtorrent version = {version}");
+        assert!(!version.is_empty());
+
+        let globals = client.global_stats().await.expect("global_stats over http");
+        println!("http: globals = {globals:?}");
+
+        let list = client.list_snapshot().await.expect("list_snapshot over http");
+        println!("http: torrents = {}", list.len());
+        for t in &list {
+            println!("  {} {}", t.hash, t.name);
+        }
+
+        // A wrong password must fail loudly, not silently succeed.
+        if !username.is_empty() {
+            let bad = RpcClient::with_password(
+                Transport::Http {
+                    url,
+                    username,
+                },
+                Some("definitely-wrong".into()),
+            );
+            match bad.client_version().await {
+                Err(e) => println!("http: bad password correctly rejected -> {e}"),
+                Ok(v) => panic!("bad password unexpectedly succeeded, got {v}"),
+            }
+        }
     }
 
     /// Spike: probe the per-torrent piece/chunk methods (for the pieces bar).

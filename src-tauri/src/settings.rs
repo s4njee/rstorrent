@@ -81,6 +81,9 @@ pub fn is_localhost(transport: &Transport) -> bool {
         Transport::Tcp { host, .. } => {
             matches!(host.as_str(), "127.0.0.1" | "::1" | "localhost")
         }
+        // A remote daemon's files aren't on this machine, so delete-data,
+        // reveal-in-Finder and free-space must stay disabled for it.
+        Transport::Http { url, .. } => crate::rtorrent::http::host_is_local(url),
     }
 }
 
@@ -89,6 +92,29 @@ pub fn endpoint_label(transport: &Transport) -> String {
     match transport {
         Transport::UnixSocket { path } => format!("unix:{path}"),
         Transport::Tcp { host, port } => format!("tcp:{host}:{port}"),
+        Transport::Http { url, .. } => strip_userinfo(url),
+    }
+}
+
+/// Remove any `user:pass@` from a URL before it is displayed or logged.
+///
+/// Nothing stops a user pasting `https://user:hunter2@box/RPC2` into the URL
+/// field, and this string reaches the disconnected card and the app log — so
+/// strip credentials rather than broadcast them.
+fn strip_userinfo(url: &str) -> String {
+    let (scheme, rest) = match url.split_once("://") {
+        Some((s, r)) => (Some(s), r),
+        None => (None, url),
+    };
+    // Userinfo ends at the last '@' before the first '/' of the path.
+    let path_start = rest.find('/').unwrap_or(rest.len());
+    let cleaned = match rest[..path_start].rfind('@') {
+        Some(at) => format!("{}{}", &rest[at + 1..path_start], &rest[path_start..]),
+        None => rest.to_string(),
+    };
+    match scheme {
+        Some(s) => format!("{s}://{cleaned}"),
+        None => cleaned,
     }
 }
 
@@ -125,5 +151,56 @@ mod tests {
         assert!(is_localhost(&Transport::UnixSocket { path: "/x".into() }));
         assert!(is_localhost(&Transport::Tcp { host: "127.0.0.1".into(), port: 5000 }));
         assert!(!is_localhost(&Transport::Tcp { host: "10.0.0.5".into(), port: 5000 }));
+        // A remote HTTP daemon is not local; a bridge on this machine is.
+        assert!(!is_localhost(&Transport::Http {
+            url: "https://seedbox.example.com/RPC2".into(),
+            username: "alice".into(),
+        }));
+        assert!(is_localhost(&Transport::Http {
+            url: "http://127.0.0.1:8080/RPC2".into(),
+            username: String::new(),
+        }));
+    }
+
+    #[test]
+    fn endpoint_label_never_shows_credentials() {
+        // This string reaches the disconnected card and the app log.
+        assert_eq!(
+            endpoint_label(&Transport::Http {
+                url: "https://user:hunter2@box.example/RPC2".into(),
+                username: String::new(),
+            }),
+            "https://box.example/RPC2"
+        );
+        assert_eq!(
+            endpoint_label(&Transport::Http {
+                url: "https://box.example/RPC2".into(),
+                username: String::new(),
+            }),
+            "https://box.example/RPC2"
+        );
+    }
+}
+
+#[cfg(test)]
+mod diag {
+    use super::*;
+
+    /// Diagnostic: what does the running app actually load from settings.json?
+    #[test]
+    #[ignore]
+    fn live_dump_loaded_settings() {
+        let path = std::path::PathBuf::from(std::env::var("HOME").unwrap())
+            .join("Library/Application Support/com.rstorrent.app/settings.json");
+        println!("path exists: {}", path.exists());
+        let raw = std::fs::read_to_string(&path).unwrap_or_default();
+        // Does it parse at all, or does load() silently fall back to defaults?
+        match serde_json::from_str::<Settings>(&raw) {
+            Ok(s) => println!("PARSED transport = {:?}", s.transport),
+            Err(e) => println!("PARSE ERROR = {e}"),
+        }
+        let loaded = load(&path);
+        println!("load() transport = {:?}", loaded.transport);
+        println!("load() mock = {}", loaded.mock);
     }
 }

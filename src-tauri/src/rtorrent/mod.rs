@@ -5,7 +5,8 @@
 //! [`RtorrentApi`] trait and the plain `Raw*` data structs defined here.
 //!
 //! Two implementations back the trait:
-//!   * [`client::ScgiClient`] — the real daemon over SCGI (unix socket / TCP).
+//!   * [`client::RpcClient`] — a real daemon, over SCGI (unix socket / TCP) or
+//!     XML-RPC over HTTP(S) for a remote one; see [`transport`].
 //!   * [`mock::MockClient`]   — the design-fixture torrents, for offline dev/tests.
 //!
 //! The split lets the whole UI run with `RSTORRENT_MOCK=1` and lets the transport
@@ -13,8 +14,10 @@
 
 pub mod client;
 pub mod derive;
+pub mod http;
 pub mod mock;
 pub mod scgi;
+pub mod transport;
 pub mod xmlrpc;
 
 use async_trait::async_trait;
@@ -220,6 +223,6 @@ pub fn make_backend(transport: Transport, mock: bool) -> Box<dyn RtorrentApi> {
     if mock || std::env::var("RSTORRENT_MOCK").is_ok() {
         Box::new(mock::MockClient::new())
     } else {
-        Box::new(client::ScgiClient::new(transport))
+        Box::new(client::RpcClient::new(transport))
     }
 }

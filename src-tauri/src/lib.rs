@@ -21,6 +21,7 @@ mod notifications;
 mod open_requests;
 mod poller;
 mod rtorrent;
+mod secrets;
 mod settings;
 mod state;
 mod stats;
@@ -94,6 +95,9 @@ pub fn run() {
             commands::get_settings,
             commands::apply_settings,
             commands::test_connection,
+            commands::set_http_password,
+            commands::has_http_password,
+            commands::clear_http_password,
             commands::retry_connection,
             commands::set_detail_watch,
             commands::get_log,

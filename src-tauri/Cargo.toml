@@ -35,6 +35,12 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time"
 quick-xml = "0.37"    # minimal hand-rolled XML-RPC encode/parse (handles <i8>)
 base64 = "0.22"       # load.raw payloads
 lava_torrent = "0.11" # .torrent metadata parsing for the Add dialog
+# XML-RPC over HTTP(S) for remote daemons (B9). Already in the tree via Tauri,
+# but without TLS; native-tls uses macOS Security.framework and therefore the
+# system trust store, rather than bundling a CA list that can go stale.
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+# Remote credentials belong in the Keychain, never in settings.json (B9).
+keyring = { version = "3", features = ["apple-native"] }
 
 # --- Filesystem side-effects ---
 trash = "5"           # "delete data" moves files to the macOS Trash, never rm

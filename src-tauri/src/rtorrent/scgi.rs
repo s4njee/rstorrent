@@ -47,6 +47,12 @@ async fn request(transport: &Transport, body: &str) -> Result<Vec<u8>> {
                 .map_err(|e| RtorrentError::Unreachable(format!("{host}:{port}: {e}")))?;
             exchange(stream, &frame).await
         }
+        // Unreachable in practice: `transport::call` routes HTTP to `http.rs`.
+        // Surfaced as an error rather than a panic in case a future caller
+        // bypasses the dispatcher.
+        Transport::Http { .. } => Err(RtorrentError::Protocol(
+            "HTTP transport routed into the SCGI path".into(),
+        )),
     }
 }
 

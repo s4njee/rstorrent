@@ -16,7 +16,7 @@ use crate::ipc::{
     AddOptions, AddSource, DetailTab, LogLevel, Settings, Statistics, TorrentMeta, Transport,
 };
 use crate::open_requests::OpenRequestState;
-use crate::rtorrent::{client::ScgiClient, LoadOptions, RtorrentApi, RtorrentError};
+use crate::rtorrent::{client::RpcClient, LoadOptions, RtorrentApi, RtorrentError};
 use crate::settings;
 use crate::state::AppState;
 use crate::torrent_file;
@@ -541,12 +541,52 @@ pub async fn apply_settings(
 }
 
 #[tauri::command]
-pub async fn test_connection(transport: Transport) -> Result<String, String> {
+pub async fn test_connection(
+    transport: Transport,
+    password: Option<String>,
+) -> Result<String, String> {
     // Probe the candidate transport directly, independent of the active backend.
-    ScgiClient::new(transport)
-        .client_version()
-        .await
-        .map_err(e)
+    // A password typed into Preferences isn't saved yet, so prefer it; an empty
+    // or absent one falls back to whatever the Keychain holds.
+    let client = match password.filter(|p| !p.is_empty()) {
+        Some(p) => RpcClient::with_password(transport, Some(p)),
+        None => RpcClient::new(transport),
+    };
+    client.client_version().await.map_err(e)
+}
+
+/// Save a remote daemon's password to the Keychain (B9).
+///
+/// Passwords are deliberately not part of `Settings`: that file is plaintext on
+/// disk. The frontend sends one here and never reads it back.
+#[tauri::command]
+pub fn set_http_password(
+    url: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    if crate::secrets::set_password(&url, &username, &password) {
+        Ok(())
+    } else {
+        Err("could not save the password to the Keychain".into())
+    }
+}
+
+/// Is a password saved for this endpoint? Lets Preferences show a saved-state
+/// hint without the secret ever entering the webview.
+#[tauri::command]
+pub fn has_http_password(url: String, username: String) -> bool {
+    crate::secrets::has_password(&url, &username)
+}
+
+/// Forget a saved remote password.
+#[tauri::command]
+pub fn clear_http_password(url: String, username: String) -> Result<(), String> {
+    if crate::secrets::clear_password(&url, &username) {
+        Ok(())
+    } else {
+        Err("could not remove the password from the Keychain".into())
+    }
 }
 
 /// Wake the poller immediately (used by the disconnected card's "Retry now").

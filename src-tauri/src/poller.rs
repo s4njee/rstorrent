@@ -188,6 +188,21 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                         retry_in_seconds: None,
                     });
                     state.log(&app, LogLevel::Info, "connected to rtorrent", None);
+                    // Basic auth is base64, not encryption. Say so plainly when
+                    // credentials are actually crossing a network in the clear —
+                    // Preferences warns up front, but settings can also arrive by
+                    // other routes (a hand-edited file, an older build).
+                    if let crate::ipc::Transport::Http { url, username } = &s.transport {
+                        if crate::rtorrent::http::is_insecure_credentialed(url, username) {
+                            state.log(
+                                &app,
+                                LogLevel::Warn,
+                                "sending credentials over plain http — anything on the \
+                                 network path can read them; prefer https",
+                                None,
+                            );
+                        }
+                    }
                 }
                 failures = 0;
 

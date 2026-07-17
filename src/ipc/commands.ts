@@ -134,8 +134,37 @@ export function applySettings(patch: Partial<Settings>): Promise<Settings> {
 }
 
 /** Probe a candidate connection; resolves with the daemon version or rejects. */
-export function testConnection(transport: Transport): Promise<string> {
-  return invoke("test_connection", { transport });
+export function testConnection(
+  transport: Transport,
+  password?: string,
+): Promise<string> {
+  // A password typed but not yet saved must be what gets probed; omitting it
+  // falls back to the Keychain.
+  return invoke("test_connection", { transport, password });
+}
+
+/** Save a remote daemon password to the Keychain (never to settings.json). */
+export function setHttpPassword(
+  url: string,
+  username: string,
+  password: string,
+): Promise<void> {
+  return invoke("set_http_password", { url, username, password });
+}
+
+/** Is a password saved for this endpoint? The secret itself is never returned. */
+export function hasHttpPassword(
+  url: string,
+  username: string,
+): Promise<boolean> {
+  return invoke("has_http_password", { url, username });
+}
+
+export function clearHttpPassword(
+  url: string,
+  username: string,
+): Promise<void> {
+  return invoke("clear_http_password", { url, username });
 }
 
 /** Steer the detail poll: which torrent + tab to watch (null to stop). */

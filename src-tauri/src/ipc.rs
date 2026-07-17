@@ -231,8 +231,22 @@ pub enum AddSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Transport {
-    UnixSocket { path: String },
-    Tcp { host: String, port: u16 },
+    UnixSocket {
+        path: String,
+    },
+    Tcp {
+        host: String,
+        port: u16,
+    },
+    /// XML-RPC over HTTP(S), e.g. an nginx/ruTorrent-fronted seedbox (B9).
+    ///
+    /// The password is deliberately absent: it lives in the macOS Keychain
+    /// (see `secrets.rs`), because settings.json is plaintext on disk.
+    Http {
+        url: String,
+        #[serde(default)]
+        username: String,
+    },
 }
 
 /// Ratio/time limits applied to a completed torrent. Zero disables a rule.

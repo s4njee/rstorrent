@@ -29,8 +29,15 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 
 - [ ] **B7 · Auto-update** (M) — Tauri updater + GitHub Releases; needs
   Developer-ID signing (E14-S2) first. Menu: "Check for Updates…".
-- [ ] **B9 · Remote daemons: HTTP(S) XML-RPC + basic auth** (L) — seedbox
-  audience; keeps delete-data/reveal disabled off-localhost.
+- [x] **B9 · Remote daemons: HTTP(S) XML-RPC + basic auth** (L)
+  `Transport::Http` alongside the SCGI socket/TCP kinds, dispatched in
+  `rtorrent::transport`; passwords live in the macOS Keychain, never in
+  settings.json. `is_localhost` understands HTTP so delete-data/reveal stay
+  gated off-localhost, and the endpoint label strips any userinfo before it
+  reaches the UI or log. Verified against live rtorrent 0.16.17 behind an
+  HTTP→SCGI bridge, including the app's own poll loop. **Note:** reading the
+  Keychain blocks on macOS's approval prompt, so it happens lazily off-thread —
+  see the comment on `RpcClient::password` before moving it.
 - [ ] **B10 · Multiple connection profiles** (M) — depends on B9.
 - [ ] **B11 · RSS feeds + auto-add rules** (XL) — fills the disabled prefs nav.
 - [ ] **B12 · Move data on Set location** (L) — same-volume rename, else

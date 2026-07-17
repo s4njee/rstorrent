@@ -77,3 +77,51 @@ on the poll interval (default 1s).
   upstream rtorrent input-validation bug, not rstorrent.
 - **Nothing in the Tracker column** — hostnames resolve on a slower poll; give it
   a few seconds after first load.
+
+## Connecting to a remote daemon (seedbox) over HTTP(S)
+
+rstorrent can talk XML-RPC over HTTP(S) instead of a local socket — the standard
+nginx/ruTorrent seedbox arrangement. In **Preferences → Connection**, pick
+**HTTP(S)** and enter the RPC URL (e.g. `https://seedbox.example.com/RPC2`) plus
+the username and password.
+
+**Prefer `https://`.** HTTP Basic auth is base64, not encryption: over plain
+`http://` to a remote host, anything on the network path can read the password.
+rstorrent warns in Preferences and in the log when that's the case.
+
+**Where the password lives.** In your macOS Keychain, never in `settings.json`
+(which is plaintext). The app stores it when you hit Apply and reads it back on
+connect; it's never returned to the UI, which is why the field shows
+"•••••••• (saved)" rather than the value. Leave it blank to keep the saved one,
+or use **Forget** to remove it.
+
+macOS may ask you to allow rstorrent to read that Keychain item — most often
+after an unsigned/ad-hoc rebuild changes the app's signature. Until you answer,
+the connection sits at "connecting…". Click Allow (or re-enter the password in
+Preferences, which rewrites the item under the current build).
+
+**Remote daemons are gated.** Delete-data, reveal-in-Finder and free-space stay
+disabled for a non-local daemon: its files aren't on this machine.
+
+### Server side
+
+Typical nginx front end for rtorrent's SCGI socket:
+
+```nginx
+location /RPC2 {
+    auth_basic "rtorrent";
+    auth_basic_user_file /etc/nginx/rtorrent.htpasswd;
+    include scgi_params;
+    scgi_pass unix:/home/you/.rtorrent/rpc.socket;
+}
+```
+
+To try this locally without a seedbox, `tools/scgi-http-bridge.py` does the same
+job as the nginx block above:
+
+```sh
+python3 tools/scgi-http-bridge.py           # http://127.0.0.1:8099/RPC2, alice/hunter2
+```
+
+Then point Preferences → Connection at `http://127.0.0.1:8099/RPC2`. It's a dev
+tool only — no TLS, single-threaded.

@@ -11,9 +11,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useUi } from "../../store/ui";
-import { useSettings, isLocalhost } from "../../store/settings";
+import {
+  useSettings,
+  isLocalhost,
+  isInsecureCredentialed,
+} from "../../store/settings";
 import { useTorrents } from "../../store/torrents";
-import { applySettings, testConnection } from "../../ipc/commands";
+import {
+  applySettings,
+  clearHttpPassword,
+  hasHttpPassword,
+  setHttpPassword,
+  testConnection,
+} from "../../ipc/commands";
 import type { Settings, Transport } from "../../ipc/types";
 import { ModalBase, Button } from "./ModalBase";
 import { Checkbox } from "./Checkbox";
@@ -56,11 +66,34 @@ export function PreferencesDialog() {
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(
     null,
   );
+  // Typed-but-unsaved remote password. Never populated from the Keychain — the
+  // secret does not come back into the webview; we only learn whether one exists.
+  const [password, setPassword] = useState("");
+  const [passwordSaved, setPasswordSaved] = useState(false);
 
   // Load the working copy once settings are available.
   useEffect(() => {
     if (settings && !draft) setDraft(settings);
   }, [settings, draft]);
+
+  // Ask (only) whether a password is on file for this endpoint, to drive the
+  // "saved" hint. Re-runs when the endpoint identity changes.
+  const httpUrl = draft?.transport.kind === "http" ? draft.transport.url : "";
+  const httpUser =
+    draft?.transport.kind === "http" ? draft.transport.username : "";
+  useEffect(() => {
+    if (!httpUrl) {
+      setPasswordSaved(false);
+      return;
+    }
+    let cancelled = false;
+    void hasHttpPassword(httpUrl, httpUser)
+      .then((saved) => !cancelled && setPasswordSaved(saved))
+      .catch(() => !cancelled && setPasswordSaved(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [httpUrl, httpUser]);
 
   const labels = useMemo(() => {
     const known = torrents.map((torrent) => torrent.label).filter(Boolean);
@@ -97,6 +130,21 @@ export function PreferencesDialog() {
   const setTransport = (t: Transport) => patch({ transport: t });
 
   const apply = async () => {
+    // Save the password first: if the Keychain refuses, surface it rather than
+    // persisting a transport whose credentials would then be missing.
+    if (draft.transport.kind === "http" && password) {
+      try {
+        await setHttpPassword(
+          draft.transport.url,
+          draft.transport.username,
+          password,
+        );
+      } catch (err) {
+        setSection("connection");
+        setTestMsg({ ok: false, text: String(err) });
+        return;
+      }
+    }
     const saved = await applySettings(draft);
     useSettings.getState().set(saved);
     closeDialog();
@@ -110,7 +158,7 @@ export function PreferencesDialog() {
   const runTest = async () => {
     setTestMsg({ ok: true, text: "testing…" });
     try {
-      const version = await testConnection(draft.transport);
+      const version = await testConnection(draft.transport, password);
       setTestMsg({ ok: true, text: `connected — rtorrent ${version}` });
     } catch (e) {
       setTestMsg({ ok: false, text: String(e) });
@@ -271,6 +319,17 @@ export function PreferencesDialog() {
               onStall={(stallWindowS) => patch({ stallWindowS })}
               onTest={() => void runTest()}
               testMsg={testMsg}
+              password={password}
+              onPassword={setPassword}
+              passwordSaved={passwordSaved}
+              onForgetPassword={() => {
+                void clearHttpPassword(httpUrl, httpUser)
+                  .then(() => {
+                    setPasswordSaved(false);
+                    setPassword("");
+                  })
+                  .catch((err) => setTestMsg({ ok: false, text: String(err) }));
+              }}
             />
           )}
 
@@ -576,6 +635,10 @@ function ConnectionSection({
   onStall,
   onTest,
   testMsg,
+  password,
+  onPassword,
+  passwordSaved,
+  onForgetPassword,
 }: {
   transport: Transport;
   pollMs: number;
@@ -585,27 +648,37 @@ function ConnectionSection({
   onStall: (n: number) => void;
   onTest: () => void;
   testMsg: { ok: boolean; text: string } | null;
+  password: string;
+  onPassword: (p: string) => void;
+  passwordSaved: boolean;
+  onForgetPassword: () => void;
 }) {
-  const isUnix = transport.kind === "unixSocket";
   return (
     <Group title="rtorrent Connection">
       <div className={forms.field}>
         <span className={forms.fieldLabel}>Transport</span>
         <Checkbox
-          checked={isUnix}
+          checked={transport.kind === "unixSocket"}
           onChange={() => onTransport({ kind: "unixSocket", path: "" })}
           label="Unix socket"
         />
         <Checkbox
-          checked={!isUnix}
+          checked={transport.kind === "tcp"}
           onChange={() =>
             onTransport({ kind: "tcp", host: "127.0.0.1", port: 5000 })
           }
           label="TCP"
         />
+        <Checkbox
+          checked={transport.kind === "http"}
+          onChange={() =>
+            onTransport({ kind: "http", url: "https://", username: "" })
+          }
+          label="HTTP(S)"
+        />
       </div>
 
-      {transport.kind === "unixSocket" ? (
+      {transport.kind === "unixSocket" && (
         <div className={forms.field}>
           <span className={forms.fieldLabel}>Socket</span>
           <input
@@ -618,7 +691,9 @@ function ConnectionSection({
             spellCheck={false}
           />
         </div>
-      ) : (
+      )}
+
+      {transport.kind === "tcp" && (
         <>
           <div className={forms.field}>
             <span className={forms.fieldLabel}>Host</span>
@@ -653,10 +728,21 @@ function ConnectionSection({
           {!isLocalhost(transport) && (
             <span className={styles.warn}>
               SCGI has no authentication — exposing it to a non-localhost host
-              is insecure.
+              is insecure. Prefer HTTP(S) with a username and password.
             </span>
           )}
         </>
+      )}
+
+      {transport.kind === "http" && (
+        <HttpFields
+          transport={transport}
+          onTransport={onTransport}
+          password={password}
+          onPassword={onPassword}
+          passwordSaved={passwordSaved}
+          onForgetPassword={onForgetPassword}
+        />
       )}
 
       <div className={forms.field}>
@@ -701,5 +787,86 @@ function ConnectionSection({
         )}
       </div>
     </Group>
+  );
+}
+
+/**
+ * HTTP(S) endpoint fields (B9): URL, username, and a password that goes to the
+ * Keychain rather than settings.json.
+ *
+ * The password box is write-only by design — a saved secret is never read back
+ * into the webview, so it shows a "saved" hint with a Forget button instead of
+ * the value. Leaving it blank keeps whatever is already saved.
+ */
+function HttpFields({
+  transport,
+  onTransport,
+  password,
+  onPassword,
+  passwordSaved,
+  onForgetPassword,
+}: {
+  transport: Extract<Transport, { kind: "http" }>;
+  onTransport: (t: Transport) => void;
+  password: string;
+  onPassword: (p: string) => void;
+  passwordSaved: boolean;
+  onForgetPassword: () => void;
+}) {
+  const insecure = isInsecureCredentialed(transport);
+  return (
+    <>
+      <div className={forms.field}>
+        <span className={forms.fieldLabel}>URL</span>
+        <input
+          className={forms.input}
+          value={transport.url}
+          onChange={(e) =>
+            onTransport({ ...transport, url: e.currentTarget.value })
+          }
+          placeholder="https://seedbox.example.com/RPC2"
+          spellCheck={false}
+        />
+      </div>
+      <div className={forms.field}>
+        <span className={forms.fieldLabel}>Username</span>
+        <input
+          className={forms.input}
+          value={transport.username}
+          onChange={(e) =>
+            onTransport({ ...transport, username: e.currentTarget.value })
+          }
+          placeholder="(none)"
+          spellCheck={false}
+          autoComplete="off"
+        />
+      </div>
+      <div className={forms.field}>
+        <span className={forms.fieldLabel}>Password</span>
+        <input
+          className={forms.input}
+          type="password"
+          value={password}
+          onChange={(e) => onPassword(e.currentTarget.value)}
+          placeholder={passwordSaved ? "•••••••• (saved)" : "(none)"}
+          autoComplete="new-password"
+        />
+        {passwordSaved && (
+          <button className={forms.browse} onClick={onForgetPassword}>
+            Forget
+          </button>
+        )}
+      </div>
+      <span className={forms.meta}>
+        Stored in your macOS Keychain, not in the settings file.
+        {passwordSaved && " Leave blank to keep the saved password."}
+      </span>
+      {insecure && (
+        <span className={styles.warn}>
+          http:// sends your password in the clear — anything on the network
+          path can read it. Use https:// for a remote daemon.
+        </span>
+      )}
+    </>
   );
 }
