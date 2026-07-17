@@ -1,143 +1,211 @@
-# rstorrent — Feature backlog
+# rstorrent — Feature backlog (v2)
 
-Forward-looking feature backlog: what to build **after** the v1 scope in
-[tasks.md](tasks.md). Where an item already has a story ID there (E13/E15), it's
-referenced, not duplicated — tasks.md stays the execution tracker for anything
-promoted out of this file.
+Fresh idea backlog, superseding the first one now that its P1 slice has shipped.
+Old `B` numbers are kept for items carried over; new ideas use `C` numbers so
+references in commits/PRs stay unambiguous. As before: this file is for ideas,
+[tasks.md](tasks.md) is the execution tracker for anything promoted.
 
-Priorities: **P1** (next release, v1.x) · **P2** (v2) · **P3** (icebox — revisit
-when there's pull). Sizes as in tasks.md: S ≤ 2 h, M ≤ half day, L ≈ day,
-XL = needs breaking down.
-
----
-
-## 0 · v1 close-out (already tracked — listed for visibility)
-
-Finish these in tasks.md before starting anything below:
-
-- `E13-S2` performance pass / 1,000-row virtualization
-- `E13-S4` accessibility & keyboard completeness
-- `E13-S5` run the QA checklist
-- `E14-S2` clean-account release QA + Developer-ID signing docs
+Priorities: **P1** (next releases, v1.x) · **P2** (v2) · **P3** (icebox).
+Sizes: S ≤ 2 h, M ≤ half day, L ≈ day, XL = needs breaking down.
 
 ---
 
-## 1 · P1 — v1.x: daily-driver gaps
+## 0 · Shipped from the previous backlog
 
-Things a real user hits in the first week of daily use.
+- [x] **B1** `.torrent` file association + `magnet:` URL scheme
+- [x] **B2** completion notifications · **B3** dock badge (dock *menu* still open, see B17)
+- [x] **B4** per-torrent speed limits (named throttle pool)
+- [x] **B5** tracker management (add/remove/enable/reannounce)
+- [x] **B6** resizable / customizable columns
+- [x] **B8** ratio groups / seed-goal automation (global + per-label)
+- [x] **B15** pieces map — shipped as the General-tab pieces bar (`514c09e`)
 
-- [x] **B1 · `.torrent` file association + `magnet:` URL scheme** (M) — *tracked as E15-S1*
-  Opening either from Finder/browser routes into the add dialogs (or instant-add
-  per prefs). This is the single biggest friction point vs. every other client.
-
-- [x] **B2 · Completion notifications** (S) — *tracked as E15-S5*
-  macOS notification on download-complete; per-label opt-out in Behavior prefs.
-  Clicking the notification selects the torrent (and reveals in Finder if complete).
-
-- [x] **B3 · Dock badge & dock menu** (S)
-  Badge with active-download count; dock menu with global pause/resume and
-  current ↓/↑ rates. Cheap, very visible. *Shipped badge only — the dock menu
-  needs custom Objective-C (no Tauri API); revisit alongside B17.*
-
-- [x] **B4 · Per-torrent speed limits** (M)
-  `d.throttle_name.set` against named throttles (rtorrent has no true per-torrent
-  cap, so: manage a small pool of named throttle groups). Context menu ▸ Limit
-  download/upload… Surfaced in the General tab.
-
-- [x] **B5 · Tracker management** (M)
-  Trackers tab: add tracker (`d.tracker.insert`), remove, enable/disable,
-  **force reannounce** (also on the context menu). Today the tab is read-only.
-
-- [x] **B6 · Resizable / customizable columns** (M) — *tracked as E15-S4*
-  Drag header edges, show/hide via header context menu, persisted with the rest
-  of UI state (E13-S3 already persists sort).
-
-- [ ] **B7 · Auto-update** (M)
-  Tauri updater plugin + GitHub Releases feed. Requires Developer-ID signing
-  (E14-S2) first. Menu: "Check for Updates…".
-
-- [x] **B8 · Ratio groups / seed-goal automation** (L)
-  Global and per-label stop conditions: stop at ratio X or after seeding N
-  hours, enforced by the app poller against rtorrent snapshot data.
-  Prefs ▸ BitTorrent section grows a "Seeding limits" block.
+Still open from v1 close-out in tasks.md: `E13-S2` virtualization, `E13-S4`
+accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 
 ---
 
-## 2 · P2 — v2: bigger bets
+## 1 · Carried over (unshipped B-items)
 
-- [ ] **B9 · Remote daemons: HTTP(S) XML-RPC + basic auth** (L) — *tracked as E15-S2*
-  For nginx/ruTorrent-fronted seedboxes. Keeps delete-data/reveal-in-Finder
-  disabled for non-local daemons. Unlocks the seedbox audience.
-
-- [ ] **B10 · Multiple connection profiles** (M)
-  Named daemon profiles (home, seedbox…) with a fast switcher in the title bar
-  / app menu. Depends on B9 to be interesting. Per-profile UI state.
-
-- [ ] **B11 · RSS feeds + auto-add rules** (XL) — *tracked as E15-S6*
-  Feed polling, per-feed rules (match/exclude regex, label, save path, start
-  state), history de-dupe. Fills the disabled RSS prefs nav. Split into
-  plumbing / rules engine / UI stories when promoted.
-
-- [ ] **B12 · Move data on Set location** (L) — *tracked as E15-S3*
-  Same-volume rename, else copy + verify + erase, with progress toast. Removes
-  the "files are not moved" caveat.
-
-- [ ] **B13 · Torrent creation** (L)
-  File ▸ New Torrent…: pick files/folder, piece size (auto), trackers, private
-  flag, source tag → build .torrent (pure Rust), optionally add-and-seed
-  immediately.
-
-- [ ] **B14 · Scheduler / alternative speed limits** (M)
-  "Turtle mode" toggle in the status bar + time-of-day schedule in Prefs ▸ Speed
-  (weekday/weekend grid), driving the global throttles.
-
-- [ ] **B15 · Pieces map in detail panel** (M)
-  Canvas strip of piece availability/completion (from `d.bitfield`) on the
-  General or Content tab — classic power-user affordance, fits the Dark Ops
-  aesthetic.
-
-- [ ] **B16 · Peer actions** (S)
-  Peers tab context menu: ban peer (`p.banned.set`), snub/unsnub, add peer
-  manually (`d.add_peer`).
-
-- [ ] **B17 · Menu-bar (status item) mini-widget** (M)
-  Optional NSStatusItem: global rates at a glance, click for a compact popover
-  list of active transfers, global pause. App can close to menu bar.
+- [ ] **B7 · Auto-update** (M) — Tauri updater + GitHub Releases; needs
+  Developer-ID signing (E14-S2) first. Menu: "Check for Updates…".
+- [ ] **B9 · Remote daemons: HTTP(S) XML-RPC + basic auth** (L) — seedbox
+  audience; keeps delete-data/reveal disabled off-localhost.
+- [ ] **B10 · Multiple connection profiles** (M) — depends on B9.
+- [ ] **B11 · RSS feeds + auto-add rules** (XL) — fills the disabled prefs nav.
+- [ ] **B12 · Move data on Set location** (L) — same-volume rename, else
+  copy+verify+erase with progress.
+- [ ] **B13 · Torrent creation** (L) — File ▸ New Torrent…, build + seed.
+- [ ] **B14 · Scheduler / alternative "turtle" limits** (M).
+- [ ] **B16 · Peer actions** (S) — ban / snub / add peer.
+- [ ] **B17 · Menu-bar status item + dock menu** (M) — needs native code beyond
+  Tauri's API; the dock-menu half of B3 folds in here.
+- [ ] **B18 · Windows/Linux ports** (XL) · **B19 · Web UI** (L) ·
+  **B20 · Localization** (M) · **B21 · Import from other clients** (M) ·
+  **B22 · Light theme** (S) — icebox, unchanged.
+- **B23 · Global tracker search** — still deliberately **out** (client, not indexer).
 
 ---
 
-## 3 · P3 — icebox
+## 2 · New ideas — P1: daily-driver friction
 
-- [ ] **B18 · Windows/Linux ports** (XL)
-  Nothing in the stack precludes it (Tauri is cross-platform); needs a pass on
-  window chrome (no overlay title bar), menus, Trash semantics, and packaging.
+Things you notice in week two of real use.
 
-- [ ] **B19 · Web UI prefs section** (L)
-  Serve the frontend over HTTP for browser access (the second disabled prefs
-  nav item). Overlaps heavily with B9; decide later if it's worth it vs. just
-  recommending ruTorrent for that use case.
+- [ ] **C1 · Drag & drop onto the window** (M)
+  Drop `.torrent` files, magnet text, or torrent URLs anywhere on the main
+  window → add dialog (or instant-add per prefs). Tauri's drag-drop events are
+  currently unhandled — file-association (B1) only covers Finder-open. The one
+  add path every other client has that we don't.
 
-- [ ] **B20 · Localization** (M)
-  Externalize strings; the all-monospace design keeps layout risk low. Wait for
-  demand.
+- [ ] **C2 · Paste to add** (S)
+  ⌘V on the main window with a magnet/URL in the clipboard adds it directly
+  (respecting the show-dialog pref). The magnet dialog already prefills from
+  the clipboard; this removes the dialog step for the common case.
 
-- [ ] **B21 · Import from other clients** (M)
-  One-shot migration: scan qBittorrent/Transmission session dirs, re-add
-  torrents with save paths + labels preserved (fast-resume via skip-hash-check).
+- [ ] **C3 · Selection summary bar** (S)
+  With ≥2 rows selected, a slim strip above the detail tabs: `4 selected ·
+  18.2 GiB · ↓ 3.1 MiB/s` plus resume/pause/remove buttons. Multi-select
+  currently gives no aggregate feedback at all ("multiple torrents selected").
 
-- [ ] **B22 · Light theme** (S)
-  Second token set in `tokens.css` behind `prefers-color-scheme` / a prefs
-  toggle. Design work is the real cost, not code.
+- [ ] **C4 · Smart filters (saved searches)** (M)
+  Persisted queries combining status + label + tracker + text (e.g. "stalled
+  linux-isos"), shown as a fourth sidebar group. The sidebar today filters on
+  exactly one dimension at a time; power users keep re-typing searches.
 
-- [ ] **B23 · Global search across trackers** (—)
-  Deliberately **out**: rstorrent is a client, not an indexer. Recorded here so
-  it's a decision, not an omission.
+- [ ] **C5 · Label management in the sidebar** (S)
+  Right-click a label → rename (rewrites `d.custom1` across matching torrents)
+  or remove label. Labels can currently be set per-torrent but never renamed
+  without touching every torrent by hand.
+
+- [ ] **C6 · Rate & ETA smoothing** (S)
+  EMA over the last ~5 poll samples for the Down/Up columns and ETA so numbers
+  stop flickering every second. Pure frontend change in the snapshot
+  reconciler; the raw values stay available to the Speed tab.
+
+- [ ] **C7 · Private-torrent affordances** (S)
+  `isPrivate` is already in the DTO but rendered nowhere. Show a small badge in
+  the General tab and a dimmed marker in the table; disable "Copy magnet link"
+  for private torrents with a tooltip (a bare-hash magnet is useless/leaky for
+  private trackers).
+
+- [ ] **C8 · Availability overlay on the pieces bar** (M)
+  Second lane under the completion bar showing swarm availability per piece,
+  plus an `availability: 3.4×` figure in the caption. `d.chunks_seen` is
+  confirmed present on rtorrent 0.16.17 (probed alongside `d.bitfield`); the
+  canvas/bucketing machinery from the pieces bar is reusable as-is.
+
+---
+
+## 3 · New ideas — P1/P2: automation
+
+- [ ] **C9 · Max-active-downloads scheduler** (M)
+  "Download at most N torrents at once": app-enforced queue in the poller —
+  excess downloading torrents are held stopped and auto-started as slots free
+  up, honoring priority order. rtorrent has no real queue (our up/down buttons
+  only nudge `d.priority`); this makes the queue actually mean something.
+
+- [ ] **C10 · Move-on-complete** (L)
+  Download into an incomplete dir, move to the final (per-label) destination on
+  completion: stop → move (rename same-volume, else copy+verify) → `d.directory.set`
+  → start. Shares its data-move machinery with B12 — build them together. Also
+  un-disables the "keep incomplete torrents in" pref that currently ships as a
+  tooltip apology.
+
+- [ ] **C11 · Per-label defaults** (M)
+  Per-label save path and start-state applied by the add dialogs, watch folder,
+  and deep-link adds. B8 already established the per-label settings shape
+  (`label_seed_goals`) — extend the same pattern.
+
+- [ ] **C12 · Multiple watch folders** (M)
+  The watch folder is a single string today. Allow several, each with its own
+  label/save path (which C11 makes meaningful), plus a per-folder "delete
+  .torrent after load" option instead of the `.loaded` rename.
+
+- [ ] **C13 · Run-on-complete hook** (S)
+  Optional user-configured shell command on completion, with `RST_NAME`,
+  `RST_PATH`, `RST_LABEL`, `RST_HASH` env vars. Off by default, configured only
+  in Preferences (never from torrent data), output captured to the app log.
+
+- [ ] **C14 · Auto-remove at seed goal** (S)
+  Extension to B8: when a seed goal is met, optionally remove the torrent from
+  the session (data stays; optional trash of the source `.torrent`). Turns the
+  seed-goal engine into full lifecycle automation.
+
+---
+
+## 4 · New ideas — P2: information depth
+
+- [ ] **C15 · Per-file progress bars in Content** (S)
+  Replace the bare percentage column with the table's mini progress bar; the
+  per-file `f.completed_chunks` data is already fetched.
+
+- [ ] **C16 · Richer peer info** (S)
+  Add snubbed/interested/choked flags (`p.is_snubbed` etc.), make Peers columns
+  sortable, and show a per-peer progress bar. Pairs with B16 (peer actions) —
+  do both in one pass on the Peers tab.
+
+- [ ] **C17 · Global transfer graph + history** (M)
+  Clicking the status-bar rates opens a popover with a session-wide speed chart
+  (the per-torrent SpeedChart generalizes directly). Persist daily up/down
+  totals alongside the existing since-install counters and grow the Statistics
+  dialog a small history chart.
+
+- [ ] **C18 · Announce countdown in Trackers** (S)
+  "next announce in 12m" per tracker row. Needs a probe for which timing
+  fields 0.16.17 exposes (`t.activity_time_next` / `t.success_time_last` were
+  not part of the B5 probe) — S if present, drop if not.
+
+---
+
+## 5 · New ideas — P2: macOS-native
+
+- [ ] **C19 · Quick Look & open from Content** (M)
+  Space = Quick Look the selected file, double-click = open with default app;
+  enabled only for 100%-complete files on a localhost daemon. The most
+  mac-native thing a torrent client can do.
+
+- [ ] **C20 · Start rtorrent from the app** (L)
+  Opt-in daemon management: when the disconnected card detects a local
+  `rtorrent` binary (brew paths), offer "Start rtorrent" — spawn it detached
+  with the session dir, supervise, and offer stop-on-quit. **This reverses a
+  stated v1 non-goal** (no process management) — worth it because tmux is the
+  single biggest onboarding hurdle in docs/rtorrent-setup.md. Scope it to
+  launch/stop only: no config editing, no bundled binary.
+
+---
+
+## 6 · New ideas — engineering & distribution
+
+- [ ] **C21 · GitHub Actions CI** (M)
+  No CI exists. Lint + typecheck + vitest + `cargo clippy/test` on PR; release
+  workflow producing the `.dmg` artifact (unsigned until B7/E14-S2 land).
+  Should come first — everything else in this file benefits.
+
+- [ ] **C22 · Delta snapshots over IPC** (M)
+  The poller currently emits the full torrent list every second; the frontend
+  reconciles by identity. Send `{changed: [...], removed: [...]}` deltas keyed
+  by hash instead. Only matters at hundreds+ of torrents — implement together
+  with `E13-S2` virtualization as one "scale pass," measured before/after.
+
+- [ ] **C23 · Session export / import** (S)
+  Export all torrents (source `.torrent`/magnet, save path, label, state) to a
+  JSON bundle; import re-adds with skip-hash-check. Complements B21
+  (import from other clients) and doubles as a backup story.
+
+- [ ] **C24 · Homebrew cask** (S)
+  `brew install --cask rstorrent` once B7/signing exist. Cheap distribution;
+  the audience already has brew (rtorrent came from it).
+
+- [ ] **C25 · Log tab upgrades** (S)
+  Level filter (info/warn/error), copy-to-clipboard, and export-to-file. The
+  ring buffer and Log tab exist; this is UI only.
 
 ---
 
 ## Suggested release slices
 
-- **v1.1** — B1, B2, B3 (native-citizen polish: associations, notifications, dock)
-- **v1.2** — B5, B6, B4 (power-user table & tracker control)
-- **v1.3** — B7, B8 (auto-update + seeding automation)
-- **v2.0** — B9, B10, B11 (remote daemons + RSS: the seedbox release)
+- **v1.4 — "feels native"**: C1, C2, C3, C5, C6, C7 (+ C21 CI underneath)
+- **v1.5 — "automation"**: C9, C11, C12, C14, B7
+- **v1.6 — "depth"**: C8, C15, C16, C17 (+ E13-S2 with C22)
+- **v2.0 — "seedbox"**: B9, B10, B11, C10/B12
+- Anytime, independently: C13, C18, C19, C23, C24, C25, C20
