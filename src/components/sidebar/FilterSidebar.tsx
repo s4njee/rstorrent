@@ -2,12 +2,16 @@
  * Filter sidebar. Clicking a Status/Label/Tracker row sets the active filter
  * (clicking the active row again clears back to "all"). Counts are global
  * (computed over the unfiltered list) per the design.
+ *
+ * The Smart group (C4) holds saved multi-dimension queries. "+" saves the
+ * current view — the active dimension filter plus the search text — under a
+ * name, so a query you'd otherwise retype is one click away.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTorrents } from "../../store/torrents";
-import { useUi, type ActiveFilter } from "../../store/ui";
-import { sidebarCounts } from "../../store/selectors";
+import { canSaveSmartFilter, useUi, type ActiveFilter } from "../../store/ui";
+import { sidebarCounts, smartFilterCounts } from "../../store/selectors";
 import styles from "./FilterSidebar.module.css";
 
 /** The fixed Status rows, in the design's order. */
@@ -25,8 +29,26 @@ export function FilterSidebar() {
   const torrents = useTorrents((s) => s.torrents);
   const filter = useUi((s) => s.filter);
   const setFilter = useUi((s) => s.setFilter);
+  const search = useUi((s) => s.search);
+  const smartFilters = useUi((s) => s.smartFilters);
+  const saveSmartFilter = useUi((s) => s.saveSmartFilter);
+  const removeSmartFilter = useUi((s) => s.removeSmartFilter);
+
+  const [naming, setNaming] = useState(false);
+  const [draftName, setDraftName] = useState("");
 
   const counts = useMemo(() => sidebarCounts(torrents), [torrents]);
+  const smartCounts = useMemo(
+    () => smartFilterCounts(torrents, smartFilters),
+    [torrents, smartFilters],
+  );
+  const canSave = canSaveSmartFilter(filter, search);
+
+  const commitName = () => {
+    saveSmartFilter(draftName);
+    setDraftName("");
+    setNaming(false);
+  };
 
   /** Toggle a filter: re-clicking the active one clears it. */
   const choose = (next: ActiveFilter) => {
@@ -88,6 +110,94 @@ export function FilterSidebar() {
           <span className={styles.count}>{t.count}</span>
         </div>
       ))}
+
+      <div className={`${styles.group} ${styles.groupWithAction}`}>
+        <span>Smart</span>
+        <button
+          className={styles.groupAction}
+          disabled={!canSave || naming}
+          title={
+            filter?.type === "smart"
+              ? "already viewing a smart filter"
+              : canSave
+                ? "save this view as a smart filter"
+                : "pick a filter or type a search first"
+          }
+          onClick={() => setNaming(true)}
+          aria-label="Save current view as a smart filter"
+        >
+          +
+        </button>
+      </div>
+
+      {naming && (
+        <div className={styles.naming}>
+          <input
+            className={styles.nameInput}
+            placeholder="name…"
+            autoFocus
+            value={draftName}
+            onChange={(e) => setDraftName(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitName();
+              if (e.key === "Escape") {
+                // Don't let the global Escape also clear the selection.
+                e.stopPropagation();
+                setNaming(false);
+                setDraftName("");
+              }
+            }}
+            onBlur={() => {
+              setNaming(false);
+              setDraftName("");
+            }}
+          />
+        </div>
+      )}
+
+      {smartFilters.map((f) => (
+        <div
+          key={f.id}
+          className={`${styles.row} ${isActive("smart", f.id) ? styles.active : ""}`}
+          onClick={() => choose({ type: "smart", value: f.id })}
+          title={describeCriteria(f)}
+        >
+          <span className={styles.label}>{f.name}</span>
+          <span className={styles.count}>{smartCounts[f.id] ?? 0}</span>
+          <button
+            className={styles.removeSmart}
+            aria-label={`Remove smart filter ${f.name}`}
+            title="remove"
+            onClick={(e) => {
+              // The row's own click would otherwise re-activate the filter.
+              e.stopPropagation();
+              removeSmartFilter(f.id);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+
+      {smartFilters.length === 0 && !naming && (
+        <div className={styles.smartHint}>filter or search, then + to save</div>
+      )}
     </div>
   );
+}
+
+/** Human-readable criteria for a smart filter's tooltip. */
+function describeCriteria(f: {
+  status?: string;
+  label?: string;
+  tracker?: string;
+  text?: string;
+}): string {
+  const parts = [
+    f.status && `status: ${f.status}`,
+    f.label && `label: ${f.label}`,
+    f.tracker && `tracker: ${f.tracker}`,
+    f.text && `text: "${f.text}"`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "matches everything";
 }

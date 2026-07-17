@@ -33,11 +33,52 @@ export type SortColumn =
 
 export type SortDir = "asc" | "desc";
 
+/**
+ * The dimensions a smart filter can constrain. Every present field must match
+ * (AND); absent fields are unconstrained. `text` matches like the search box.
+ */
+export interface SmartFilterCriteria {
+  status?: string;
+  label?: string;
+  tracker?: string;
+  text?: string;
+}
+
+/** A saved, named multi-dimension query (C4). */
+export interface SmartFilter extends SmartFilterCriteria {
+  id: string;
+  name: string;
+}
+
 export type ActiveFilter =
   | { type: "status"; value: string }
   | { type: "label"; value: string }
   | { type: "tracker"; value: string }
+  /** `value` is a SmartFilter id, resolved against `smartFilters`. */
+  | { type: "smart"; value: string }
   | null;
+
+/** Ids only need to be unique within this app's storage, not globally. */
+function newSmartFilterId(): string {
+  return `sf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Can the current view be saved as a smart filter?
+ *
+ * There must be something to save, and the active filter must not already be a
+ * smart filter. That second rule keeps the feature honest: criteria hold a
+ * single `text`, so "smart filter X, further narrowed by a search" has no
+ * faithful representation — saving it would have to silently drop or overwrite
+ * X's own text. Clear the filter and rebuild instead.
+ */
+export function canSaveSmartFilter(
+  filter: ActiveFilter,
+  search: string,
+): boolean {
+  if (filter?.type === "smart") return false;
+  return Boolean(filter) || search.trim().length > 0;
+}
 
 export type DialogKind =
   | null
@@ -59,6 +100,8 @@ interface UiState {
   selection: Set<string>;
   anchor: string | null;
   filter: ActiveFilter;
+  /** Saved multi-dimension queries (C4), shown as their own sidebar group. */
+  smartFilters: SmartFilter[];
   search: string;
   sortColumn: SortColumn;
   sortDir: SortDir;
@@ -83,6 +126,13 @@ interface UiState {
 
   // --- view ---
   setFilter: (f: ActiveFilter) => void;
+  /**
+   * Save the current view (dimension filter + search text) as a named smart
+   * filter, then activate it. Only meaningful for a non-smart view — see
+   * `canSaveSmartFilter`.
+   */
+  saveSmartFilter: (name: string) => void;
+  removeSmartFilter: (id: string) => void;
   setSearch: (s: string) => void;
   setSort: (col: SortColumn) => void;
   resizeColumn: (id: ColumnId, width: number) => void;
@@ -108,6 +158,7 @@ interface PersistedView {
   filter: ActiveFilter;
   activeTab: DetailTab;
   columns: string;
+  smartFilters: SmartFilter[];
 }
 
 interface LoadedView extends Omit<PersistedView, "columns"> {
@@ -121,18 +172,30 @@ function loadView(): LoadedView {
     filter: null,
     activeTab: "general",
     columns: defaultColumnState(),
+    smartFilters: [],
   };
 
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PersistedView>;
+      const smartFilters = parsed.smartFilters ?? fallback.smartFilters;
+      let filter = parsed.filter ?? fallback.filter;
+      // Don't restore a filter pointing at a smart filter that no longer
+      // exists — that would silently show an unexplained empty table.
+      if (
+        filter?.type === "smart" &&
+        !smartFilters.some((f) => f.id === filter?.value)
+      ) {
+        filter = null;
+      }
       return {
         sortColumn: parsed.sortColumn ?? fallback.sortColumn,
         sortDir: parsed.sortDir ?? fallback.sortDir,
-        filter: parsed.filter ?? fallback.filter,
+        filter,
         activeTab: parsed.activeTab ?? fallback.activeTab,
         columns: deserializeColumnState(parsed.columns),
+        smartFilters,
       };
     }
   } catch {
@@ -161,6 +224,7 @@ export const useUi = create<UiState>((set, get) => {
       filter: s.filter,
       activeTab: s.activeTab,
       columns: serializeColumnState(s.columns),
+      smartFilters: s.smartFilters,
     });
   };
 
@@ -168,6 +232,7 @@ export const useUi = create<UiState>((set, get) => {
     selection: new Set(),
     anchor: null,
     filter: initial.filter,
+    smartFilters: initial.smartFilters,
     search: "",
     sortColumn: initial.sortColumn,
     sortDir: initial.sortDir,
@@ -219,6 +284,41 @@ export const useUi = create<UiState>((set, get) => {
       set({ filter: f });
       persist();
     },
+
+    saveSmartFilter: (name) => {
+      const s = get();
+      const trimmed = name.trim();
+      if (!trimmed || !canSaveSmartFilter(s.filter, s.search)) return;
+
+      const filter = s.filter;
+      const saved: SmartFilter = {
+        id: newSmartFilterId(),
+        name: trimmed,
+        ...(filter && filter.type !== "smart"
+          ? { [filter.type]: filter.value }
+          : {}),
+        ...(s.search.trim() ? { text: s.search.trim() } : {}),
+      };
+      set({
+        smartFilters: [...s.smartFilters, saved],
+        filter: { type: "smart", value: saved.id },
+        // The text now lives in the filter, so clear the box: the visible rows
+        // are unchanged, but the criterion has exactly one home.
+        search: "",
+      });
+      persist();
+    },
+
+    removeSmartFilter: (id) => {
+      const s = get();
+      const wasActive = s.filter?.type === "smart" && s.filter.value === id;
+      set({
+        smartFilters: s.smartFilters.filter((f) => f.id !== id),
+        filter: wasActive ? null : s.filter,
+      });
+      persist();
+    },
+
     setSearch: (search) => set({ search }),
     setSort: (col) => {
       set((s) => {

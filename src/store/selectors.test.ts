@@ -1,7 +1,13 @@
 // Tests for the visible-list and sidebar-count derivations, using a small
 // fixture that mirrors the design's status mix.
 import { describe, it, expect } from "vitest";
-import { selectVisible, sidebarCounts } from "./selectors";
+import {
+  selectionSummary,
+  selectVisible,
+  sidebarCounts,
+  smartFilterCounts,
+} from "./selectors";
+import type { SmartFilter } from "./ui";
 import { reconcile } from "./torrents";
 import type { TorrentDto, Status } from "../ipc/types";
 
@@ -160,5 +166,144 @@ describe("reconcile", () => {
     };
     const merged = reconcile(prev, [limited, ...fixture.slice(1)]);
     expect(merged[0]).toBe(limited);
+  });
+});
+
+describe("smart filters (C4)", () => {
+  const isoText: SmartFilter = {
+    id: "sf1",
+    name: "stalled linux-isos",
+    status: "stalled",
+    label: "linux-iso",
+  };
+
+  it("ANDs every present criterion", () => {
+    // G is the only stalled linux-iso; E is linux-iso but paused.
+    const rows = selectVisible(
+      fixture,
+      { type: "smart", value: "sf1" },
+      "",
+      "name",
+      "asc",
+      [isoText],
+    );
+    expect(rows.map((r) => r.hash)).toEqual(["G"]);
+  });
+
+  it("leaves absent criteria unconstrained", () => {
+    const labelOnly: SmartFilter = {
+      id: "sf2",
+      name: "isos",
+      label: "linux-iso",
+    };
+    const rows = selectVisible(
+      fixture,
+      { type: "smart", value: "sf2" },
+      "",
+      "name",
+      "asc",
+      [labelOnly],
+    );
+    expect(rows.map((r) => r.hash).sort()).toEqual(["A", "B", "C", "E", "G"]);
+  });
+
+  it("combines a text criterion with the other dimensions", () => {
+    const withText: SmartFilter = {
+      id: "sf3",
+      name: "seeding debian",
+      status: "seeding",
+      text: "debian",
+    };
+    const rows = selectVisible(
+      fixture,
+      { type: "smart", value: "sf3" },
+      "",
+      "name",
+      "asc",
+      [withText],
+    );
+    expect(rows.map((r) => r.hash)).toEqual(["B"]);
+  });
+
+  it("still ANDs the live search box on top of a smart filter", () => {
+    const labelOnly: SmartFilter = {
+      id: "sf2",
+      name: "isos",
+      label: "linux-iso",
+    };
+    const rows = selectVisible(
+      fixture,
+      { type: "smart", value: "sf2" },
+      "fedora",
+      "name",
+      "asc",
+      [labelOnly],
+    );
+    expect(rows.map((r) => r.hash)).toEqual(["C"]);
+  });
+
+  it("honours the completed superset inside criteria", () => {
+    const done: SmartFilter = { id: "sf4", name: "done", status: "completed" };
+    const rows = selectVisible(
+      fixture,
+      { type: "smart", value: "sf4" },
+      "",
+      "name",
+      "asc",
+      [done],
+    );
+    // 100% rows regardless of status: two seeding + the paused raspios.
+    expect(rows.map((r) => r.hash).sort()).toEqual(["A", "B", "F"]);
+  });
+
+  it("shows everything for a dangling id rather than an empty table", () => {
+    const rows = selectVisible(
+      fixture,
+      { type: "smart", value: "gone" },
+      "",
+      "name",
+      "asc",
+      [],
+    );
+    expect(rows).toHaveLength(fixture.length);
+  });
+
+  it("counts rows per saved filter over the unfiltered list", () => {
+    const counts = smartFilterCounts(fixture, [
+      isoText,
+      { id: "sf2", name: "isos", label: "linux-iso" },
+    ]);
+    expect(counts).toEqual({ sf1: 1, sf2: 5 });
+  });
+});
+
+describe("selectionSummary (C3)", () => {
+  it("aggregates count, size and rates for the selected rows", () => {
+    const s = selectionSummary(fixture, new Set(["C", "D"]));
+    expect(s.count).toBe(2);
+    expect(s.size).toBe(2000);
+    expect(s.downRate).toBe(700); // 500 + 200
+    expect(s.upRate).toBe(0);
+    expect(s.paused).toBe(0);
+  });
+
+  it("counts paused rows so Resume/Pause can be judged", () => {
+    expect(selectionSummary(fixture, new Set(["E", "F", "C"])).paused).toBe(2);
+  });
+
+  it("ignores hashes that no longer exist", () => {
+    // A removal can land between snapshot and render.
+    const s = selectionSummary(fixture, new Set(["A", "does-not-exist"]));
+    expect(s.count).toBe(1);
+  });
+
+  it("is empty for an empty selection", () => {
+    expect(selectionSummary(fixture, new Set())).toEqual({
+      count: 0,
+      size: 0,
+      downRate: 0,
+      upRate: 0,
+      paused: 0,
+    });
   });
 });

@@ -58,6 +58,7 @@ export function TorrentTable() {
     })),
   );
   const selection = useUi((state) => state.selection);
+  const smartFilters = useUi((state) => state.smartFilters);
   const setSort = useUi((state) => state.setSort);
   const resizeColumn = useUi((state) => state.resizeColumn);
   const select = useUi((state) => state.select);
@@ -70,8 +71,16 @@ export function TorrentTable() {
   const suppressSort = useRef(false);
 
   const visible = useMemo(
-    () => selectVisible(torrents, filter, search, sortColumn, sortDir),
-    [torrents, filter, search, sortColumn, sortDir],
+    () =>
+      selectVisible(
+        torrents,
+        filter,
+        search,
+        sortColumn,
+        sortDir,
+        smartFilters,
+      ),
+    [torrents, filter, search, sortColumn, sortDir, smartFilters],
   );
   const columnVisibility = columns.visibility;
   const shownColumns = useMemo(

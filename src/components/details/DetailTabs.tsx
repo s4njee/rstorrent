@@ -75,8 +75,9 @@ export function DetailTabs() {
       <div className={styles.content}>
         {!torrent ? (
           <div className={styles.placeholder}>
+            {/* The summary bar above already covers the multi-select case. */}
             {selection.size > 1
-              ? "multiple torrents selected"
+              ? "select a single torrent to see its details"
               : "select a torrent"}
           </div>
         ) : (

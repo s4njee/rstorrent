@@ -35,6 +35,7 @@ import { useRateHistory } from "./store/rateHistory";
 import { TitleBar } from "./components/shell/TitleBar";
 import { Toolbar } from "./components/shell/Toolbar";
 import { StatusBar } from "./components/shell/StatusBar";
+import { SelectionBar } from "./components/shell/SelectionBar";
 import { FilterSidebar } from "./components/sidebar/FilterSidebar";
 import { TorrentTable } from "./components/table/TorrentTable";
 import { DetailTabs } from "./components/details/DetailTabs";
@@ -184,6 +185,7 @@ export default function App() {
           </div>
         )}
       </div>
+      <SelectionBar />
       <DetailTabs />
       <StatusBar />
       <ContextMenu />

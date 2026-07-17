@@ -53,3 +53,65 @@
 .active .count {
   color: var(--accent-cyan-bright);
 }
+
+/* Smart-filter group (C4): a group header carrying a save button, an inline
+   name input, and rows with a hover-revealed remove button. */
+.groupWithAction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.groupAction {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--fs-title);
+  line-height: 1;
+  padding: 0 2px;
+  cursor: default;
+}
+.groupAction:hover:not(:disabled) {
+  color: var(--accent-cyan);
+}
+.groupAction:disabled {
+  opacity: 0.35;
+}
+
+.naming {
+  padding: 2px 8px 4px;
+}
+.nameInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-field);
+  color: var(--text-body);
+  font-size: var(--fs-cell);
+}
+
+.smartHint {
+  padding: 2px 8px 4px;
+  color: var(--text-dim);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+/* Keep the row's layout stable: the button occupies space only on hover. */
+.removeSmart {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 9px;
+  line-height: 1;
+  padding: 0 0 0 6px;
+  cursor: default;
+  visibility: hidden;
+}
+.row:hover .removeSmart {
+  visibility: visible;
+}
+.removeSmart:hover {
+  color: var(--accent-red);
+}

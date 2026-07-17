@@ -1,0 +1,56 @@
+/* Multi-selection summary strip (C3), between the table and the detail tabs.
+   Deliberately slim — it's a status line with buttons, not a toolbar. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--bg-selected);
+  border-top: 1px solid var(--border-mid);
+  font-size: var(--fs-cell);
+  color: var(--text-muted);
+  flex: none;
+}
+
+.count {
+  color: var(--accent-cyan-bright);
+  font-weight: 600;
+}
+.sep {
+  color: var(--text-dim);
+}
+.stat {
+  font-variant-numeric: tabular-nums;
+}
+.down {
+  color: var(--accent-cyan-bright);
+  font-variant-numeric: tabular-nums;
+}
+.up {
+  color: var(--accent-green-soft);
+  font-variant-numeric: tabular-nums;
+}
+.grow {
+  flex: 1;
+}
+
+.action {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-track);
+  color: var(--text-body);
+  font-size: var(--fs-cell);
+  cursor: default;
+}
+.action:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan-bright);
+}
+.danger:hover {
+  border-color: var(--danger-border);
+  color: var(--accent-red);
+}

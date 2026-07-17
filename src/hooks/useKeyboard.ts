@@ -24,6 +24,7 @@ function visibleHashes(): string[] {
     u.search,
     u.sortColumn,
     u.sortDir,
+    u.smartFilters,
   ).map((row) => row.hash);
 }
 

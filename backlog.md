@@ -64,15 +64,20 @@ Things you notice in week two of real use.
   the native Edit menu owns the ⌘V accelerator. Pastes into a text field, and
   clipboard text that isn't a torrent, are left alone.
 
-- [ ] **C3 · Selection summary bar** (S)
-  With ≥2 rows selected, a slim strip above the detail tabs: `4 selected ·
-  18.2 GiB · ↓ 3.1 MiB/s` plus resume/pause/remove buttons. Multi-select
-  currently gives no aggregate feedback at all ("multiple torrents selected").
+- [x] **C3 · Selection summary bar** (S)
+  With ≥2 rows selected, a slim strip above the detail tabs shows count, total
+  size, combined rates and a paused tally, plus resume/pause/remove. Resume and
+  Pause are separate buttons, not one toggle: a mixed selection has no single
+  state to toggle from.
 
-- [ ] **C4 · Smart filters (saved searches)** (M)
-  Persisted queries combining status + label + tracker + text (e.g. "stalled
-  linux-isos"), shown as a fourth sidebar group. The sidebar today filters on
-  exactly one dimension at a time; power users keep re-typing searches.
+- [x] **C4 · Smart filters (saved searches)** (M)
+  A Smart sidebar group of saved multi-dimension queries (status + label +
+  tracker + text, ANDed), with live counts, "+" to save the current view under a
+  name, and hover-✕ to remove. Persisted with the other view prefs; dangling
+  references are dropped on load/delete so a deleted filter can't strand the
+  table empty. Saving is refused while a smart filter is active — criteria hold a
+  single `text`, so "smart filter + extra search" has no faithful representation
+  (see `canSaveSmartFilter`). Revisit if that limit bites.
 
 - [ ] **C5 · Label management in the sidebar** (S)
   Right-click a label → rename (rewrites `d.custom1` across matching torrents)
@@ -206,7 +211,7 @@ Things you notice in week two of real use.
 
 ## Suggested release slices
 
-- **v1.4 — "feels native"**: ~~C1~~, ~~C2~~ (shipped), C3, C5, C6, C7 (+ C21 CI underneath)
+- **v1.4 — "feels native"**: ~~C1, C2, C3, C4~~ (shipped), C5, C6, C7 (+ C21 CI underneath)
 - **v1.5 — "automation"**: C9, C11, C12, C14, B7
 - **v1.6 — "depth"**: C8, C15, C16, C17 (+ E13-S2 with C22)
 - **v2.0 — "seedbox"**: B9, B10, B11, C10/B12
