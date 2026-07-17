@@ -383,6 +383,7 @@ async fn detail_loop(app: AppHandle, state: Arc<AppState>) {
                 trackers: Some(rows),
                 peers: None,
                 files: None,
+                pieces: None,
             }),
             DetailTab::Peers => backend.peers(&hash).await.ok().map(|rows| DetailPayload {
                 hash: hash.clone(),
@@ -390,6 +391,7 @@ async fn detail_loop(app: AppHandle, state: Arc<AppState>) {
                 trackers: None,
                 peers: Some(rows),
                 files: None,
+                pieces: None,
             }),
             DetailTab::Content => backend.files(&hash).await.ok().map(|rows| DetailPayload {
                 hash: hash.clone(),
@@ -397,8 +399,18 @@ async fn detail_loop(app: AppHandle, state: Arc<AppState>) {
                 trackers: None,
                 peers: None,
                 files: Some(rows),
+                pieces: None,
             }),
-            DetailTab::General | DetailTab::Speed | DetailTab::Log => None,
+            // General carries the pieces bar, so it now needs a fetch too.
+            DetailTab::General => backend.pieces(&hash).await.ok().map(|p| DetailPayload {
+                hash: hash.clone(),
+                tab,
+                trackers: None,
+                peers: None,
+                files: None,
+                pieces: Some(p),
+            }),
+            DetailTab::Speed | DetailTab::Log => None,
         };
 
         if let Some(p) = payload {

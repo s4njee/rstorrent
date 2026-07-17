@@ -143,6 +143,22 @@ pub struct FileNode {
     pub is_dir: bool,
 }
 
+/// Per-piece download state for the General tab's pieces bar.
+///
+/// `bitfield` is rtorrent's `d.bitfield` hex string: each byte (two hex chars)
+/// covers 8 pieces, most-significant bit first. We forward it verbatim rather
+/// than expanding to a bool array — a 100k-piece torrent would otherwise mean a
+/// 100k-element JSON array every poll; the frontend downsamples it to the bar's
+/// pixel width. An empty string means "nothing yet" (treated as all-zero).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PieceInfo {
+    pub size_chunks: i64,
+    pub completed_chunks: i64,
+    pub chunk_size: i64,
+    pub bitfield: String,
+}
+
 /// Payload of the `state://detail` event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -155,6 +171,8 @@ pub struct DetailPayload {
     pub peers: Option<Vec<PeerRow>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<FileNode>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pieces: Option<PieceInfo>,
 }
 
 /// Log severity.

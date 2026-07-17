@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use super::scgi;
 use super::xmlrpc::Value;
 use super::{LoadOptions, RawGlobal, RawStats, RawTorrent, Result, RtorrentApi, RtorrentError};
-use crate::ipc::{FileNode, PeerRow, Transport, TrackerRow};
+use crate::ipc::{FileNode, PeerRow, PieceInfo, Transport, TrackerRow};
 
 /// The per-download commands fetched by `d.multicall2`, in column order. The
 /// indices here must match the `row[i]` reads in [`row_to_raw`].
@@ -495,6 +495,39 @@ impl RtorrentApi for ScgiClient {
             .collect())
     }
 
+    async fn pieces(&self, hash: &str) -> Result<PieceInfo> {
+        // One round-trip for all four fields. `d.bitfield` is the piece bitmap;
+        // rtorrent returns an all-`F` string for a complete torrent and may
+        // return an empty string before any chunks exist.
+        let h = || vec![Value::Str(hash.to_string())];
+        let r = self
+            .multicall(&[
+                ("d.size_chunks", h()),
+                ("d.completed_chunks", h()),
+                ("d.chunk_size", h()),
+                ("d.bitfield", h()),
+            ])
+            .await?;
+        let num = |i: usize| {
+            r.get(i)
+                .and_then(|x| x.as_ref().ok())
+                .and_then(Value::as_i64)
+                .unwrap_or(0)
+        };
+        let bitfield = r
+            .get(3)
+            .and_then(|x| x.as_ref().ok())
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        Ok(PieceInfo {
+            size_chunks: num(0),
+            completed_chunks: num(1),
+            chunk_size: num(2),
+            bitfield,
+        })
+    }
+
     async fn start(&self, hashes: &[String]) -> Result<()> {
         self.batch_hashes("d.start", hashes).await
     }
@@ -956,6 +989,118 @@ mod live {
         // These fields are always present on 0.16.17.
         assert!(s.buffer_size.is_some(), "buffer_size should be present");
         assert!(s.queued_io.is_some(), "queued_io should be present");
+    }
+
+    /// End-to-end check of the pieces bar against a *partially* complete
+    /// torrent: loads RSTORRENT_TEST_TORRENT (whose data file must be truncated
+    /// on disk so only the first half hash-checks), then asserts the bitfield
+    /// rtorrent reports has exactly the leading pieces set. This pins our bit
+    /// ordering to rtorrent's real output. Erases the torrent afterwards.
+    #[tokio::test]
+    #[ignore]
+    async fn live_partial_bitfield() {
+        let Some(c) = client() else {
+            eprintln!("skip: set RSTORRENT_TEST_SOCKET");
+            return;
+        };
+        let Some(path) = std::env::var("RSTORRENT_TEST_TORRENT").ok() else {
+            eprintln!("skip: set RSTORRENT_TEST_TORRENT");
+            return;
+        };
+        let bytes = std::fs::read(&path).expect("read .torrent");
+        let meta = crate::torrent_file::read_metadata(&path).expect("metadata");
+        let hash = meta.info_hash.clone();
+
+        let opts = LoadOptions {
+            directory: dirs_home_downloads(),
+            label: "rstorrent-pieces".into(),
+            start: true, // triggers the hash check against the on-disk data
+            top_of_queue: false,
+            unselected_indexes: vec![],
+        };
+        c.load_raw(bytes, opts).await.expect("load_raw");
+
+        // Wait for the hash check to settle.
+        let mut p = None;
+        for _ in 0..20 {
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            let got = c.pieces(&hash).await.expect("pieces");
+            if got.size_chunks > 0 && got.completed_chunks > 0 {
+                p = Some(got);
+                break;
+            }
+        }
+        let p = p.expect("hash check produced no completed chunks");
+        println!(
+            "pieces: {}/{} chunk_size={} bitfield={}",
+            p.completed_chunks, p.size_chunks, p.chunk_size, p.bitfield
+        );
+
+        // The completed pieces must be the leading ones (we truncated the tail).
+        let bits: Vec<bool> = hex_to_bits(&p.bitfield);
+        let leading = bits.iter().take_while(|b| **b).count();
+        println!("leading set bits = {leading}");
+        assert_eq!(
+            leading as i64, p.completed_chunks,
+            "leading set bits should equal completed_chunks (bit order mismatch?)"
+        );
+        // And nothing after the leading run should be set.
+        assert!(
+            !bits[leading..].iter().any(|b| *b),
+            "no pieces past the truncation point should be set"
+        );
+
+        c.erase(std::slice::from_ref(&hash)).await.expect("erase");
+    }
+
+    /// MSB-first bit expansion of a hex bitfield (mirrors utils/bitfield.ts).
+    fn hex_to_bits(hex: &str) -> Vec<bool> {
+        let mut out = Vec::with_capacity(hex.len() * 4);
+        for chunk in hex.as_bytes().chunks(2) {
+            let s = std::str::from_utf8(chunk).unwrap_or("00");
+            let byte = u8::from_str_radix(s, 16).unwrap_or(0);
+            for i in 0..8 {
+                out.push(byte & (0x80 >> i) != 0);
+            }
+        }
+        out
+    }
+
+    fn dirs_home_downloads() -> String {
+        std::env::var("HOME")
+            .map(|h| format!("{h}/Downloads"))
+            .unwrap_or_else(|_| "/tmp".into())
+    }
+
+    /// Spike: probe the per-torrent piece/chunk methods (for the pieces bar).
+    /// Set RSTORRENT_TEST_HASH to an loaded torrent's info-hash.
+    #[tokio::test]
+    #[ignore]
+    async fn live_probe_pieces() {
+        let Some(c) = client() else {
+            eprintln!("skip: set RSTORRENT_TEST_SOCKET");
+            return;
+        };
+        let Some(hash) = std::env::var("RSTORRENT_TEST_HASH").ok() else {
+            eprintln!("skip: set RSTORRENT_TEST_HASH");
+            return;
+        };
+        for m in [
+            "d.size_chunks",
+            "d.completed_chunks",
+            "d.chunk_size",
+            "d.bitfield",
+            "d.chunks_seen",
+        ] {
+            match c.call(m, &[Value::Str(hash.clone())]).await {
+                Ok(v) => {
+                    let s = format!("{v:?}");
+                    // Bitfields can be long; show a prefix.
+                    println!("OK   {m} = {:.120}", s);
+                }
+                Err(e) => println!("ERR  {m} -> {e}"),
+            }
+        }
     }
 
     /// Spike: probe which statistics methods this rtorrent build exposes, so

@@ -132,6 +132,21 @@ export interface FileNode {
   isDir: boolean;
 }
 
+/**
+ * Per-piece download state for the General tab's pieces bar.
+ *
+ * `bitfield` is rtorrent's `d.bitfield` hex string: each byte (two hex chars)
+ * covers 8 pieces, most-significant bit first. It's forwarded verbatim (rather
+ * than as a bool array) to keep the payload small for large torrents; use
+ * `utils/bitfield.ts` to read it.
+ */
+export interface PieceInfo {
+  sizeChunks: number;
+  completedChunks: number;
+  chunkSize: number;
+  bitfield: string;
+}
+
 /** Payload of the `state://detail` event. */
 export interface DetailPayload {
   hash: string;
@@ -139,6 +154,7 @@ export interface DetailPayload {
   trackers?: TrackerRow[];
   peers?: PeerRow[];
   files?: FileNode[];
+  pieces?: PieceInfo;
 }
 
 /** One entry in the app event log (Log tab). */

@@ -297,6 +297,48 @@ impl RtorrentApi for MockClient {
         ])
     }
 
+    async fn pieces(&self, hash: &str) -> Result<crate::ipc::PieceInfo> {
+        let state = self.state.lock().unwrap();
+        let t = state.torrents.iter().find(|t| t.hash.eq_ignore_ascii_case(hash));
+        let (size_bytes, done_bytes) = match t {
+            Some(t) => (t.size_bytes, t.bytes_done),
+            None => (0, 0),
+        };
+        // Model 512 KiB chunks like a typical large torrent.
+        let chunk_size = 512 * 1024;
+        let size_chunks = ((size_bytes + chunk_size - 1) / chunk_size).max(1);
+        let completed_chunks = (done_bytes / chunk_size).min(size_chunks);
+
+        // Synthesize a plausible bitfield: mostly-contiguous completed pieces
+        // with a scattered leading edge, so the mock bar looks like a real
+        // download rather than a solid block.
+        let mut bits = vec![false; size_chunks as usize];
+        let solid = (completed_chunks as f64 * 0.85) as usize;
+        for (i, b) in bits.iter_mut().enumerate() {
+            if i < solid {
+                *b = true;
+            }
+        }
+        // Scatter the remaining completed chunks ahead of the solid region.
+        let mut remaining = completed_chunks as usize - solid.min(completed_chunks as usize);
+        let mut i = solid;
+        while remaining > 0 && i < bits.len() {
+            // Deterministic pseudo-scatter (every 3rd chunk).
+            if i % 3 == 0 {
+                bits[i] = true;
+                remaining -= 1;
+            }
+            i += 1;
+        }
+
+        Ok(crate::ipc::PieceInfo {
+            size_chunks,
+            completed_chunks,
+            chunk_size,
+            bitfield: bits_to_hex(&bits),
+        })
+    }
+
     async fn start(&self, hashes: &[String]) -> Result<()> {
         self.with_hash(hashes, |t| {
             t.is_active = true;
@@ -539,6 +581,22 @@ fn new_download(name: &str, opts: &LoadOptions) -> RawTorrent {
         priority: if opts.top_of_queue { 3 } else { 2 },
         ..Default::default()
     }
+}
+
+/// Pack piece bits into rtorrent's `d.bitfield` hex layout: each byte holds 8
+/// pieces, most-significant bit first, rendered as two uppercase hex chars.
+fn bits_to_hex(bits: &[bool]) -> String {
+    let mut out = String::with_capacity(bits.len().div_ceil(4));
+    for byte_start in (0..bits.len()).step_by(8) {
+        let mut byte: u8 = 0;
+        for offset in 0..8 {
+            if bits.get(byte_start + offset).copied().unwrap_or(false) {
+                byte |= 0x80 >> offset;
+            }
+        }
+        out.push_str(&format!("{byte:02X}"));
+    }
+    out
 }
 
 /// Tiny stable hash so added torrents get a deterministic pseudo info-hash.

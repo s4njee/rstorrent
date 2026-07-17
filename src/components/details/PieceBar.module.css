@@ -1,0 +1,33 @@
+/* Pieces bar: a full-width canvas strip with a dim caption beneath, sitting
+   above the General tab's label/value grid. */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border-mid);
+  border-radius: 1px;
+  /* The canvas is drawn at device resolution; don't let the browser smooth it. */
+  image-rendering: pixelated;
+}
+
+.caption {
+  display: flex;
+  gap: 18px;
+  font-size: var(--fs-cell);
+  color: var(--text-body);
+}
+.caption b {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.pct {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}

@@ -21,6 +21,7 @@ import {
 import type {
   DetailTab,
   FileNode,
+  PieceInfo,
   TorrentDto,
   TrackerRow,
 } from "../../ipc/types";
@@ -31,6 +32,7 @@ import {
   formatRatio,
 } from "../../utils/format";
 import { SpeedChart } from "./SpeedChart";
+import { PieceBar } from "./PieceBar";
 import { PauseIcon, PlayIcon, RemoveIcon } from "../icons";
 import menuStyles from "../menu/ContextMenu.module.css";
 import styles from "./DetailTabs.module.css";
@@ -98,7 +100,7 @@ function TabContent({
 
   switch (tab) {
     case "general":
-      return <General torrent={torrent} />;
+      return <General torrent={torrent} pieces={forThis?.pieces} />;
     case "trackers":
       return (
         <TrackersTable
@@ -370,7 +372,13 @@ function LogView({ hash }: { hash: string }) {
 }
 
 /** General tab: 4-column label/value grid from the snapshot. */
-function General({ torrent: t }: { torrent: TorrentDto }) {
+function General({
+  torrent: t,
+  pieces,
+}: {
+  torrent: TorrentDto;
+  pieces?: PieceInfo;
+}) {
   const g = useTorrents((state) => state.globals);
   const downLimit = t.downRateLimit ?? g.downRateLimit;
   const upLimit = t.upRateLimit ?? g.upRateLimit;
@@ -386,12 +394,18 @@ function General({ torrent: t }: { torrent: TorrentDto }) {
     ["ul-limit", (upLimit ? formatRate(upLimit) : "∞") + limitSource],
   ];
   return (
-    <div className={styles.general}>
-      {pairs.map(([k, v]) => (
-        <span key={k}>
-          <b>{k}:</b> {v}
-        </span>
-      ))}
+    <div>
+      {/* Pieces bar arrives on the detail poll; absent for a moment on select. */}
+      {pieces && pieces.sizeChunks > 0 && (
+        <PieceBar pieces={pieces} status={t.status} />
+      )}
+      <div className={styles.general}>
+        {pairs.map(([k, v]) => (
+          <span key={k}>
+            <b>{k}:</b> {v}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

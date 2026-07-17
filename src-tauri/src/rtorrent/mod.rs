@@ -166,6 +166,9 @@ pub trait RtorrentApi: Send + Sync {
     /// File rows for the Content detail tab (and re-used by the Add dialog).
     async fn files(&self, hash: &str) -> Result<Vec<crate::ipc::FileNode>>;
 
+    /// Piece/chunk state for the General tab's pieces bar.
+    async fn pieces(&self, hash: &str) -> Result<crate::ipc::PieceInfo>;
+
     async fn start(&self, hashes: &[String]) -> Result<()>;
     async fn stop(&self, hashes: &[String]) -> Result<()>;
     async fn recheck(&self, hashes: &[String]) -> Result<()>;
