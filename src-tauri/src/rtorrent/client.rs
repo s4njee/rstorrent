@@ -187,6 +187,25 @@ fn load_commands(opts: &LoadOptions) -> Vec<String> {
     cmds
 }
 
+/// Classify a tracker row for the Status column.
+///
+/// Order matters: a disabled tracker isn't "failing", it's off. A tracker with
+/// a non-zero `failed_counter` is actively failing even though `is_usable` may
+/// still be true (rtorrent keeps retrying it) — that's the case that used to
+/// render as "working" while the torrent itself showed a tracker error. `!usable`
+/// is the last catch: rtorrent has parked the tracker for some other reason.
+fn tracker_status(enabled: bool, usable: bool, failed: i64) -> String {
+    if !enabled {
+        "disabled".into()
+    } else if failed > 0 {
+        "error".into()
+    } else if usable {
+        "working".into()
+    } else {
+        "error".into()
+    }
+}
+
 /// Extract a hostname from a tracker URL (`udp://host:port/announce` → `host`).
 fn host_of(url: &str) -> String {
     let after_scheme = url.split("://").nth(1).unwrap_or(url);
@@ -389,6 +408,15 @@ impl RtorrentApi for RpcClient {
                     Value::Str("t.is_usable=".into()),
                     Value::Str("t.scrape_complete=".into()),
                     Value::Str("t.scrape_incomplete=".into()),
+                    // `is_usable` alone doesn't tell you a tracker is failing: a
+                    // tracker whose every announce times out still reports
+                    // usable=1. `failed_counter` is the real signal — rtorrent
+                    // bumps it on each failed announce and resets it to 0 on a
+                    // success — so a value > 0 means the current announce streak
+                    // is failing (this is what leaves the torrent's d.message set
+                    // while every row otherwise looks "working").
+                    Value::Str("t.failed_counter=".into()),
+                    Value::Str("t.success_counter=".into()),
                 ],
             )
             .await?;
@@ -400,17 +428,12 @@ impl RtorrentApi for RpcClient {
             .map(|(index, r)| {
                 let enabled = r.get(1).and_then(Value::as_bool).unwrap_or(false);
                 let usable = r.get(2).and_then(Value::as_bool).unwrap_or(false);
+                let failed = r.get(5).and_then(Value::as_i64).unwrap_or(0);
                 TrackerRow {
                     index,
                     url: r.first().and_then(Value::as_str).unwrap_or("").to_string(),
                     enabled,
-                    status: if !enabled {
-                        "disabled".into()
-                    } else if usable {
-                        "working".into()
-                    } else {
-                        "error".into()
-                    },
+                    status: tracker_status(enabled, usable, failed),
                     seeds: r.get(3).and_then(Value::as_i64).unwrap_or(0),
                     leeches: r.get(4).and_then(Value::as_i64).unwrap_or(0),
                     last_announce: String::new(),
@@ -796,6 +819,19 @@ mod tests {
         assert_eq!(host_of("udp://tracker.example.org:6969/announce"), "tracker.example.org");
         assert_eq!(host_of("https://bttracker.debian.org/announce"), "bttracker.debian.org");
         assert_eq!(host_of("torrent.ubuntu.com"), "torrent.ubuntu.com");
+    }
+
+    #[test]
+    fn tracker_status_flags_failing_trackers() {
+        // The regression: usable stays true on a tracker whose announces are all
+        // timing out, so failure has to come from the counter, not is_usable.
+        assert_eq!(tracker_status(true, true, 3), "error");
+        // Healthy: enabled, usable, no failures.
+        assert_eq!(tracker_status(true, true, 0), "working");
+        // Disabled outranks everything — it's off, not failing.
+        assert_eq!(tracker_status(false, true, 5), "disabled");
+        // Parked by rtorrent for a non-counter reason.
+        assert_eq!(tracker_status(true, false, 0), "error");
     }
 
     #[test]

@@ -108,6 +108,7 @@ function TabContent({
           key={torrent.hash}
           hash={torrent.hash}
           trackers={forThis?.trackers ?? []}
+          message={torrent.statusMsg}
         />
       );
     case "peers":
@@ -146,9 +147,15 @@ interface TrackerMenuState {
 function TrackersTable({
   hash,
   trackers,
+  message,
 }: {
   hash: string;
   trackers: TrackerRow[];
+  // The torrent's d.message. rtorrent reports a tracker/storage failure here
+  // (e.g. "Tracker: [network error: ETIMEDOUT]") rather than on the individual
+  // tracker row, so without showing it the Trackers tab looks fine while the
+  // torrent is flagged in error. Empty when healthy.
+  message: string;
 }) {
   const [url, setUrl] = useState("");
   const [adding, setAdding] = useState(false);
@@ -180,6 +187,11 @@ function TrackersTable({
 
   return (
     <div className={styles.trackerPane}>
+      {message && (
+        <div className={styles.trackerError} role="status">
+          {message}
+        </div>
+      )}
       <form
         className={styles.trackerAdd}
         onSubmit={(event) => void submit(event)}
@@ -223,7 +235,13 @@ function TrackersTable({
                 }}
               >
                 <td>{tracker.url}</td>
-                <td>{tracker.status}</td>
+                <td
+                  className={
+                    tracker.status === "error" ? styles.statusError : ""
+                  }
+                >
+                  {tracker.status}
+                </td>
                 <td>{tracker.seeds}</td>
                 <td>{tracker.leeches}</td>
                 <td>{tracker.lastAnnounce || "—"}</td>
