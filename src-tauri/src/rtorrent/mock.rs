@@ -657,7 +657,7 @@ fn t(
 
 /// The ten torrents shown in the design reference, with matching states.
 fn fixtures() -> Vec<RawTorrent> {
-    vec![
+    let mut rows = vec![
         t("A1", "ubuntu-24.04.2-desktop-amd64.iso", 5.8 * GIB, 100.0, true, true, 0, (1.2 * MIB) as i64, 2410, "linux-iso", 142, 87, 34, ""),
         t("B2", "debian-12.9.0-amd64-netinst.iso", 631.0 * MIB, 100.0, true, true, 0, (214.0 * KIB) as i64, 3870, "linux-iso", 98, 12, 10, ""),
         t("C3", "Fedora-Workstation-Live-x86_64-41-1.4.iso", 2.3 * GIB, 67.4, true, true, (8.4 * MIB) as i64, (620.0 * KIB) as i64, 190, "linux-iso", 34, 12, 30, ""),
@@ -668,7 +668,11 @@ fn fixtures() -> Vec<RawTorrent> {
         t("H8", "openSUSE-Tumbleweed-DVD-x86_64.iso", 4.4 * GIB, 12.0, true, true, 0, 0, 10, "linux-iso", 0, 2, 2, ""),
         t("I9", "raspios-bookworm-arm64-full.img.xz", 2.7 * GIB, 100.0, false, false, 0, 0, 1080, "sbc", 57, 16, 0, ""),
         t("J10", "Cosmos.Laundromat.2015.4K.mkv", 3.2 * GIB, 66.7, true, true, 0, 0, 310, "video", 0, 0, 0, "Tracker: [Failure reason \"unregistered torrent\"]"),
-    ]
+    ];
+    // J10's "unregistered torrent" failure is a private-tracker scenario, so it
+    // also exercises the C7 affordances (flags badge, no Copy-magnet).
+    rows[9].is_private = true;
+    rows
 }
 
 #[cfg(test)]

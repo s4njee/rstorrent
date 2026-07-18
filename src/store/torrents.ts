@@ -77,13 +77,69 @@ export function reconcile(
   });
 }
 
+/** Per-hash EMA state for rate smoothing (C6). */
+export type EmaState = Map<string, { down: number; up: number }>;
+
+// ≈ an average over the last ~5 one-second samples: enough to stop the
+// Down/Up/ETA columns flickering every tick, small enough to track a real
+// change within a couple of seconds.
+const EMA_ALPHA = 1 / 3;
+
+/**
+ * Smooth each torrent's displayed rates with an EMA, and recompute its ETA
+ * from the smoothed rate so both stop jumping on every poll (C6).
+ *
+ * Display-only: rows are copied, never mutated, so the rate-history store —
+ * which samples the same raw snapshot array — still charts real values on the
+ * Speed tab. `state` is mutated (it's the caller's accumulator across
+ * snapshots).
+ *
+ * A raw rate of zero resets the EMA instead of decaying: a stopped torrent
+ * should read 0 immediately, not fade out over several seconds.
+ */
+export function smoothRates(state: EmaState, next: TorrentDto[]): TorrentDto[] {
+  const seen = new Set<string>();
+  const out = next.map((t) => {
+    seen.add(t.hash);
+    const prev = state.get(t.hash);
+    const ema = (raw: number, old: number | undefined) =>
+      raw === 0 || old === undefined
+        ? raw
+        : Math.round(EMA_ALPHA * raw + (1 - EMA_ALPHA) * old);
+    const down = ema(t.downRate, prev?.down);
+    const up = ema(t.upRate, prev?.up);
+    state.set(t.hash, { down, up });
+
+    // Only replace an ETA the backend considered real (null means ∞/—), and
+    // only when there's a smoothed rate to divide by.
+    const remaining = t.size - t.bytesDone;
+    const etaSeconds =
+      t.etaSeconds !== null && down > 0
+        ? Math.round(remaining / down)
+        : t.etaSeconds;
+
+    if (down === t.downRate && up === t.upRate && etaSeconds === t.etaSeconds) {
+      return t;
+    }
+    return { ...t, downRate: down, upRate: up, etaSeconds };
+  });
+  // Keep the accumulator bounded: drop state for torrents that are gone.
+  for (const hash of state.keys()) {
+    if (!seen.has(hash)) state.delete(hash);
+  }
+  return out;
+}
+
+/** Module-level EMA accumulator used by the live store. */
+const emaState: EmaState = new Map();
+
 export const useTorrents = create<TorrentsState>((set, get) => ({
   torrents: [],
   globals: EMPTY_GLOBALS,
   connection: INITIAL_CONN,
   applySnapshot: (s) =>
     set({
-      torrents: reconcile(get().torrents, s.torrents),
+      torrents: reconcile(get().torrents, smoothRates(emaState, s.torrents)),
       globals: s.globals,
       connection: s.connection,
     }),

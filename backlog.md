@@ -91,16 +91,18 @@ Things you notice in week two of real use.
   or remove label. Labels can currently be set per-torrent but never renamed
   without touching every torrent by hand.
 
-- [ ] **C6 · Rate & ETA smoothing** (S)
-  EMA over the last ~5 poll samples for the Down/Up columns and ETA so numbers
-  stop flickering every second. Pure frontend change in the snapshot
-  reconciler; the raw values stay available to the Speed tab.
+- [x] **C6 · Rate & ETA smoothing** (S)
+  EMA (α=⅓ ≈ last 5 samples) in `smoothRates` ahead of the snapshot
+  reconciler; ETA recomputed from the smoothed rate. Zero snaps immediately
+  (a stopped torrent must not fade out). The Speed tab still charts raw
+  samples — rate-history reads the unsmoothed snapshot array.
 
-- [ ] **C7 · Private-torrent affordances** (S)
-  `isPrivate` is already in the DTO but rendered nowhere. Show a small badge in
-  the General tab and a dimmed marker in the table; disable "Copy magnet link"
-  for private torrents with a tooltip (a bare-hash magnet is useless/leaky for
-  private trackers).
+- [x] **C7 · Private-torrent affordances** (S)
+  "flags: private" in the General tab; "Copy magnet link" disabled with a
+  tooltip for private torrents (a bare-hash magnet is useless/leaky for
+  private trackers). Mock fixture J10 is now private so mock mode exercises
+  both. The table marker was skipped on purpose — too noisy per-row for a
+  flag that rarely changes; revisit if wanted.
 
 - [ ] **C8 · Availability overlay on the pieces bar** (M)
   Second lane under the completion bar showing swarm availability per piece,

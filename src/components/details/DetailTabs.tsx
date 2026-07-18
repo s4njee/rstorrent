@@ -412,6 +412,9 @@ function General({
     ["dl-limit", (downLimit ? formatRate(downLimit) : "∞") + limitSource],
     ["ul-limit", (upLimit ? formatRate(upLimit) : "∞") + limitSource],
   ];
+  // Private flag from the torrent's info dict (C7): DHT/PEX are off and the
+  // tracker is the only peer source — worth knowing when it stalls.
+  if (t.isPrivate) pairs.push(["flags", "private"]);
   return (
     <div>
       {/* Pieces bar arrives on the detail poll; absent for a moment on select. */}
