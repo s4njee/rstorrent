@@ -192,10 +192,16 @@ Things you notice in week two of real use.
 
 ## 6 · New ideas — engineering & distribution
 
-- [ ] **C21 · GitHub Actions CI** (M)
-  No CI exists. Lint + typecheck + vitest + `cargo clippy/test` on PR; release
-  workflow producing the `.dmg` artifact (unsigned until B7/E14-S2 land).
-  Should come first — everything else in this file benefits.
+- [x] **C21 · GitHub Actions CI** (M) — `.github/workflows/ci.yml`
+  Two jobs: `frontend` on Linux (eslint/prettier, tsc, vitest, vite build) and
+  `rust` on macOS (`cargo fmt --check`, clippy `-D warnings`, test). macOS for
+  the Rust half because that's the only target — the crate pulls in Tauri's
+  macOS webview and the Keychain. The Rust job skips the frontend build:
+  `cargo test` needs `tauri.conf.json`, not the `../dist` it points at
+  (verified by deleting dist/ and forcing the build script to re-run).
+  Enforcing `cargo fmt` required one mechanical reformat first (`da139d5`).
+  **Still open:** a release workflow producing the `.dmg` (blocked on
+  B7/E14-S2 signing).
 
 - [ ] **C22 · Delta snapshots over IPC** (M)
   The poller currently emits the full torrent list every second; the frontend

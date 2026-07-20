@@ -1,0 +1,89 @@
+# CI for rstorrent (C21).
+#
+# Two jobs, split by what they actually need:
+#
+#   frontend — pure Node, so it runs on Linux where runners are fastest.
+#   rust     — runs on macOS because that's the only platform rstorrent
+#              targets: the crate pulls in Tauri's macOS webview and the
+#              Keychain (`security-framework`, via `keyring`). Building it on
+#              Linux would test a configuration nobody ships.
+#
+# The Rust job deliberately does NOT build the frontend first. `cargo test`
+# only needs `tauri.conf.json`, not the `../dist` output it points at — checked
+# by removing dist/ and forcing the build script to re-run.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to a PR makes the in-flight run irrelevant; don't pay for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: frontend (lint, types, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` (not `install`) so the lockfile is authoritative and a drifted
+      # lockfile fails here rather than resolving to something else silently.
+      - run: npm ci
+
+      - name: Lint (eslint + prettier)
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      # Catches breakage that tsc alone misses — an unresolved import, a bad
+      # asset reference — before it reaches a release build.
+      - name: Build frontend
+        run: npm run build
+
+  rust:
+    name: rust (fmt, clippy, tests)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # Caches ~/.cargo and target/. Keyed on the lockfile; a cold cache just
+      # means a slower run, never a wrong one.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      # Tests marked #[ignore] need a live rtorrent daemon or the macOS
+      # Keychain, so they stay out of CI and are run by hand — see
+      # docs/rtorrent-setup.md.
+      - name: Tests
+        run: cargo test
