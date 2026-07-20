@@ -616,6 +616,10 @@ fn t(
 ) -> RawTorrent {
     let size_bytes = size as i64;
     let complete = done_pct >= 100.0;
+    // A plausible chunk count (~1 MiB pieces); when idle chunks_hashed tracks
+    // completed chunks, matching a real daemon that isn't mid-check.
+    let size_chunks = (size_bytes / (1024 * 1024)).max(1);
+    let chunks_hashed = (size_chunks as f64 * done_pct / 100.0) as i64;
     RawTorrent {
         hash: hash.to_string(),
         name: name.to_string(),
@@ -639,6 +643,10 @@ fn t(
         is_private: false,
         throttle_name: String::new(),
         finished_at: if complete { unix_now() - 3 * 3600 } else { 0 },
+        chunks_hashed,
+        size_chunks,
+        // Started a day ago; downloading ones a bit more recently.
+        started_at: unix_now() - if complete { 26 * 3600 } else { 5 * 3600 },
     }
 }
 

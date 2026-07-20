@@ -64,12 +64,19 @@ pub fn ratio(t: &RawTorrent) -> f64 {
 /// slow poll's per-hash cache and may be empty until resolved.
 pub fn to_dto(t: &RawTorrent, tracker_host: &str, named_limits: Option<(i64, i64)>) -> TorrentDto {
     let st = status(t);
+    // While checking, the progress bar should track the verification sweep
+    // (chunks hashed so far), not the byte completion it's re-verifying (D17).
+    let percent = if st == Status::Checking && t.size_chunks > 0 {
+        (t.chunks_hashed as f64 / t.size_chunks as f64 * 100.0).clamp(0.0, 100.0)
+    } else {
+        percent(t)
+    };
     TorrentDto {
         hash: t.hash.clone(),
         name: t.name.clone(),
         size: t.size_bytes,
         bytes_done: t.bytes_done,
-        percent: percent(t),
+        percent,
         status: st,
         status_msg: t.message.clone(),
         seeds_connected: t.peers_complete.min(t.peers_connected),
@@ -92,6 +99,8 @@ pub fn to_dto(t: &RawTorrent, tracker_host: &str, named_limits: Option<(i64, i64
         throttle_name: t.throttle_name.clone(),
         down_rate_limit: named_limits.map(|limits| limits.0.saturating_mul(1024)),
         up_rate_limit: named_limits.map(|limits| limits.1.saturating_mul(1024)),
+        started_at: t.started_at,
+        finished_at: t.finished_at,
     }
 }
 
@@ -137,6 +146,29 @@ mod tests {
         assert_eq!(status(&t), Status::Downloading);
         // 500 bytes remaining at 100 B/s = 5s.
         assert_eq!(eta_seconds(&t, Status::Downloading), Some(5));
+    }
+
+    #[test]
+    fn checking_progress_tracks_hashed_chunks_not_bytes() {
+        // Mid-recheck: 30 of 100 chunks verified. The bar should read 30%
+        // (the verification sweep), not the 50% byte-completion behind it (D17).
+        let mut t = raw();
+        t.hashing = true;
+        t.size_chunks = 100;
+        t.chunks_hashed = 30;
+        let dto = to_dto(&t, "", None);
+        assert_eq!(dto.status, Status::Checking);
+        assert_eq!(dto.percent, 30.0);
+    }
+
+    #[test]
+    fn non_checking_percent_stays_byte_based() {
+        // chunks_hashed == completed when idle; it must not hijack the bar.
+        let mut t = raw();
+        t.size_chunks = 100;
+        t.chunks_hashed = 100;
+        let dto = to_dto(&t, "", None);
+        assert_eq!(dto.percent, 50.0); // 500/1000 bytes
     }
 
     #[test]

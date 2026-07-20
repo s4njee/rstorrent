@@ -60,6 +60,10 @@ export interface TorrentDto {
   /** Named limits in bytes/s; null means inherit the corresponding global. */
   downRateLimit: number | null;
   upRateLimit: number | null;
+  /** Unix seconds first started / finished, 0 when unknown. Drive the Started
+   *  and Finished columns; durable across daemon restarts. */
+  startedAt: number;
+  finishedAt: number;
 }
 
 /** Global counters shown in the status bar and General detail tab. */

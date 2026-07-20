@@ -29,7 +29,9 @@ export type SortColumn =
   | "downRate"
   | "upRate"
   | "etaSeconds"
-  | "ratio";
+  | "ratio"
+  | "startedAt"
+  | "finishedAt";
 
 export type SortDir = "asc" | "desc";
 

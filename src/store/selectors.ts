@@ -89,6 +89,10 @@ function sortKey(t: TorrentDto, col: SortColumn): number | string {
       return t.etaSeconds ?? Number.MAX_SAFE_INTEGER;
     case "ratio":
       return t.ratio;
+    case "startedAt":
+      return t.startedAt;
+    case "finishedAt":
+      return t.finishedAt;
   }
 }
 

@@ -25,6 +25,8 @@ const SORT_COLUMNS: Partial<Record<ColumnId, SortColumn>> = {
   up: "upRate",
   eta: "etaSeconds",
   ratio: "ratio",
+  started: "startedAt",
+  finished: "finishedAt",
 };
 
 const RIGHT_COLUMNS = new Set<ColumnId>([

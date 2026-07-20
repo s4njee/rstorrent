@@ -39,6 +39,9 @@ const LIST_COMMANDS: &[&str] = &[
     "d.is_private=",         // 19
     "d.throttle_name=",      // 20
     "d.timestamp.finished=", // 21
+    "d.chunks_hashed=",      // 22  hash-check progress (D17)
+    "d.size_chunks=",        // 23  total chunks — denominator for 22
+    "d.timestamp.started=",  // 24  durable first-started time (D4)
 ];
 
 /// rtorrent client that talks to a live daemon, local (SCGI) or remote (HTTP).
@@ -309,6 +312,9 @@ fn row_to_raw(row: &[Value]) -> RawTorrent {
         is_private: b(19),
         throttle_name: s(20),
         finished_at: n(21),
+        chunks_hashed: n(22),
+        size_chunks: n(23),
+        started_at: n(24),
     }
 }
 

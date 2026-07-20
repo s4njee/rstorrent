@@ -80,11 +80,13 @@ The biggest functional gaps against qBittorrent, all with confirmed methods.
   `d.peers_min.set`, `d.uploads_max.set` in the existing per-torrent limits
   dialog (RateLimitDialog grows a second section). Read side into General.
 
-- [ ] **D4 · Added / Started / Finished columns** (S) — `d.load_date`,
-  `d.timestamp.started`, `d.timestamp.finished` (all present; finished is
-  already fetched for seed goals). Three new optional columns + sort,
-  default-off except Added. Unlocks "what did I add last week" without
-  leaving the table.
+- [x] **D4 · Started / Finished columns** (S) — `d.timestamp.started` +
+  `d.timestamp.finished` as optional sortable columns (both default-hidden,
+  toggled from the column menu). **"Added" was dropped:** `d.load_date` is
+  session-scoped — a probe showed it resets to *today* on every daemon
+  restart, so it'd lie after any restart. The started/finished timestamps live
+  in the resume file and survive. A durable added-date waits for D6 (sticky
+  `d.custom` metadata).
 
 - [ ] **D5 · Super seeding** (S) — initial-seed connection type via
   `d.connection_current.set = "initial_seed"` (readable via
@@ -165,9 +167,12 @@ confirmed present; each is a labeled control with the daemon default shown.
 
 ## 5 · D-items — observability (P1)
 
-- [ ] **D17 · Hash-check progress** (S) — the `checking` status currently
-  sits at an indeterminate spinner; `d.chunks_hashed` / `d.size_chunks` make
-  it a real percentage in the progress column. Do with D1.
+- [x] **D17 · Hash-check progress** (S) — while `checking`, the progress bar
+  now tracks the verification sweep (`d.chunks_hashed` / `d.size_chunks`)
+  rather than the byte-completion behind it. Derived in `to_dto` so no new UI —
+  the existing progress column shows it. `chunks_hashed` equals completed
+  chunks when idle, so the checking-status guard is load-bearing (tested both
+  ways). D1 (Force recheck) was already shipped in the context menu.
 
 - [ ] **D18 · Scrape & swarm detail in Trackers** (S) — `t.scrape_time_last`,
   `t.latest_new_peers`, `t.latest_sum_peers`, `t.type` (udp/http/dht) as

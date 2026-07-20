@@ -53,7 +53,12 @@ describe("torrent table column state", () => {
     expect(template).toBe(
       "minmax(240px, 1fr) 88px 84px 52px 52px 76px 76px 62px 46px 72px 110px",
     );
-    expect(visibleColumns(state)).toHaveLength(COLUMN_DEFINITIONS.length - 1);
+    // Default-visible columns (Started/Finished ship hidden), minus the one
+    // we hid here (done).
+    const defaultVisible = COLUMN_DEFINITIONS.filter(
+      (c) => !c.defaultHidden,
+    ).length;
+    expect(visibleColumns(state)).toHaveLength(defaultVisible - 1);
   });
 
   it("round-trips persisted widths and visibility", () => {

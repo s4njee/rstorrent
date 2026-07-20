@@ -76,6 +76,23 @@ export function formatRatio(ratio: number): string {
   return ratio.toFixed(2);
 }
 
+/**
+ * A Unix-seconds timestamp as a compact date for the Added/Finished columns.
+ * 0 (rtorrent's "unknown") renders as —. Same-year dates drop the year to save
+ * width; older ones keep it. Absolute, not relative: it doesn't drift between
+ * polls and needs no ticking clock.
+ */
+export function formatDate(unixSeconds: number, now = new Date()): string {
+  if (!unixSeconds) return "—";
+  const d = new Date(unixSeconds * 1000);
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString(undefined, {
+    year: sameYear ? undefined : "2-digit",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /** Free-space status-bar string, or empty when unknown. */
 export function formatFree(freeBytes: number | null): string {
   return freeBytes == null ? "" : `free: ${formatBytes(freeBytes)}`;

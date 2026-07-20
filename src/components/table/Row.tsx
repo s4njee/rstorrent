@@ -16,6 +16,7 @@ import {
   formatUpCell,
   formatEta,
   formatRatio,
+  formatDate,
 } from "../../utils/format";
 import { ProgressBar } from "./ProgressBar";
 import styles from "./TorrentTable.module.css";
@@ -120,6 +121,16 @@ function RowInner({
     tracker: (
       <span key="tracker" className={styles.dim} title={t.trackerHost}>
         {t.trackerHost}
+      </span>
+    ),
+    started: (
+      <span key="started" className={styles.dim}>
+        {formatDate(t.startedAt)}
+      </span>
+    ),
+    finished: (
+      <span key="finished" className={styles.dim}>
+        {formatDate(t.finishedAt)}
       </span>
     ),
   };

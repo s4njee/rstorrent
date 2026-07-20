@@ -9,11 +9,27 @@ import {
   formatRatio,
   formatDownCell,
   formatUpCell,
+  formatDate,
 } from "./format";
 
 const GIB = 1_073_741_824;
 const MIB = 1_048_576;
 const KIB = 1_024;
+
+describe("formatDate", () => {
+  it("renders — for the unknown (0) timestamp", () => {
+    expect(formatDate(0)).toBe("—");
+  });
+  it("drops the year within the current year, keeps it otherwise", () => {
+    const now = new Date("2026-07-20T12:00:00Z");
+    // A date earlier the same year: no year shown.
+    expect(formatDate(Date.UTC(2026, 6, 17) / 1000, now)).not.toMatch(
+      /26|2026/,
+    );
+    // A prior-year date: year present.
+    expect(formatDate(Date.UTC(2025, 11, 30) / 1000, now)).toMatch(/25|2025/);
+  });
+});
 
 describe("formatBytes", () => {
   it("matches design size strings", () => {
