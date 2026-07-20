@@ -107,7 +107,13 @@ mod live {
             return;
         };
         let user = std::env::var("RSTORRENT_TEST_HTTP_USER").unwrap_or_default();
-        println!("keychain lookup {user}@{url} -> {:?}", get_password(&url, &user).map(|_| "<found>"));
-        assert!(has_password(&url, &user), "no keychain entry for {user}@{url}");
+        println!(
+            "keychain lookup {user}@{url} -> {:?}",
+            get_password(&url, &user).map(|_| "<found>")
+        );
+        assert!(
+            has_password(&url, &user),
+            "no keychain entry for {user}@{url}"
+        );
     }
 }

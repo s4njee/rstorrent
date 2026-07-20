@@ -1,5 +1,7 @@
 # rstorrent
 
+[![CI](https://github.com/s4njee/rstorrent/actions/workflows/ci.yml/badge.svg)](https://github.com/s4njee/rstorrent/actions/workflows/ci.yml)
+
 A native desktop client for the [`rtorrent`](https://github.com/rakshasa/rtorrent)
 daemon on **macOS and Windows**, built with **Rust + Tauri 2** and a
 **React/TypeScript** frontend. It implements the "Dark Ops" design in
@@ -12,7 +14,9 @@ WSL2 and translates paths across the boundary — see
 
 rstorrent is a *client* — it does not embed a BitTorrent engine.
 
+<!-- TODO capture (see docs/images/README.md):
 ![The rstorrent main window](docs/images/main-window.png)
+-->
 
 ## Status
 
@@ -42,12 +46,16 @@ drag & drop onto the window, ⌘V to add from the clipboard, and a watch folder.
 summary bar for bulk resume/pause/remove; a filter sidebar with status, label and
 tracker groups, plus saved smart filters that AND several dimensions together.
 
+<!-- TODO capture:
 ![Smart filters in the sidebar and the selection summary bar](docs/images/smart-filters.png)
+-->
 
 **Detail tabs** — General (with a pieces bar showing which chunks have landed),
 Trackers (add/remove/enable/reannounce), Peers, Content, Speed, and Log.
 
+<!-- TODO capture:
 ![The pieces bar on the General tab](docs/images/pieces-bar.png)
+-->
 
 **Automation** — per-torrent speed limits via named throttle pools, and ratio
 groups / seed goals set globally or per label.
@@ -75,7 +83,9 @@ Install and configure a daemon per [docs/rtorrent-setup.md](docs/rtorrent-setup.
 then open **Preferences → Connection**, match the transport to your
 `.rtorrent.rc`, and hit **Test connection** — it reports the rtorrent version.
 
+<!-- TODO capture:
 ![Preferences → Connection](docs/images/preferences-connection.png)
+-->
 
 ## Development
 
@@ -87,7 +97,11 @@ then open **Preferences → Connection**, match the transport to your
 | `npm run lint` | ESLint + Prettier check |
 | `cargo test` (in `src-tauri/`) | Rust unit tests |
 | `cargo clippy --all-targets -- -D warnings` | Rust lints |
+| `cargo fmt --check` (in `src-tauri/`) | Rust formatting |
 | `npm run tauri build` | Package `.app`/`.dmg` (macOS) or `.msi`/NSIS `.exe` (Windows) |
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of the
+above on push and PR — the frontend checks on Linux, the Rust ones on macOS.
 
 Tests that touch a live daemon or the Keychain are marked `#[ignore]` and are run
 deliberately — see [docs/rtorrent-setup.md](docs/rtorrent-setup.md).

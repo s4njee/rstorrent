@@ -8,7 +8,7 @@ import {
   smartFilterCounts,
 } from "./selectors";
 import type { SmartFilter } from "./ui";
-import { reconcile } from "./torrents";
+import { reconcile, smoothRates, type EmaState } from "./torrents";
 import type { TorrentDto, Status } from "../ipc/types";
 
 function mk(
@@ -166,6 +166,60 @@ describe("reconcile", () => {
     };
     const merged = reconcile(prev, [limited, ...fixture.slice(1)]);
     expect(merged[0]).toBe(limited);
+  });
+});
+
+describe("smoothRates (C6)", () => {
+  const dl = (downRate: number, etaSeconds: number | null = 60) => ({
+    ...mk("D", "cachyos.iso", "downloading", 50, "", "t.example", 1000),
+    downRate,
+    etaSeconds,
+  });
+
+  it("passes the first sample through unchanged", () => {
+    const state: EmaState = new Map();
+    const [t] = smoothRates(state, [dl(300)]);
+    expect(t.downRate).toBe(300);
+  });
+
+  it("damps a one-tick spike instead of displaying it", () => {
+    const state: EmaState = new Map();
+    smoothRates(state, [dl(300)]);
+    const [t] = smoothRates(state, [dl(900)]); // 3× spike for one poll
+    // EMA with α=1/3: 300 + (900-300)/3 = 500, well short of the spike.
+    expect(t.downRate).toBe(500);
+  });
+
+  it("snaps to zero immediately when a torrent stops", () => {
+    const state: EmaState = new Map();
+    smoothRates(state, [dl(900)]);
+    const [t] = smoothRates(state, [dl(0)]);
+    expect(t.downRate).toBe(0); // no multi-second fade-out
+  });
+
+  it("recomputes ETA from the smoothed rate but never invents one", () => {
+    const state: EmaState = new Map();
+    smoothRates(state, [dl(300)]);
+    const [t] = smoothRates(state, [dl(900)]); // smoothed = 500, remaining = 500
+    expect(t.etaSeconds).toBe(1);
+    // null means the backend said ∞/— (paused, seeding): stays null.
+    const [p] = smoothRates(state, [dl(900, null)]);
+    expect(p.etaSeconds).toBeNull();
+  });
+
+  it("returns the same object when smoothing changes nothing", () => {
+    const state: EmaState = new Map();
+    const row = { ...dl(0), etaSeconds: null };
+    const [t] = smoothRates(state, [row]);
+    expect(t).toBe(row); // identity preserved → reconcile can skip the row
+  });
+
+  it("drops EMA state for torrents that disappear", () => {
+    const state: EmaState = new Map();
+    smoothRates(state, [dl(300)]);
+    expect(state.has("D")).toBe(true);
+    smoothRates(state, []);
+    expect(state.has("D")).toBe(false);
   });
 });
 

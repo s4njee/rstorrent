@@ -117,3 +117,20 @@
 .trackerDisabled {
   opacity: 0.45;
 }
+
+/* The torrent's tracker/storage error text (d.message), shown above the table
+   so a failure the individual rows can't express is still visible here. */
+.trackerError {
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-input);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: var(--fs-cell);
+}
+
+/* A failing tracker's Status cell, so it stands out from "working" rows. */
+.statusError {
+  color: var(--status-error);
+}

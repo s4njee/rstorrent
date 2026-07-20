@@ -27,8 +27,8 @@ mod secrets;
 mod settings;
 mod state;
 mod stats;
-mod torrent_file;
 mod throttles;
+mod torrent_file;
 mod watcher;
 #[cfg(target_os = "windows")]
 mod wsl;

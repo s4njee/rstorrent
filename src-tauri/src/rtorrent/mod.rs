@@ -185,13 +185,11 @@ pub trait RtorrentApi: Send + Sync {
     async fn set_label(&self, hashes: &[String], label: &str) -> Result<()>;
     async fn set_directory(&self, hash: &str, path: &str) -> Result<()>;
     async fn set_priority(&self, hash: &str, priority: i64) -> Result<()>;
-    async fn set_file_priority(&self, hash: &str, index: usize, priority: i64)
-        -> Result<()>;
+    async fn set_file_priority(&self, hash: &str, index: usize, priority: i64) -> Result<()>;
 
     /// Define or update both directions of a named throttle (rates in KiB/s,
     /// zero = unlimited). rtorrent requires rate arguments to be strings.
-    async fn define_named_throttle(&self, name: &str, down_kb: i64, up_kb: i64)
-        -> Result<()>;
+    async fn define_named_throttle(&self, name: &str, down_kb: i64, up_kb: i64) -> Result<()>;
 
     /// Assign a named throttle to all hashes. `None` clears the assignment and
     /// returns those torrents to the global throttle.

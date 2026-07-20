@@ -62,11 +62,7 @@ pub fn ratio(t: &RawTorrent) -> f64 {
 
 /// Assemble the full DTO the frontend consumes. `tracker_host` comes from the
 /// slow poll's per-hash cache and may be empty until resolved.
-pub fn to_dto(
-    t: &RawTorrent,
-    tracker_host: &str,
-    named_limits: Option<(i64, i64)>,
-) -> TorrentDto {
+pub fn to_dto(t: &RawTorrent, tracker_host: &str, named_limits: Option<(i64, i64)>) -> TorrentDto {
     let st = status(t);
     TorrentDto {
         hash: t.hash.clone(),

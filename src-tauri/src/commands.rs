@@ -7,8 +7,8 @@
 //!
 //! Command names and argument shapes must match `src/ipc/commands.ts`.
 
-use std::sync::Arc;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
@@ -19,8 +19,8 @@ use crate::open_requests::OpenRequestState;
 use crate::rtorrent::{client::RpcClient, LoadOptions, RtorrentApi, RtorrentError};
 use crate::settings;
 use crate::state::AppState;
-use crate::torrent_file;
 use crate::throttles;
+use crate::torrent_file;
 
 /// Shorthand for the shared-state extractor.
 type St<'a> = State<'a, Arc<AppState>>;
@@ -69,7 +69,12 @@ pub async fn add_torrent(
         AddSource::File { path } => {
             let bytes = std::fs::read(&path).map_err(e)?;
             backend.load_raw(bytes, load).await.map_err(e)?;
-            state.log(&app, LogLevel::Info, format!("added torrent from {path}"), None);
+            state.log(
+                &app,
+                LogLevel::Info,
+                format!("added torrent from {path}"),
+                None,
+            );
             // Deselected files → priority 0. rtorrent addresses files by the
             // torrent's info-hash, which we read back from the .torrent. This
             // runs right after load; on a busy daemon the download may not be
@@ -78,9 +83,7 @@ pub async fn add_torrent(
             if !opts.unselected_indexes.is_empty() {
                 if let Ok(meta) = torrent_file::read_metadata(&path) {
                     for &idx in &opts.unselected_indexes {
-                        if let Err(err) =
-                            backend.set_file_priority(&meta.info_hash, idx, 0).await
-                        {
+                        if let Err(err) = backend.set_file_priority(&meta.info_hash, idx, 0).await {
                             state.log(
                                 &app,
                                 LogLevel::Warn,
@@ -104,7 +107,12 @@ pub async fn add_torrent(
 #[tauri::command]
 pub async fn start(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Result<(), String> {
     state.backend().start(&hashes).await.map_err(e)?;
-    state.log(&app, LogLevel::Info, format!("resumed {} torrent(s)", hashes.len()), None);
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("resumed {} torrent(s)", hashes.len()),
+        None,
+    );
     state.repoll.notify_one();
     Ok(())
 }
@@ -112,7 +120,12 @@ pub async fn start(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Result
 #[tauri::command]
 pub async fn stop(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Result<(), String> {
     state.backend().stop(&hashes).await.map_err(e)?;
-    state.log(&app, LogLevel::Info, format!("paused {} torrent(s)", hashes.len()), None);
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("paused {} torrent(s)", hashes.len()),
+        None,
+    );
     state.repoll.notify_one();
     Ok(())
 }
@@ -120,7 +133,12 @@ pub async fn stop(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Result<
 #[tauri::command]
 pub async fn recheck(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Result<(), String> {
     state.backend().recheck(&hashes).await.map_err(e)?;
-    state.log(&app, LogLevel::Info, format!("rechecking {} torrent(s)", hashes.len()), None);
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("rechecking {} torrent(s)", hashes.len()),
+        None,
+    );
     state.repoll.notify_one();
     Ok(())
 }
@@ -278,10 +296,20 @@ pub async fn remove(
     for p in paths {
         match crate::localfs::trash(&p) {
             Ok(_) => state.log(&app, LogLevel::Info, format!("moved to Trash: {p}"), None),
-            Err(err) => state.log(&app, LogLevel::Warn, format!("could not trash {p}: {err}"), None),
+            Err(err) => state.log(
+                &app,
+                LogLevel::Warn,
+                format!("could not trash {p}: {err}"),
+                None,
+            ),
         }
     }
-    state.log(&app, LogLevel::Info, format!("removed {} torrent(s)", hashes.len()), None);
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("removed {} torrent(s)", hashes.len()),
+        None,
+    );
     state.repoll.notify_one();
     Ok(())
 }
@@ -293,7 +321,11 @@ pub async fn set_label(
     hashes: Vec<String>,
     label: String,
 ) -> Result<(), String> {
-    state.backend().set_label(&hashes, &label).await.map_err(e)?;
+    state
+        .backend()
+        .set_label(&hashes, &label)
+        .await
+        .map_err(e)?;
     state.log(&app, LogLevel::Info, format!("set label '{label}'"), None);
     state.repoll.notify_one();
     Ok(())
@@ -445,7 +477,12 @@ pub async fn set_location(
     backend.stop(one).await.map_err(e)?;
     backend.set_directory(&hash, &path).await.map_err(e)?;
     backend.start(one).await.map_err(e)?;
-    state.log(&app, LogLevel::Warn, format!("set location to {path} (files not moved)"), Some(hash));
+    state.log(
+        &app,
+        LogLevel::Warn,
+        format!("set location to {path} (files not moved)"),
+        Some(hash),
+    );
     state.repoll.notify_one();
     Ok(())
 }
@@ -470,7 +507,12 @@ pub async fn queue_move(
             backend.set_priority(h, next).await.map_err(e)?;
         }
     }
-    state.log(&app, LogLevel::Info, format!("reordered {} torrent(s)", hashes.len()), None);
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("reordered {} torrent(s)", hashes.len()),
+        None,
+    );
     state.repoll.notify_one();
     Ok(())
 }
@@ -562,11 +604,7 @@ pub async fn test_connection(
 /// Passwords are deliberately not part of `Settings`: that file is plaintext on
 /// disk. The frontend sends one here and never reads it back.
 #[tauri::command]
-pub fn set_http_password(
-    url: String,
-    username: String,
-    password: String,
-) -> Result<(), String> {
+pub fn set_http_password(url: String, username: String, password: String) -> Result<(), String> {
     if crate::secrets::set_password(&url, &username, &password) {
         Ok(())
     } else {

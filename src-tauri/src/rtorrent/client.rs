@@ -12,32 +12,32 @@ use tokio::sync::OnceCell;
 use super::transport;
 use super::xmlrpc::Value;
 use super::{LoadOptions, RawGlobal, RawStats, RawTorrent, Result, RtorrentApi, RtorrentError};
-use crate::ipc::{FileNode, PeerRow, PieceInfo, Transport, TrackerRow};
+use crate::ipc::{FileNode, PeerRow, PieceInfo, TrackerRow, Transport};
 
 /// The per-download commands fetched by `d.multicall2`, in column order. The
 /// indices here must match the `row[i]` reads in [`row_to_raw`].
 const LIST_COMMANDS: &[&str] = &[
-    "d.hash=",            // 0
-    "d.name=",            // 1
-    "d.size_bytes=",      // 2
-    "d.bytes_done=",      // 3
-    "d.complete=",        // 4
-    "d.is_active=",       // 5
-    "d.is_open=",         // 6
-    "d.hashing=",         // 7
-    "d.message=",         // 8
-    "d.down.rate=",       // 9
-    "d.up.rate=",         // 10
-    "d.ratio=",           // 11
-    "d.custom1=",         // 12
-    "d.directory=",       // 13
-    "d.base_path=",       // 14
-    "d.peers_complete=",  // 15
-    "d.peers_accounted=", // 16
-    "d.peers_connected=", // 17
-    "d.priority=",        // 18
-    "d.is_private=",      // 19
-    "d.throttle_name=",   // 20
+    "d.hash=",               // 0
+    "d.name=",               // 1
+    "d.size_bytes=",         // 2
+    "d.bytes_done=",         // 3
+    "d.complete=",           // 4
+    "d.is_active=",          // 5
+    "d.is_open=",            // 6
+    "d.hashing=",            // 7
+    "d.message=",            // 8
+    "d.down.rate=",          // 9
+    "d.up.rate=",            // 10
+    "d.ratio=",              // 11
+    "d.custom1=",            // 12
+    "d.directory=",          // 13
+    "d.base_path=",          // 14
+    "d.peers_complete=",     // 15
+    "d.peers_accounted=",    // 16
+    "d.peers_connected=",    // 17
+    "d.priority=",           // 18
+    "d.is_private=",         // 19
+    "d.throttle_name=",      // 20
     "d.timestamp.finished=", // 21
 ];
 
@@ -125,9 +125,9 @@ impl RpcClient {
                 .collect(),
         );
         let resp = self.call("system.multicall", &[arr]).await?;
-        let items = resp
-            .as_array()
-            .ok_or_else(|| RtorrentError::Unexpected("system.multicall did not return an array".into()))?;
+        let items = resp.as_array().ok_or_else(|| {
+            RtorrentError::Unexpected("system.multicall did not return an array".into())
+        })?;
         Ok(items
             .iter()
             .map(|it| {
@@ -187,6 +187,25 @@ fn load_commands(opts: &LoadOptions) -> Vec<String> {
     cmds
 }
 
+/// Classify a tracker row for the Status column.
+///
+/// Order matters: a disabled tracker isn't "failing", it's off. A tracker with
+/// a non-zero `failed_counter` is actively failing even though `is_usable` may
+/// still be true (rtorrent keeps retrying it) — that's the case that used to
+/// render as "working" while the torrent itself showed a tracker error. `!usable`
+/// is the last catch: rtorrent has parked the tracker for some other reason.
+fn tracker_status(enabled: bool, usable: bool, failed: i64) -> String {
+    if !enabled {
+        "disabled".into()
+    } else if failed > 0 {
+        "error".into()
+    } else if usable {
+        "working".into()
+    } else {
+        "error".into()
+    }
+}
+
 /// Extract a hostname from a tracker URL (`udp://host:port/announce` → `host`).
 fn host_of(url: &str) -> String {
     let after_scheme = url.split("://").nth(1).unwrap_or(url);
@@ -233,11 +252,7 @@ fn tracker_announce_call(hash: &str) -> (&'static str, Vec<Value>) {
     ("d.tracker_announce", vec![Value::Str(hash.into())])
 }
 
-fn named_throttle_calls(
-    name: &str,
-    down_kb: i64,
-    up_kb: i64,
-) -> [(&'static str, Vec<Value>); 2] {
+fn named_throttle_calls(name: &str, down_kb: i64, up_kb: i64) -> [(&'static str, Vec<Value>); 2] {
     [
         (
             "throttle.down",
@@ -250,7 +265,10 @@ fn named_throttle_calls(
     ]
 }
 
-fn throttle_assignment_calls(hashes: &[String], name: Option<&str>) -> Vec<(&'static str, Vec<Value>)> {
+fn throttle_assignment_calls(
+    hashes: &[String],
+    name: Option<&str>,
+) -> Vec<(&'static str, Vec<Value>)> {
     let name = name.unwrap_or("");
     hashes
         .iter()
@@ -309,9 +327,9 @@ impl RtorrentApi for RpcClient {
         let mut params = vec![Value::Str(String::new()), Value::Str("main".into())];
         params.extend(LIST_COMMANDS.iter().map(|c| Value::Str((*c).into())));
         let resp = self.call("d.multicall2", &params).await?;
-        let rows = resp
-            .as_array()
-            .ok_or_else(|| RtorrentError::Unexpected("d.multicall2 did not return an array".into()))?;
+        let rows = resp.as_array().ok_or_else(|| {
+            RtorrentError::Unexpected("d.multicall2 did not return an array".into())
+        })?;
         Ok(rows
             .iter()
             .filter_map(Value::as_array)
@@ -389,6 +407,15 @@ impl RtorrentApi for RpcClient {
                     Value::Str("t.is_usable=".into()),
                     Value::Str("t.scrape_complete=".into()),
                     Value::Str("t.scrape_incomplete=".into()),
+                    // `is_usable` alone doesn't tell you a tracker is failing: a
+                    // tracker whose every announce times out still reports
+                    // usable=1. `failed_counter` is the real signal — rtorrent
+                    // bumps it on each failed announce and resets it to 0 on a
+                    // success — so a value > 0 means the current announce streak
+                    // is failing (this is what leaves the torrent's d.message set
+                    // while every row otherwise looks "working").
+                    Value::Str("t.failed_counter=".into()),
+                    Value::Str("t.success_counter=".into()),
                 ],
             )
             .await?;
@@ -400,17 +427,12 @@ impl RtorrentApi for RpcClient {
             .map(|(index, r)| {
                 let enabled = r.get(1).and_then(Value::as_bool).unwrap_or(false);
                 let usable = r.get(2).and_then(Value::as_bool).unwrap_or(false);
+                let failed = r.get(5).and_then(Value::as_i64).unwrap_or(0);
                 TrackerRow {
                     index,
                     url: r.first().and_then(Value::as_str).unwrap_or("").to_string(),
                     enabled,
-                    status: if !enabled {
-                        "disabled".into()
-                    } else if usable {
-                        "working".into()
-                    } else {
-                        "error".into()
-                    },
+                    status: tracker_status(enabled, usable, failed),
                     seeds: r.get(3).and_then(Value::as_i64).unwrap_or(0),
                     leeches: r.get(4).and_then(Value::as_i64).unwrap_or(0),
                     last_announce: String::new(),
@@ -600,14 +622,22 @@ impl RtorrentApi for RpcClient {
     }
 
     async fn load_raw(&self, bytes: Vec<u8>, opts: LoadOptions) -> Result<()> {
-        let method = if opts.start { "load.raw_start" } else { "load.raw" };
+        let method = if opts.start {
+            "load.raw_start"
+        } else {
+            "load.raw"
+        };
         let mut params = vec![Value::Str(String::new()), Value::Bytes(bytes)];
         params.extend(load_commands(&opts).into_iter().map(Value::Str));
         self.call(method, &params).await.map(|_| ())
     }
 
     async fn load_magnet(&self, uri: &str, opts: LoadOptions) -> Result<()> {
-        let method = if opts.start { "load.start" } else { "load.normal" };
+        let method = if opts.start {
+            "load.start"
+        } else {
+            "load.normal"
+        };
         let mut params = vec![Value::Str(String::new()), Value::Str(uri.into())];
         params.extend(load_commands(&opts).into_iter().map(Value::Str));
         self.call(method, &params).await.map(|_| ())
@@ -650,9 +680,12 @@ impl RtorrentApi for RpcClient {
     async fn set_file_priority(&self, hash: &str, index: usize, priority: i64) -> Result<()> {
         // f.* commands target `HASH:fINDEX`.
         let target = format!("{hash}:f{index}");
-        self.call("f.priority.set", &[Value::Str(target), Value::Int(priority)])
-            .await
-            .map(|_| ())
+        self.call(
+            "f.priority.set",
+            &[Value::Str(target), Value::Int(priority)],
+        )
+        .await
+        .map(|_| ())
     }
 
     async fn base_path(&self, hash: &str) -> Result<String> {
@@ -665,7 +698,10 @@ impl RtorrentApi for RpcClient {
     }
 
     async fn define_named_throttle(&self, name: &str, down_kb: i64, up_kb: i64) -> Result<()> {
-        for result in self.multicall(&named_throttle_calls(name, down_kb, up_kb)).await? {
+        for result in self
+            .multicall(&named_throttle_calls(name, down_kb, up_kb))
+            .await?
+        {
             result?;
         }
         Ok(())
@@ -740,7 +776,12 @@ impl RtorrentApi for RpcClient {
             )
             .await
         {
-            for row in resp.as_array().unwrap_or(&[]).iter().filter_map(Value::as_array) {
+            for row in resp
+                .as_array()
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(Value::as_array)
+            {
                 connected_peers += row.first().and_then(Value::as_i64).unwrap_or(0);
                 session_waste += row.get(1).and_then(Value::as_i64).unwrap_or(0);
             }
@@ -793,9 +834,28 @@ mod tests {
 
     #[test]
     fn host_of_strips_scheme_port_and_path() {
-        assert_eq!(host_of("udp://tracker.example.org:6969/announce"), "tracker.example.org");
-        assert_eq!(host_of("https://bttracker.debian.org/announce"), "bttracker.debian.org");
+        assert_eq!(
+            host_of("udp://tracker.example.org:6969/announce"),
+            "tracker.example.org"
+        );
+        assert_eq!(
+            host_of("https://bttracker.debian.org/announce"),
+            "bttracker.debian.org"
+        );
         assert_eq!(host_of("torrent.ubuntu.com"), "torrent.ubuntu.com");
+    }
+
+    #[test]
+    fn tracker_status_flags_failing_trackers() {
+        // The regression: usable stays true on a tracker whose announces are all
+        // timing out, so failure has to come from the counter, not is_usable.
+        assert_eq!(tracker_status(true, true, 3), "error");
+        // Healthy: enabled, usable, no failures.
+        assert_eq!(tracker_status(true, true, 0), "working");
+        // Disabled outranks everything — it's off, not failing.
+        assert_eq!(tracker_status(false, true, 5), "disabled");
+        // Parked by rtorrent for a non-counter reason.
+        assert_eq!(tracker_status(true, false, 0), "error");
     }
 
     #[test]
@@ -990,7 +1050,11 @@ mod live {
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         let list = c.list_snapshot().await.expect("list after add");
         let row = list.iter().find(|t| t.hash.eq_ignore_ascii_case(&hash));
-        println!("added present = {} (list size {})", row.is_some(), list.len());
+        println!(
+            "added present = {} (list size {})",
+            row.is_some(),
+            list.len()
+        );
         assert!(row.is_some(), "loaded torrent should appear");
         // Our parser's hash must match what rtorrent reports.
         assert_eq!(row.unwrap().hash, hash);
@@ -1149,14 +1213,20 @@ mod live {
             password.clone(),
         );
 
-        let version = client.client_version().await.expect("client_version over http");
+        let version = client
+            .client_version()
+            .await
+            .expect("client_version over http");
         println!("http: rtorrent version = {version}");
         assert!(!version.is_empty());
 
         let globals = client.global_stats().await.expect("global_stats over http");
         println!("http: globals = {globals:?}");
 
-        let list = client.list_snapshot().await.expect("list_snapshot over http");
+        let list = client
+            .list_snapshot()
+            .await
+            .expect("list_snapshot over http");
         println!("http: torrents = {}", list.len());
         for t in &list {
             println!("  {} {}", t.hash, t.name);
@@ -1165,10 +1235,7 @@ mod live {
         // A wrong password must fail loudly, not silently succeed.
         if !username.is_empty() {
             let bad = RpcClient::with_password(
-                Transport::Http {
-                    url,
-                    username,
-                },
+                Transport::Http { url, username },
                 Some("definitely-wrong".into()),
             );
             match bad.client_version().await {

@@ -265,7 +265,12 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                 let s = state.settings();
                 // Only log the first failure of a streak to avoid log spam.
                 if failures == 1 {
-                    state.log(&app, LogLevel::Error, format!("rtorrent unreachable: {e}"), None);
+                    state.log(
+                        &app,
+                        LogLevel::Error,
+                        format!("rtorrent unreachable: {e}"),
+                        None,
+                    );
                 }
                 let conn = ConnState {
                     phase: ConnPhase::Disconnected,
@@ -309,7 +314,11 @@ async fn wait(ms: u64, state: &AppState) {
 }
 
 /// Resolve tracker hosts for hashes we haven't seen yet (bounded per tick).
-async fn resolve_trackers(_app: &AppHandle, state: &Arc<AppState>, raw: &[crate::rtorrent::RawTorrent]) {
+async fn resolve_trackers(
+    _app: &AppHandle,
+    state: &Arc<AppState>,
+    raw: &[crate::rtorrent::RawTorrent],
+) {
     let unknown: Vec<String> = {
         let cache = state.tracker_cache.lock().unwrap();
         raw.iter()
@@ -407,14 +416,18 @@ async fn detail_loop(app: AppHandle, state: Arc<AppState>) {
         // Only the data-bearing tabs need a fetch; general/speed/log are derived
         // on the frontend from the snapshot / log stream.
         let payload = match tab {
-            DetailTab::Trackers => backend.trackers(&hash).await.ok().map(|rows| DetailPayload {
-                hash: hash.clone(),
-                tab,
-                trackers: Some(rows),
-                peers: None,
-                files: None,
-                pieces: None,
-            }),
+            DetailTab::Trackers => backend
+                .trackers(&hash)
+                .await
+                .ok()
+                .map(|rows| DetailPayload {
+                    hash: hash.clone(),
+                    tab,
+                    trackers: Some(rows),
+                    peers: None,
+                    files: None,
+                    pieces: None,
+                }),
             DetailTab::Peers => backend.peers(&hash).await.ok().map(|rows| DetailPayload {
                 hash: hash.clone(),
                 tab,
@@ -629,6 +642,10 @@ mod tests {
             &HashMap::new(),
             NOW,
         );
-        assert_eq!(decisions.len(), 1, "a hash is stopped at most once per poll");
+        assert_eq!(
+            decisions.len(),
+            1,
+            "a hash is stopped at most once per poll"
+        );
     }
 }

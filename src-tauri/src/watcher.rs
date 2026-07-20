@@ -49,15 +49,19 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
     let watch_path = path.clone();
     std::thread::spawn(move || {
         let ping = tx.clone();
-        let mut watcher = match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            if res.is_ok() {
-                let _ = ping.try_send(());
-            }
-        }) {
-            Ok(w) => w,
-            Err(_) => return,
-        };
-        if watcher.watch(&watch_path, RecursiveMode::NonRecursive).is_err() {
+        let mut watcher =
+            match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                if res.is_ok() {
+                    let _ = ping.try_send(());
+                }
+            }) {
+                Ok(w) => w,
+                Err(_) => return,
+            };
+        if watcher
+            .watch(&watch_path, RecursiveMode::NonRecursive)
+            .is_err()
+        {
             return;
         }
         // Park this thread forever to keep `watcher` alive.
@@ -112,12 +116,21 @@ async fn process_dir(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
                 // Rename so it isn't picked up again.
                 let loaded = PathBuf::from(format!("{path_str}.loaded"));
                 let _ = std::fs::rename(&path, &loaded);
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
                 state.log(app, LogLevel::Info, format!("watch: added {name}"), None);
                 state.repoll.notify_one();
             }
             Err(err) => {
-                state.log(app, LogLevel::Warn, format!("watch: failed to add {path_str}: {err}"), None);
+                state.log(
+                    app,
+                    LogLevel::Warn,
+                    format!("watch: failed to add {path_str}: {err}"),
+                    None,
+                );
             }
         }
     }

@@ -11,7 +11,8 @@ use crate::ipc::{FileNode, TorrentMeta};
 
 /// Read and parse a `.torrent` file at `path`.
 pub fn read_metadata(path: &str) -> Result<TorrentMeta, String> {
-    let torrent = Torrent::read_from_file(path).map_err(|e| format!("not a valid .torrent: {e}"))?;
+    let torrent =
+        Torrent::read_from_file(path).map_err(|e| format!("not a valid .torrent: {e}"))?;
 
     // Build the flat file list. Multi-file torrents expose `files`; single-file
     // torrents don't, so we synthesize a single node from the top-level name.

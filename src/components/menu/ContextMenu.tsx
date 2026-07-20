@@ -49,6 +49,12 @@ export function ContextMenu() {
 
   const hashes = [...selection];
   const single = hashes.length === 1 ? hashes[0] : null;
+  // A private torrent's magnet would be a bare info-hash: useless for joining
+  // a private swarm (the tracker requires the .torrent) and a leaky thing to
+  // share. Disable Copy magnet rather than hand out a dud link (C7).
+  const singlePrivate =
+    single !== null &&
+    (torrents.find((t) => t.hash === single)?.isPrivate ?? false);
 
   // Clamp so the menu stays within the window.
   const x = Math.min(menu.x, window.innerWidth - 220);
@@ -231,8 +237,19 @@ export function ContextMenu() {
         <div className={styles.sep} />
 
         <div
-          className={`${styles.item} ${single ? "" : styles.disabled}`}
-          onClick={() => single && run(() => void actions.copyMagnet(single))}
+          className={`${styles.item} ${
+            single && !singlePrivate ? "" : styles.disabled
+          }`}
+          title={
+            singlePrivate
+              ? "private torrent — a magnet link can't join a private swarm"
+              : undefined
+          }
+          onClick={() =>
+            single &&
+            !singlePrivate &&
+            run(() => void actions.copyMagnet(single))
+          }
         >
           <span className={styles.icon}>
             <LinkIcon size={12} />
