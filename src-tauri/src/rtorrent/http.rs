@@ -155,10 +155,16 @@ mod tests {
     #[test]
     fn allows_https_and_anonymous_and_localhost() {
         // TLS protects the credential.
-        assert!(!is_insecure_credentialed("https://box.example/RPC2", "alice"));
+        assert!(!is_insecure_credentialed(
+            "https://box.example/RPC2",
+            "alice"
+        ));
         // No credential to leak.
         assert!(!is_insecure_credentialed("http://box.example/RPC2", ""));
         // Never leaves the machine (and is how a local bridge is tested).
-        assert!(!is_insecure_credentialed("http://127.0.0.1:8080/RPC2", "alice"));
+        assert!(!is_insecure_credentialed(
+            "http://127.0.0.1:8080/RPC2",
+            "alice"
+        ));
     }
 }

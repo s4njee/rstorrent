@@ -28,7 +28,12 @@ impl LogBuffer {
 
     /// Append an entry (evicting the oldest past `CAP`) and return a clone for
     /// the caller to emit to the frontend.
-    pub fn push(&self, level: LogLevel, message: impl Into<String>, hash: Option<String>) -> LogEntry {
+    pub fn push(
+        &self,
+        level: LogLevel,
+        message: impl Into<String>,
+        hash: Option<String>,
+    ) -> LogEntry {
         let entry = LogEntry {
             time: now_millis(),
             level,

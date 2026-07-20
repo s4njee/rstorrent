@@ -39,7 +39,13 @@ fn save(path: &Path, c: &Counters) {
 pub fn accumulate(path: &Path, session_down: i64, session_up: i64) -> (i64, i64) {
     let mut c = load(path);
     // A drop below the last-seen value means the daemon restarted (counter reset).
-    let delta = |current: i64, last: i64| if current >= last { current - last } else { current };
+    let delta = |current: i64, last: i64| {
+        if current >= last {
+            current - last
+        } else {
+            current
+        }
+    };
     c.all_time_down += delta(session_down, c.last_session_down);
     c.all_time_up += delta(session_up, c.last_session_up);
     c.last_session_down = session_down;

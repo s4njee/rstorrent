@@ -30,7 +30,14 @@ pub fn allocate(
     for slot in 1..=POOL_SIZE {
         let name = format!("{PREFIX}{slot}");
         if !definitions.iter().any(|item| item.name == name) {
-            return Ok((NamedThrottle { name, down_kb, up_kb }, true));
+            return Ok((
+                NamedThrottle {
+                    name,
+                    down_kb,
+                    up_kb,
+                },
+                true,
+            ));
         }
     }
 
@@ -94,10 +101,7 @@ mod tests {
         assert_eq!(chosen.name, "rstorrent_1");
         assert!(changed);
 
-        let all_active = definitions
-            .iter()
-            .map(|item| item.name.clone())
-            .collect();
+        let all_active = definitions.iter().map(|item| item.name.clone()).collect();
         assert!(allocate(&definitions, &all_active, 999, 111).is_err());
     }
 }

@@ -111,10 +111,7 @@ impl AppState {
     }
 
     /// Insert or replace one persisted app-owned named-throttle definition.
-    pub fn save_throttle_definition(
-        &self,
-        definition: NamedThrottle,
-    ) -> std::io::Result<()> {
+    pub fn save_throttle_definition(&self, definition: NamedThrottle) -> std::io::Result<()> {
         let next = {
             let mut settings = self.settings.write().unwrap();
             if let Some(existing) = settings
@@ -150,7 +147,13 @@ impl AppState {
     }
 
     /// Append to the log and push it to the frontend.
-    pub fn log(&self, app: &AppHandle, level: LogLevel, message: impl Into<String>, hash: Option<String>) {
+    pub fn log(
+        &self,
+        app: &AppHandle,
+        level: LogLevel,
+        message: impl Into<String>,
+        hash: Option<String>,
+    ) {
         let entry = self.log.push(level, message, hash);
         let _ = app.emit("log://append", entry);
     }

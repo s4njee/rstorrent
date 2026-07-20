@@ -149,8 +149,14 @@ mod tests {
     #[test]
     fn localhost_detection() {
         assert!(is_localhost(&Transport::UnixSocket { path: "/x".into() }));
-        assert!(is_localhost(&Transport::Tcp { host: "127.0.0.1".into(), port: 5000 }));
-        assert!(!is_localhost(&Transport::Tcp { host: "10.0.0.5".into(), port: 5000 }));
+        assert!(is_localhost(&Transport::Tcp {
+            host: "127.0.0.1".into(),
+            port: 5000
+        }));
+        assert!(!is_localhost(&Transport::Tcp {
+            host: "10.0.0.5".into(),
+            port: 5000
+        }));
         // A remote HTTP daemon is not local; a bridge on this machine is.
         assert!(!is_localhost(&Transport::Http {
             url: "https://seedbox.example.com/RPC2".into(),

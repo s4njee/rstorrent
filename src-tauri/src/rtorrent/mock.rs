@@ -81,12 +81,7 @@ impl MockClient {
             .collect();
         let natural_rates = torrents
             .iter()
-            .map(|torrent| {
-                (
-                    torrent.hash.clone(),
-                    (torrent.down_rate, torrent.up_rate),
-                )
-            })
+            .map(|torrent| (torrent.hash.clone(), (torrent.down_rate, torrent.up_rate)))
             .collect();
         Self {
             state: Mutex::new(State {
@@ -157,11 +152,7 @@ impl RtorrentApi for MockClient {
             .iter()
             .cloned()
             .map(|mut torrent| {
-                let rates = effective_rates(
-                    &torrent,
-                    &state.natural_rates,
-                    &state.throttles,
-                );
+                let rates = effective_rates(&torrent, &state.natural_rates, &state.throttles);
                 torrent.down_rate = rates.0;
                 torrent.up_rate = rates.1;
                 torrent
@@ -174,12 +165,8 @@ impl RtorrentApi for MockClient {
         let rates = state
             .torrents
             .iter()
-            .map(|torrent| {
-                effective_rates(torrent, &state.natural_rates, &state.throttles)
-            });
-        let (down_rate, up_rate) = rates.fold((0, 0), |sum, rate| {
-            (sum.0 + rate.0, sum.1 + rate.1)
-        });
+            .map(|torrent| effective_rates(torrent, &state.natural_rates, &state.throttles));
+        let (down_rate, up_rate) = rates.fold((0, 0), |sum, rate| (sum.0 + rate.0, sum.1 + rate.1));
         Ok(RawGlobal {
             down_rate,
             up_rate,
@@ -299,7 +286,10 @@ impl RtorrentApi for MockClient {
 
     async fn pieces(&self, hash: &str) -> Result<crate::ipc::PieceInfo> {
         let state = self.state.lock().unwrap();
-        let t = state.torrents.iter().find(|t| t.hash.eq_ignore_ascii_case(hash));
+        let t = state
+            .torrents
+            .iter()
+            .find(|t| t.hash.eq_ignore_ascii_case(hash));
         let (size_bytes, done_bytes) = match t {
             Some(t) => (t.size_bytes, t.bytes_done),
             None => (0, 0),
@@ -509,10 +499,7 @@ fn effective_rates(
     let Some((down_kb, up_kb)) = throttles.get(&torrent.throttle_name).copied() else {
         return natural;
     };
-    (
-        cap_rate(natural.0, down_kb),
-        cap_rate(natural.1, up_kb),
-    )
+    (cap_rate(natural.0, down_kb), cap_rate(natural.1, up_kb))
 }
 
 fn cap_rate(natural: i64, limit_kb: i64) -> i64 {
@@ -658,16 +645,166 @@ fn t(
 /// The ten torrents shown in the design reference, with matching states.
 fn fixtures() -> Vec<RawTorrent> {
     let mut rows = vec![
-        t("A1", "ubuntu-24.04.2-desktop-amd64.iso", 5.8 * GIB, 100.0, true, true, 0, (1.2 * MIB) as i64, 2410, "linux-iso", 142, 87, 34, ""),
-        t("B2", "debian-12.9.0-amd64-netinst.iso", 631.0 * MIB, 100.0, true, true, 0, (214.0 * KIB) as i64, 3870, "linux-iso", 98, 12, 10, ""),
-        t("C3", "Fedora-Workstation-Live-x86_64-41-1.4.iso", 2.3 * GIB, 67.4, true, true, (8.4 * MIB) as i64, (620.0 * KIB) as i64, 190, "linux-iso", 34, 12, 30, ""),
-        t("D4", "archlinux-2026.07.01-x86_64.iso", 1.1 * GIB, 23.1, true, true, (1.1 * MIB) as i64, (88.0 * KIB) as i64, 40, "linux-iso", 18, 6, 12, ""),
-        t("E5", "linuxmint-22.1-cinnamon-64bit.iso", 2.8 * GIB, 45.2, false, false, 0, 0, 110, "linux-iso", 63, 28, 0, ""),
-        t("F6", "Big.Buck.Bunny.2008.2160p.mkv", 7.9 * GIB, 100.0, true, true, 0, (980.0 * KIB) as i64, 5020, "video", 211, 140, 60, ""),
-        t("G7", "Sintel.2010.2160p.mkv", 5.1 * GIB, 91.8, true, true, (2.9 * MIB) as i64, (410.0 * KIB) as i64, 440, "video", 26, 9, 20, ""),
-        t("H8", "openSUSE-Tumbleweed-DVD-x86_64.iso", 4.4 * GIB, 12.0, true, true, 0, 0, 10, "linux-iso", 0, 2, 2, ""),
-        t("I9", "raspios-bookworm-arm64-full.img.xz", 2.7 * GIB, 100.0, false, false, 0, 0, 1080, "sbc", 57, 16, 0, ""),
-        t("J10", "Cosmos.Laundromat.2015.4K.mkv", 3.2 * GIB, 66.7, true, true, 0, 0, 310, "video", 0, 0, 0, "Tracker: [Failure reason \"unregistered torrent\"]"),
+        t(
+            "A1",
+            "ubuntu-24.04.2-desktop-amd64.iso",
+            5.8 * GIB,
+            100.0,
+            true,
+            true,
+            0,
+            (1.2 * MIB) as i64,
+            2410,
+            "linux-iso",
+            142,
+            87,
+            34,
+            "",
+        ),
+        t(
+            "B2",
+            "debian-12.9.0-amd64-netinst.iso",
+            631.0 * MIB,
+            100.0,
+            true,
+            true,
+            0,
+            (214.0 * KIB) as i64,
+            3870,
+            "linux-iso",
+            98,
+            12,
+            10,
+            "",
+        ),
+        t(
+            "C3",
+            "Fedora-Workstation-Live-x86_64-41-1.4.iso",
+            2.3 * GIB,
+            67.4,
+            true,
+            true,
+            (8.4 * MIB) as i64,
+            (620.0 * KIB) as i64,
+            190,
+            "linux-iso",
+            34,
+            12,
+            30,
+            "",
+        ),
+        t(
+            "D4",
+            "archlinux-2026.07.01-x86_64.iso",
+            1.1 * GIB,
+            23.1,
+            true,
+            true,
+            (1.1 * MIB) as i64,
+            (88.0 * KIB) as i64,
+            40,
+            "linux-iso",
+            18,
+            6,
+            12,
+            "",
+        ),
+        t(
+            "E5",
+            "linuxmint-22.1-cinnamon-64bit.iso",
+            2.8 * GIB,
+            45.2,
+            false,
+            false,
+            0,
+            0,
+            110,
+            "linux-iso",
+            63,
+            28,
+            0,
+            "",
+        ),
+        t(
+            "F6",
+            "Big.Buck.Bunny.2008.2160p.mkv",
+            7.9 * GIB,
+            100.0,
+            true,
+            true,
+            0,
+            (980.0 * KIB) as i64,
+            5020,
+            "video",
+            211,
+            140,
+            60,
+            "",
+        ),
+        t(
+            "G7",
+            "Sintel.2010.2160p.mkv",
+            5.1 * GIB,
+            91.8,
+            true,
+            true,
+            (2.9 * MIB) as i64,
+            (410.0 * KIB) as i64,
+            440,
+            "video",
+            26,
+            9,
+            20,
+            "",
+        ),
+        t(
+            "H8",
+            "openSUSE-Tumbleweed-DVD-x86_64.iso",
+            4.4 * GIB,
+            12.0,
+            true,
+            true,
+            0,
+            0,
+            10,
+            "linux-iso",
+            0,
+            2,
+            2,
+            "",
+        ),
+        t(
+            "I9",
+            "raspios-bookworm-arm64-full.img.xz",
+            2.7 * GIB,
+            100.0,
+            false,
+            false,
+            0,
+            0,
+            1080,
+            "sbc",
+            57,
+            16,
+            0,
+            "",
+        ),
+        t(
+            "J10",
+            "Cosmos.Laundromat.2015.4K.mkv",
+            3.2 * GIB,
+            66.7,
+            true,
+            true,
+            0,
+            0,
+            310,
+            "video",
+            0,
+            0,
+            0,
+            "Tracker: [Failure reason \"unregistered torrent\"]",
+        ),
     ];
     // J10's "unregistered torrent" failure is a private-tracker scenario, so it
     // also exercises the C7 affordances (flags badge, no Copy-magnet).
@@ -719,8 +856,7 @@ mod tests {
     async fn active_seed_ratios_grow() {
         let c = MockClient::new();
         let before = c.state.lock().unwrap().torrents[0].ratio_permille;
-        c.state.lock().unwrap().last_tick =
-            Instant::now() - std::time::Duration::from_secs(1);
+        c.state.lock().unwrap().last_tick = Instant::now() - std::time::Duration::from_secs(1);
 
         let rows = c.list_snapshot().await.unwrap();
         assert!(rows[0].ratio_permille > before);

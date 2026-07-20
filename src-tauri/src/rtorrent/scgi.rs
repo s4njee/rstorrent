@@ -112,9 +112,7 @@ fn split_cgi_body(raw: &[u8]) -> Result<&[u8]> {
 
 /// First index of `needle` within `haystack`.
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 #[cfg(test)]
