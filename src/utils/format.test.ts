@@ -10,6 +10,8 @@ import {
   formatDownCell,
   formatUpCell,
   formatDate,
+  formatCountdown,
+  formatAgo,
 } from "./format";
 
 const GIB = 1_073_741_824;
@@ -28,6 +30,24 @@ describe("formatDate", () => {
     );
     // A prior-year date: year present.
     expect(formatDate(Date.UTC(2025, 11, 30) / 1000, now)).toMatch(/25|2025/);
+  });
+});
+
+describe("formatCountdown / formatAgo (tracker times)", () => {
+  const now = 1_784_584_112_000; // fixed "now" in ms
+  const nowSec = now / 1000;
+
+  it("counts down to a future announce", () => {
+    expect(formatCountdown(nowSec + 720, now)).toBe("in 12m0s");
+  });
+  it("shows — for an unset or overdue next announce", () => {
+    expect(formatCountdown(0, now)).toBe("—");
+    // rtorrent leaves next-announce in the past for a failing tracker.
+    expect(formatCountdown(nowSec - 100, now)).toBe("—");
+  });
+  it("shows elapsed time since the last announce", () => {
+    expect(formatAgo(nowSec - 240, now)).toBe("4m0s ago");
+    expect(formatAgo(0, now)).toBe("—");
   });
 });
 

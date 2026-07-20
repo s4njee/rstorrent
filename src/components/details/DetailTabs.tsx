@@ -31,6 +31,8 @@ import {
   formatRate,
   formatEta,
   formatRatio,
+  formatAgo,
+  formatCountdown,
 } from "../../utils/format";
 import { SpeedChart } from "./SpeedChart";
 import { PieceBar } from "./PieceBar";
@@ -224,10 +226,12 @@ function TrackersTable({
           <thead>
             <tr>
               <th>Tracker</th>
+              <th>Type</th>
               <th>Status</th>
               <th>Seeds</th>
               <th>Leeches</th>
-              <th>Last announce</th>
+              <th>Last</th>
+              <th>Next</th>
             </tr>
           </thead>
           <tbody>
@@ -244,7 +248,8 @@ function TrackersTable({
                   });
                 }}
               >
-                <td>{tracker.url}</td>
+                <td title={tracker.url}>{tracker.url}</td>
+                <td className={styles.dim}>{tracker.kind || "—"}</td>
                 <td
                   className={
                     tracker.status === "error" ? styles.statusError : ""
@@ -254,7 +259,8 @@ function TrackersTable({
                 </td>
                 <td>{tracker.seeds}</td>
                 <td>{tracker.leeches}</td>
-                <td>{tracker.lastAnnounce || "—"}</td>
+                <td>{formatAgo(tracker.lastAnnounce)}</td>
+                <td>{formatCountdown(tracker.nextAnnounce)}</td>
               </tr>
             ))}
           </tbody>

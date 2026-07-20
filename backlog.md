@@ -51,9 +51,10 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 - [ ] **C16 · Richer peer info** (S) — `p.is_encrypted`, `p.is_incoming`,
   `p.is_obfuscated`, `p.is_preferred`, `p.is_unwanted` all present.
 - [ ] **C17 · Global transfer graph + history** (M).
-- [ ] **C18 · Announce countdown in Trackers** (S) — **probe done, it's a go:**
-  `t.activity_time_next`, `t.success_time_last`, `t.min_interval`,
-  `t.normal_interval` all exist on 0.16.17. Show "next announce in 12m".
+- [x] **C18 · Announce countdown in Trackers** (S) — Next column shows
+  "in 12m" from `t.activity_time_next`; Last column shows "4m ago" from
+  `t.success_time_last`. A next-announce in the past (failing/overdue tracker)
+  renders "—" rather than a misleading "115s ago". Landed with D18.
 - [ ] **C19 · Quick Look / open from Content** (M) · **C20 · Start rtorrent
   from the app** (L) · **C22 · Delta snapshots** (M) · **C23 · Session
   export/import** (S) · **C24 · Homebrew cask** (S) · **C25 · Log tab
@@ -174,9 +175,12 @@ confirmed present; each is a labeled control with the daemon default shown.
   chunks when idle, so the checking-status guard is load-bearing (tested both
   ways). D1 (Force recheck) was already shipped in the context menu.
 
-- [ ] **D18 · Scrape & swarm detail in Trackers** (S) — `t.scrape_time_last`,
-  `t.latest_new_peers`, `t.latest_sum_peers`, `t.type` (udp/http/dht) as
-  columns; C18's countdown lands in the same table pass.
+- [x] **D18 · Tracker type + detail columns** (S) — Trackers tab gains a Type
+  column (`t.type` → http/udp/dht) alongside the existing Seeds/Leeches scrape
+  counts and the new Last/Next timing (C18). `t.last_announce` (previously a
+  hardcoded-empty string in the DTO) is now the real `t.success_time_last`.
+  Dropped `t.latest_new_peers`/`sum_peers` for now — Seeds/Leeches already
+  cover swarm size and the row was getting wide.
 
 - [ ] **D19 · Error taxonomy** (M) — classify `d.message` (tracker timeout vs
   unregistered vs storage error vs missing files) into distinct statuses and

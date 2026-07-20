@@ -112,7 +112,12 @@ export interface TrackerRow {
   status: string; // "working" | "updating" | "disabled" | "error" | ...
   seeds: number;
   leeches: number;
-  lastAnnounce: string;
+  /** Tracker protocol: "http" / "udp" / "dht", empty if unknown. */
+  kind: string;
+  /** Unix seconds of the next scheduled announce; 0 or past → shown as —. */
+  nextAnnounce: number;
+  /** Unix seconds of the last successful announce; 0 = never. */
+  lastAnnounce: number;
 }
 
 /** A peer row for the Peers detail tab. */

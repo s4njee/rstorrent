@@ -160,3 +160,8 @@
 .statusError {
   color: var(--status-error);
 }
+
+/* Muted secondary cell text (e.g. the tracker Type column). */
+.dim {
+  color: var(--text-dim);
+}

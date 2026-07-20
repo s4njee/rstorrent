@@ -190,6 +190,16 @@ fn load_commands(opts: &LoadOptions) -> Vec<String> {
     cmds
 }
 
+/// Map rtorrent's `t.type` enum to a short label. 1=http, 2=udp, 3=dht.
+fn tracker_kind(t: i64) -> &'static str {
+    match t {
+        1 => "http",
+        2 => "udp",
+        3 => "dht",
+        _ => "",
+    }
+}
+
 /// Classify a tracker row for the Status column.
 ///
 /// Order matters: a disabled tracker isn't "failing", it's off. A tracker with
@@ -422,6 +432,9 @@ impl RtorrentApi for RpcClient {
                     // while every row otherwise looks "working").
                     Value::Str("t.failed_counter=".into()),
                     Value::Str("t.success_counter=".into()),
+                    Value::Str("t.type=".into()), // 7  http/udp/dht
+                    Value::Str("t.activity_time_next=".into()), // 8  unix, next announce
+                    Value::Str("t.success_time_last=".into()), // 9  unix, last success
                 ],
             )
             .await?;
@@ -441,7 +454,9 @@ impl RtorrentApi for RpcClient {
                     status: tracker_status(enabled, usable, failed),
                     seeds: r.get(3).and_then(Value::as_i64).unwrap_or(0),
                     leeches: r.get(4).and_then(Value::as_i64).unwrap_or(0),
-                    last_announce: String::new(),
+                    kind: tracker_kind(r.get(7).and_then(Value::as_i64).unwrap_or(0)).to_string(),
+                    next_announce: r.get(8).and_then(Value::as_i64).unwrap_or(0),
+                    last_announce: r.get(9).and_then(Value::as_i64).unwrap_or(0),
                 }
             })
             .collect())
