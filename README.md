@@ -1,5 +1,7 @@
 # rstorrent
 
+[![CI](https://github.com/s4njee/rstorrent/actions/workflows/ci.yml/badge.svg)](https://github.com/s4njee/rstorrent/actions/workflows/ci.yml)
+
 A native macOS desktop client for the [`rtorrent`](https://github.com/rakshasa/rtorrent)
 daemon, built with **Rust + Tauri 2** and a **React/TypeScript** frontend. It
 implements the "Dark Ops" design in [`design/`](design/): a compact, monospace,
@@ -86,7 +88,11 @@ then open **Preferences → Connection**, match the transport to your
 | `npm run lint` | ESLint + Prettier check |
 | `cargo test` (in `src-tauri/`) | Rust unit tests |
 | `cargo clippy --all-targets -- -D warnings` | Rust lints |
+| `cargo fmt --check` (in `src-tauri/`) | Rust formatting |
 | `npm run tauri build` | Package `.app` + `.dmg` |
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of the
+above on push and PR — the frontend checks on Linux, the Rust ones on macOS.
 
 Tests that touch a live daemon or the Keychain are marked `#[ignore]` and are run
 deliberately — see [docs/rtorrent-setup.md](docs/rtorrent-setup.md).
