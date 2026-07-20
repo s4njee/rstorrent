@@ -12,19 +12,11 @@ use crate::ipc::{SeedGoal, Settings, Transport};
 
 impl Default for Settings {
     fn default() -> Self {
-        let home = home_dir();
         Settings {
-            // Unix socket is the safest default (no network exposure).
-            transport: Transport::UnixSocket {
-                path: home
-                    .join(".rtorrent")
-                    .join("rpc.socket")
-                    .to_string_lossy()
-                    .into_owned(),
-            },
+            transport: default_transport(),
             poll_ms: 1000,
             stall_window_s: 30,
-            default_save_path: home.join("Downloads").to_string_lossy().into_owned(),
+            default_save_path: default_save_path(),
             show_add_dialog: true,
             confirm_on_remove: true,
             down_limit_kb: 0,
@@ -118,11 +110,55 @@ fn strip_userinfo(url: &str) -> String {
     }
 }
 
-/// Best-effort home directory (`$HOME`, else `/`).
+/// Best-effort home directory (`$HOME`, or `%USERPROFILE%` on Windows).
 fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
+        .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "C:\\" } else { "/" }))
+}
+
+/// Default transport for a fresh install.
+///
+/// Unix socket is the safest default where it works — SCGI is unauthenticated,
+/// so keeping it off the network entirely is the right posture. Windows can't
+/// reach a socket inside the WSL VM, so it falls back to loopback TCP, which
+/// WSL's `localhostForwarding` bridges into the VM without exposing the port
+/// to the LAN.
+#[cfg(not(target_os = "windows"))]
+fn default_transport() -> Transport {
+    Transport::UnixSocket {
+        path: home_dir()
+            .join(".rtorrent")
+            .join("rpc.socket")
+            .to_string_lossy()
+            .into_owned(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn default_transport() -> Transport {
+    Transport::Tcp {
+        host: "127.0.0.1".to_string(),
+        port: 5000,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn default_save_path() -> String {
+    home_dir().join("Downloads").to_string_lossy().into_owned()
+}
+
+/// On Windows the daemon writes files from *inside* WSL, so this has to be a
+/// Linux path. Prefer the distro's own home (ext4 — full speed); if WSL can't
+/// be probed, fall back to the Windows Downloads folder as seen through
+/// `/mnt/`, which is slower but always valid and always where the user looks.
+#[cfg(target_os = "windows")]
+fn default_save_path() -> String {
+    if let Some(distro) = crate::wsl::distro() {
+        return format!("{}/Downloads", distro.home.trim_end_matches('/'));
+    }
+    crate::wsl::to_wsl(&home_dir().join("Downloads")).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -190,8 +226,12 @@ mod diag {
     #[test]
     #[ignore]
     fn live_dump_loaded_settings() {
-        let path = std::path::PathBuf::from(std::env::var("HOME").unwrap())
-            .join("Library/Application Support/com.rstorrent.app/settings.json");
+        // Same location Tauri's `app_config_dir()` resolves to on each platform.
+        let path = if cfg!(target_os = "windows") {
+            home_dir().join("AppData/Roaming/com.rstorrent.app/settings.json")
+        } else {
+            home_dir().join("Library/Application Support/com.rstorrent.app/settings.json")
+        };
         println!("path exists: {}", path.exists());
         let raw = std::fs::read_to_string(&path).unwrap_or_default();
         // Does it parse at all, or does load() silently fall back to defaults?

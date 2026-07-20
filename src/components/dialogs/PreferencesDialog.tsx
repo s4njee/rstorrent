@@ -25,6 +25,7 @@ import {
   testConnection,
 } from "../../ipc/commands";
 import type { Settings, Transport } from "../../ipc/types";
+import { credentialStoreName, isWindows } from "../../platform";
 import { ModalBase, Button } from "./ModalBase";
 import { Checkbox } from "./Checkbox";
 import forms from "./forms.module.css";
@@ -657,11 +658,15 @@ function ConnectionSection({
     <Group title="rtorrent Connection">
       <div className={forms.field}>
         <span className={forms.fieldLabel}>Transport</span>
-        <Checkbox
-          checked={transport.kind === "unixSocket"}
-          onChange={() => onTransport({ kind: "unixSocket", path: "" })}
-          label="Unix socket"
-        />
+        {/* Windows cannot reach a socket inside the WSL VM, so the option is
+            hidden rather than offered and left to fail. */}
+        {!isWindows && (
+          <Checkbox
+            checked={transport.kind === "unixSocket"}
+            onChange={() => onTransport({ kind: "unixSocket", path: "" })}
+            label="Unix socket"
+          />
+        )}
         <Checkbox
           checked={transport.kind === "tcp"}
           onChange={() =>
@@ -858,7 +863,7 @@ function HttpFields({
         )}
       </div>
       <span className={forms.meta}>
-        Stored in your macOS Keychain, not in the settings file.
+        Stored in your {credentialStoreName}, not in the settings file.
         {passwordSaved && " Leave blank to keep the saved password."}
       </span>
       {insecure && (

@@ -1,0 +1,13 @@
+# Keep line endings identical on macOS and Windows checkouts.
+#
+# Without this, a Windows clone with the default `core.autocrlf=true` lands
+# every text file with CRLF, which Prettier (whose `endOfLine` default is `lf`)
+# then reports as a style violation in all ~90 files at once — `npm run lint`
+# becomes unusable rather than informative.
+* text=auto eol=lf
+
+# Binary assets must never be touched.
+*.png binary
+*.ico binary
+*.icns binary
+*.torrent binary

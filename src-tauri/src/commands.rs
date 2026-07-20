@@ -33,7 +33,10 @@ fn e(err: impl std::fmt::Display) -> String {
 /// Convert the dialog options into backend load options.
 fn load_opts(opts: &AddOptions) -> LoadOptions {
     LoadOptions {
-        directory: opts.save_path.clone(),
+        // The save path may have come from a native picker, so it needs to be
+        // expressed in the daemon's namespace before it crosses the wire.
+        directory: crate::localfs::to_daemon_path(&opts.save_path)
+            .unwrap_or_else(|_| opts.save_path.clone()),
         label: opts.label.clone(),
         start: opts.start,
         top_of_queue: opts.top_of_queue,
@@ -273,7 +276,7 @@ pub async fn remove(
 
     // Move data to the Trash (never a hard delete). Failures are logged per path.
     for p in paths {
-        match trash::delete(&p) {
+        match crate::localfs::trash(&p) {
             Ok(_) => state.log(&app, LogLevel::Info, format!("moved to Trash: {p}"), None),
             Err(err) => state.log(&app, LogLevel::Warn, format!("could not trash {p}: {err}"), None),
         }
@@ -436,6 +439,7 @@ pub async fn set_location(
 ) -> Result<(), String> {
     // rtorrent requires the torrent be closed to move its directory; stop →
     // set → start restores the prior running state. Data is NOT moved (v1).
+    let path = crate::localfs::to_daemon_path(&path)?;
     let backend = state.backend();
     let one = std::slice::from_ref(&hash);
     backend.stop(one).await.map_err(e)?;
@@ -493,12 +497,7 @@ pub async fn open_destination(state: St<'_>, hash: String) -> Result<(), String>
     if path.is_empty() {
         return Err("no path on disk yet".into());
     }
-    // Reveal the item in Finder (macOS).
-    std::process::Command::new("open")
-        .args(["-R", &path])
-        .status()
-        .map_err(e)?;
-    Ok(())
+    crate::localfs::reveal(&path)
 }
 
 #[tauri::command]
@@ -526,7 +525,10 @@ pub async fn apply_settings(
     state: St<'_>,
     patch: serde_json::Value,
 ) -> Result<Settings, String> {
-    let next = settings::apply_patch(&state.settings(), patch);
+    let mut next = settings::apply_patch(&state.settings(), patch);
+    // The save path is the daemon's, so a picker result has to be translated;
+    // the watch folder is ours and stays a native path.
+    next.default_save_path = crate::localfs::to_daemon_path(&next.default_save_path)?;
     let saved = state.update_settings(next.clone());
     // Push daemon-affecting changes to rtorrent (best-effort; some may need a
     // restart to take effect on older builds).

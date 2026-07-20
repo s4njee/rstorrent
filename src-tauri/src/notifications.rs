@@ -134,9 +134,47 @@ pub fn post_completion(app: AppHandle, completion: Completion) {
         });
 }
 
+/// Post a completion toast. Windows delivers the click on its own WinRT thread,
+/// so unlike macOS this needs no blocking wait.
+#[cfg(target_os = "windows")]
+pub fn post_completion(app: AppHandle, completion: Completion) {
+    use tauri_winrt_notification::{Duration, Sound, Toast};
+
+    let body = format!("Download complete · {}", format_bytes(completion.size_bytes));
+    let hash = completion.hash.clone();
+    let build = |app_id: &str| {
+        let app = app.clone();
+        let hash = hash.clone();
+        Toast::new(app_id)
+            .title(&completion.name)
+            .text1(&body)
+            .sound(Some(Sound::Default))
+            .duration(Duration::Short)
+            .on_activated(move |_action| {
+                use tauri::{Emitter, Manager};
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+                let _ = app.emit("torrent://notification-clicked", hash.clone());
+                Ok(())
+            })
+            .show()
+    };
+
+    // Toasts are addressed by AppUserModelID, which only exists once the
+    // installer has written a Start Menu shortcut. In a `tauri dev` run there
+    // is no shortcut, so fall back to the PowerShell AUMID — the toast still
+    // shows, just attributed to PowerShell.
+    if build("com.rstorrent.app").is_err() {
+        let _ = build(Toast::POWERSHELL_APP_ID);
+    }
+}
+
 /// Other desktop targets keep transition and badge behavior but do not post a
-/// macOS notification.
-#[cfg(not(target_os = "macos"))]
+/// native notification.
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 pub fn post_completion(_app: AppHandle, _completion: Completion) {}
 
 #[cfg(test)]

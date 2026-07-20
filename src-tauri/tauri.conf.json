@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": "all",
     "category": "public.app-category.utilities",
     "copyright": "rstorrent",
     "icon": [
@@ -46,7 +46,12 @@
         "role": "Viewer",
         "rank": "Default"
       }
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   },
   "plugins": {
     "deep-link": {

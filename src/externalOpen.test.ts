@@ -31,6 +31,31 @@ describe("parseOpenRequests", () => {
       ]),
     ).toEqual([{ kind: "magnet", uri: "magnet:?xt=urn:btih:ABC&dn=Example" }]);
   });
+
+  it("accepts the Windows shapes: bare drive paths and file: URLs", () => {
+    expect(
+      parseOpenRequests([
+        // What a double-clicked .torrent looks like in argv.
+        "C:\\Users\\me\\Downloads\\One.torrent",
+        // `pathname` on Windows keeps a leading slash and POSIX separators.
+        "file:///C:/Users/me/Two%20Files.torrent",
+      ]),
+    ).toEqual([
+      { kind: "file", path: "C:\\Users\\me\\Downloads\\One.torrent" },
+      { kind: "file", path: "C:\\Users\\me\\Two Files.torrent" },
+    ]);
+  });
+
+  it("accepts a WSL share path but still rejects other UNC hosts", () => {
+    expect(
+      parseOpenRequests([
+        "\\\\wsl.localhost\\Ubuntu\\home\\me\\x.torrent",
+        "file://server/share/test.torrent",
+      ]),
+    ).toEqual([
+      { kind: "file", path: "\\\\wsl.localhost\\Ubuntu\\home\\me\\x.torrent" },
+    ]);
+  });
 });
 
 describe("OpenRequestQueue", () => {

@@ -11,7 +11,9 @@
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, UnixStream};
+use tokio::net::TcpStream;
+#[cfg(unix)]
+use tokio::net::UnixStream;
 use tokio::time::timeout;
 
 use super::xmlrpc::{self, Value};
@@ -33,6 +35,7 @@ pub async fn call(transport: &Transport, method: &str, params: &[Value]) -> Resu
 async fn request(transport: &Transport, body: &str) -> Result<Vec<u8>> {
     let frame = build_frame(body);
     match transport {
+        #[cfg(unix)]
         Transport::UnixSocket { path } => {
             let stream = timeout(CONNECT_TIMEOUT, UnixStream::connect(path))
                 .await
@@ -40,6 +43,14 @@ async fn request(transport: &Transport, body: &str) -> Result<Vec<u8>> {
                 .map_err(|e| RtorrentError::Unreachable(format!("{path}: {e}")))?;
             exchange(stream, &frame).await
         }
+        // Windows has AF_UNIX, but it cannot reach a socket living inside the
+        // WSL VM's filesystem. The variant stays in the settings enum so a
+        // config synced from macOS still deserializes; it just can't connect.
+        #[cfg(not(unix))]
+        Transport::UnixSocket { path } => Err(RtorrentError::Unreachable(format!(
+            "unix socket {path} is not reachable from Windows; \
+             point rtorrent at scgi_port 127.0.0.1:5000 and use the TCP transport"
+        ))),
         Transport::Tcp { host, port } => {
             let stream = timeout(CONNECT_TIMEOUT, TcpStream::connect((host.as_str(), *port)))
                 .await

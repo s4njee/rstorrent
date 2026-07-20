@@ -8,6 +8,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useTorrents } from "../../store/torrents";
 import { useUi, type SortColumn } from "../../store/ui";
 import { selectVisible } from "../../store/selectors";
+import { accel } from "../../platform";
 import {
   COLUMN_DEFINITIONS,
   gridTemplateColumns,
@@ -212,7 +213,8 @@ export function TorrentTable() {
         <div className={styles.empty}>
           no torrents
           <br />
-          ⌘O to add a .torrent, ⌘⇧O for a magnet
+          {accel("O")} to add a .torrent, {accel("O", { shift: true })} for a
+          magnet
         </div>
       );
     } else {

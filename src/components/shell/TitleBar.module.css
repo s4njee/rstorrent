@@ -1,14 +1,22 @@
 /* Overlay title bar: a draggable strip that clears the native macOS traffic
-   lights on the left and centers the app title. */
+   lights on the left and centers the app title.
+
+   Only macOS gets the overlay window style, so only macOS needs the left
+   gutter — elsewhere the window has a real title bar and the strip is an
+   ordinary status header. `data-platform` is set on <html> by `platform.ts`. */
 .bar {
   height: var(--titlebar-height);
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-black);
   display: flex;
   align-items: center;
-  /* Left padding leaves room for the native traffic lights (overlay style). */
-  padding: 0 12px 0 78px;
+  padding: 0 12px;
   flex: none;
+}
+
+:global(html[data-platform="mac"]) .bar {
+  /* Left padding leaves room for the native traffic lights (overlay style). */
+  padding-left: 78px;
 }
 
 .title {
@@ -23,6 +31,10 @@
 
 /* Balances the traffic-light gutter so the title is optically centered. */
 .spacer {
-  width: 66px;
+  width: 0;
   flex: none;
+}
+
+:global(html[data-platform="mac"]) .spacer {
+  width: 66px;
 }

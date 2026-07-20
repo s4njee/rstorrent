@@ -5,6 +5,7 @@
  */
 
 import { useUi } from "../../store/ui";
+import { accel } from "../../platform";
 import * as actions from "../../actions";
 import {
   AddIcon,
@@ -27,14 +28,14 @@ export function Toolbar() {
     <div className={styles.bar}>
       <button
         className={`${styles.btn} ${styles.add}`}
-        title="Add torrent file (⌘O)"
+        title={`Add torrent file (${accel("O")})`}
         onClick={() => openDialog("add-file")}
       >
         <AddIcon />
       </button>
       <button
         className={styles.btn}
-        title="Add magnet link (⌘⇧O)"
+        title={`Add magnet link (${accel("O", { shift: true })})`}
         onClick={() => openDialog("add-magnet")}
       >
         <MagnetIcon />

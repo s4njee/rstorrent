@@ -1,7 +1,7 @@
 [package]
 name = "rstorrent"
 version = "0.1.0"
-description = "Native macOS desktop client for the rtorrent daemon"
+description = "Native desktop client for the rtorrent daemon"
 authors = ["rstorrent"]
 edition = "2021"
 rust-version = "1.77"
@@ -36,14 +36,15 @@ quick-xml = "0.37"    # minimal hand-rolled XML-RPC encode/parse (handles <i8>)
 base64 = "0.22"       # load.raw payloads
 lava_torrent = "0.11" # .torrent metadata parsing for the Add dialog
 # XML-RPC over HTTP(S) for remote daemons (B9). Already in the tree via Tauri,
-# but without TLS; native-tls uses macOS Security.framework and therefore the
-# system trust store, rather than bundling a CA list that can go stale.
+# but without TLS; native-tls binds the platform trust store (Security.framework
+# on macOS, SChannel on Windows) rather than bundling a CA list that can go stale.
 reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
-# Remote credentials belong in the Keychain, never in settings.json (B9).
-keyring = { version = "3", features = ["apple-native"] }
+# Remote credentials belong in the OS credential store, never in settings.json
+# (B9). The backend feature is selected per-target below.
+keyring = "3"
 
 # --- Filesystem side-effects ---
-trash = "5"           # "delete data" moves files to the macOS Trash, never rm
+trash = "5"           # "delete data" moves files to Trash/Recycle Bin, never rm
 notify = "7"          # watched-folder auto-add (E11-S5)
 
 # --- Errors ---
@@ -51,11 +52,23 @@ thiserror = "2"       # typed error enums across the rtorrent layer
 async-trait = "0.1"   # dyn-compatible async RtorrentApi trait (Scgi vs Mock)
 
 [target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
 tauri-plugin-deep-link = "2"         # magnet: scheme handling through LaunchServices
 # Native notifications with a click response. The official Tauri notification
 # plugin only exposes notification actions on mobile, so it cannot implement
 # B2's click-to-select behavior on macOS.
 mac-notification-sys = "=0.6.8"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] } # Credential Manager
+tauri-plugin-deep-link = "2"         # magnet: scheme, registered by the NSIS installer
+# Windows delivers file/magnet opens as argv to a *second* process instance, so
+# the deep-link plugin needs single-instance to forward them to the live window.
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# Toast notifications with an activation callback — the same crate the official
+# notification plugin uses internally, but reached directly so B2's
+# click-to-select behavior survives on Windows.
+tauri-winrt-notification = "0.7"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "test-util"] }

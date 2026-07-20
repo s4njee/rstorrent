@@ -253,7 +253,7 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                 }
 
                 resolve_trackers(&app, &state, &raw).await;
-                let snapshot = build_snapshot(&state, raw, globals);
+                let snapshot = build_snapshot(&state, raw, globals).await;
                 let _ = app.emit("state://snapshot", &snapshot);
             }
             Err(e) => {
@@ -330,7 +330,14 @@ async fn resolve_trackers(_app: &AppHandle, state: &Arc<AppState>, raw: &[crate:
 }
 
 /// Turn raw torrents + globals into the DTO snapshot for the frontend.
-fn build_snapshot(state: &AppState, raw: Vec<crate::rtorrent::RawTorrent>, g: RawGlobal) -> Snapshot {
+///
+/// Async only because the free-space probe shells out to WSL on Windows and so
+/// has to be pushed onto the blocking pool.
+async fn build_snapshot(
+    state: &AppState,
+    raw: Vec<crate::rtorrent::RawTorrent>,
+    g: RawGlobal,
+) -> Snapshot {
     let settings = state.settings();
     let torrents: Vec<TorrentDto> = raw
         .iter()
@@ -344,10 +351,18 @@ fn build_snapshot(state: &AppState, raw: Vec<crate::rtorrent::RawTorrent>, g: Ra
         })
         .collect();
 
-    // Free space is only meaningful for a local daemon; a real statvfs is a
-    // follow-up, so we surface the mock's fixed value and otherwise None.
+    // Free space is only meaningful for a local daemon, and on Windows costs a
+    // `wsl.exe df` — so it is TTL-cached inside `localfs` and read off the
+    // runtime threads. `None` means "unknown" and hides the readout.
     let free_space = if settings.mock {
         Some(412 * 1_073_741_824_i64)
+    } else if crate::settings::is_localhost(&settings.transport)
+        && !settings.default_save_path.is_empty()
+    {
+        let path = settings.default_save_path.clone();
+        tokio::task::spawn_blocking(move || crate::localfs::free_space(&path))
+            .await
+            .unwrap_or(None)
     } else {
         None
     };

@@ -46,8 +46,10 @@ function parseValue(raw: string, allowHttp: boolean): AddSource[] {
   }
 
   // Supporting an absolute path as well as file:// makes local/dev event
-  // injection convenient without weakening the accepted file type.
-  if (value.startsWith("/") && isTorrentPath(value)) {
+  // injection convenient without weakening the accepted file type. Windows
+  // delivers file associations as bare `C:\…` argv entries, so both an absolute
+  // POSIX path and a drive-letter path have to count as absolute here.
+  if (isAbsolutePath(value) && isTorrentPath(value)) {
     return [{ kind: "file" as const, path: value }];
   }
 
@@ -60,15 +62,34 @@ function parseValue(raw: string, allowHttp: boolean): AddSource[] {
     ) {
       return [];
     }
-    return [
-      {
-        kind: "file" as const,
-        path: decodeURIComponent(url.pathname),
-      },
-    ];
+    return [{ kind: "file" as const, path: filePathFromUrl(url) }];
   } catch {
     return [];
   }
+}
+
+/** POSIX (`/x`), Windows drive (`C:\x`), or UNC (`\\host\x`). */
+function isAbsolutePath(value: string): boolean {
+  return (
+    value.startsWith("/") ||
+    /^[a-z]:[\\/]/i.test(value) ||
+    value.startsWith("\\\\")
+  );
+}
+
+/**
+ * Turn a `file:` URL into a native path.
+ *
+ * `pathname` is always POSIX-shaped, so on Windows it arrives as
+ * `/C:/Users/you/x.torrent` — the leading slash has to go and the separators
+ * have to be flipped, or the path reaches the backend unopenable.
+ */
+function filePathFromUrl(url: URL): string {
+  const decoded = decodeURIComponent(url.pathname);
+  if (/^\/[a-z]:/i.test(decoded)) {
+    return decoded.slice(1).replace(/\//g, "\\");
+  }
+  return decoded;
 }
 
 /** Convert LaunchServices URLs into add sources, ignoring unrelated inputs. */

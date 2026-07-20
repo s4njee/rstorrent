@@ -1,7 +1,12 @@
-//! macOS file-association and deep-link open request handoff.
+//! File-association and deep-link open request handoff.
 //!
-//! LaunchServices may deliver `RunEvent::Opened` before the webview has loaded.
-//! Requests are therefore retained until the frontend subscribes and invokes
+//! The two platforms deliver these differently. macOS raises
+//! `RunEvent::Opened` on the running app; Windows launches a *second* process
+//! with the file or magnet in `argv`, which the single-instance plugin forwards
+//! to the live one. Both funnel into [`receive`].
+//!
+//! Either delivery may arrive before the webview has loaded. Requests are
+//! therefore retained until the frontend subscribes and invokes
 //! `take_open_requests`; later requests are emitted immediately.
 
 use std::sync::Mutex;
@@ -43,7 +48,25 @@ impl OpenRequestState {
     }
 }
 
-/// Accept URLs from Tauri's macOS `RunEvent::Opened` callback.
+/// Pick the openable arguments out of a command line.
+///
+/// Windows hands the app its document or URL as an ordinary argument, mixed in
+/// with `argv[0]` and any switches, so anything that isn't a magnet link or a
+/// `.torrent` is dropped rather than forwarded to the frontend as a bogus
+/// request.
+pub fn from_argv(argv: &[String]) -> Vec<String> {
+    argv.iter()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-'))
+        .filter(|arg| {
+            let lower = arg.to_ascii_lowercase();
+            lower.starts_with("magnet:") || lower.ends_with(".torrent")
+        })
+        .cloned()
+        .collect()
+}
+
+/// Accept open requests from either platform's delivery mechanism.
 pub fn receive(app: &AppHandle, urls: Vec<String>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -79,6 +102,35 @@ mod tests {
             state.receive(vec!["file:///warm.torrent".into()]),
             Some(vec!["file:///warm.torrent".into()])
         );
+    }
+
+    #[test]
+    fn argv_keeps_only_openable_arguments() {
+        let argv: Vec<String> = [
+            r"C:\Program Files\rstorrent\rstorrent.exe",
+            "--some-switch",
+            r"C:\Users\you\Downloads\Debian.TORRENT",
+            "magnet:?xt=urn:btih:abc",
+            r"C:\Users\you\notes.txt",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        assert_eq!(
+            from_argv(&argv),
+            vec![
+                r"C:\Users\you\Downloads\Debian.TORRENT",
+                "magnet:?xt=urn:btih:abc"
+            ]
+        );
+    }
+
+    #[test]
+    fn argv_without_documents_yields_nothing() {
+        // A plain launch must not produce a phantom open request.
+        assert!(from_argv(&[r"C:\rstorrent.exe".to_string()]).is_empty());
+        assert!(from_argv(&[]).is_empty());
     }
 
     #[test]

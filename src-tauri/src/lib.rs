@@ -11,10 +11,12 @@
 //!   * [`poller`]      — background polling loops that push snapshots to the UI.
 //!   * [`commands`]    — `#[tauri::command]` handlers.
 //!   * [`torrent_file`]— `.torrent` metadata parsing for the Add dialog.
+//!   * `wsl`           — (Windows only) path translation across the WSL boundary.
 
 pub mod ipc;
 
 mod commands;
+mod localfs;
 mod log;
 mod menu;
 mod notifications;
@@ -28,6 +30,8 @@ mod stats;
 mod torrent_file;
 mod throttles;
 mod watcher;
+#[cfg(target_os = "windows")]
+mod wsl;
 
 use std::sync::Arc;
 
@@ -37,21 +41,41 @@ use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Must be registered before any other plugin. Windows starts a fresh
+    // process for every double-clicked .torrent and every magnet: link; this
+    // hands that process's argv to the instance that already owns the window,
+    // then exits it.
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        open_requests::receive(app, open_requests::from_argv(&argv));
+    }));
+
+    let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         // Persist and restore the window's size/position across launches.
         .plugin(tauri_plugin_window_state::Builder::default().build());
 
-    // LaunchServices handles both registered URL schemes and document types on
-    // macOS. Other platforms would additionally need single-instance handling.
-    #[cfg(target_os = "macos")]
+    // LaunchServices (macOS) and the NSIS installer's registry keys (Windows)
+    // both route registered schemes and document types through this plugin.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let builder = builder.plugin(tauri_plugin_deep_link::init());
 
     let app = builder
         .setup(|app| {
             app.manage(open_requests::OpenRequestState::default());
+
+            // A cold launch from a double-clicked .torrent puts the document in
+            // our own argv; macOS instead replays it as `RunEvent::Opened`, so
+            // only Windows has to read it here.
+            #[cfg(target_os = "windows")]
+            {
+                let argv: Vec<String> = std::env::args().collect();
+                open_requests::receive(app.handle(), open_requests::from_argv(&argv));
+            }
 
             // Settings live in the app's config dir; fall back to a temp path if
             // that can't be resolved (keeps the app usable regardless).
@@ -106,10 +130,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building rstorrent");
 
-    app.run(|app, event| {
+    app.run(|_app, _event| {
         #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Opened { urls } = event {
-            open_requests::receive(app, urls.into_iter().map(|url| url.to_string()).collect());
+        if let tauri::RunEvent::Opened { urls } = _event {
+            open_requests::receive(_app, urls.into_iter().map(|url| url.to_string()).collect());
         }
     });
 }
