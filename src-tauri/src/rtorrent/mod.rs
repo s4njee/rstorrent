@@ -176,6 +176,17 @@ pub trait RtorrentApi: Send + Sync {
     /// Peer rows for the Peers detail tab.
     async fn peers(&self, hash: &str) -> Result<Vec<crate::ipc::PeerRow>>;
 
+    /// Ban a peer (`p.banned.set = 1`) and drop the connection (B16). A banned
+    /// peer is refused if it tries to reconnect this session.
+    async fn ban_peer(&self, hash: &str, peer_id: &str) -> Result<()>;
+
+    /// Snub a peer (`p.snubbed.set = 1`) — stop uploading to it, without
+    /// disconnecting (B16).
+    async fn snub_peer(&self, hash: &str, peer_id: &str) -> Result<()>;
+
+    /// Disconnect a peer now (`p.disconnect`), without banning it (B16).
+    async fn disconnect_peer(&self, hash: &str, peer_id: &str) -> Result<()>;
+
     /// File rows for the Content detail tab (and re-used by the Add dialog).
     async fn files(&self, hash: &str) -> Result<Vec<crate::ipc::FileNode>>;
 
@@ -217,11 +228,35 @@ pub trait RtorrentApi: Send + Sync {
     /// Set the incoming listen port range, e.g. "6881-6899".
     async fn set_port_range(&self, range: &str) -> Result<()>;
 
+    /// Apply a batch of global `<method> = <value>` config directives to the
+    /// running daemon, best-effort. Used by the 1 Gbps tuner to push the values
+    /// it also writes to `.rtorrent.rc` so they take effect without a restart.
+    /// Returns how many of the directives the daemon accepted.
+    async fn apply_config(&self, directives: &[(&str, i64)]) -> Result<usize>;
+
+    /// Like [`Self::apply_config`], but for directives whose argument is a string
+    /// (encryption flags, proxy/bind addresses). Best-effort; returns the count
+    /// the daemon accepted.
+    async fn apply_config_str(&self, directives: &[(&str, &str)]) -> Result<usize>;
+
     /// Enable or disable the DHT.
     async fn set_dht(&self, enabled: bool) -> Result<()>;
 
     /// Aggregate figures for the Statistics dialog.
     async fn statistics(&self) -> Result<RawStats>;
+
+    /// Native rtorrent views and their member hashes (D12), excluding the
+    /// everything-views `main`/`default`. Read-only surface for the sidebar.
+    async fn views(&self) -> Result<Vec<(String, Vec<String>)>>;
+
+    /// What the daemon reports about itself, for the health panel (D16).
+    async fn daemon_health(&self) -> Result<crate::ipc::DaemonHealth>;
+
+    /// Ask the daemon to write its session now (`session.save`) (D13).
+    async fn save_session(&self) -> Result<()>;
+
+    /// Ask the daemon to shut down cleanly (`system.shutdown.normal`) (D13).
+    async fn shutdown(&self) -> Result<()>;
 }
 
 /// Build the appropriate backend for the given settings. When `mock` is set (or

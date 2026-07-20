@@ -24,7 +24,15 @@ import {
   setHttpPassword,
   testConnection,
 } from "../../ipc/commands";
-import type { Settings, Transport } from "../../ipc/types";
+import type {
+  ConnectionProfile,
+  EncryptionMode,
+  LabelDefault,
+  Settings,
+  Transport,
+  TurtleSchedule,
+  WatchFolder,
+} from "../../ipc/types";
 import { credentialStoreName, isWindows } from "../../platform";
 import { ModalBase, Button } from "./ModalBase";
 import { Checkbox } from "./Checkbox";
@@ -37,6 +45,7 @@ type Section =
   | "connection"
   | "speed"
   | "bittorrent"
+  | "network"
   | "rss"
   | "webui"
   | "advanced";
@@ -52,9 +61,18 @@ const NAV: Array<{
   { id: "connection", label: "Connection", icon: "⇄" },
   { id: "speed", label: "Speed", icon: "⏱" },
   { id: "bittorrent", label: "BitTorrent", icon: "⦿" },
+  { id: "network", label: "Network", icon: "⇅" },
   { id: "rss", label: "RSS", icon: "⤳", disabled: true },
   { id: "webui", label: "Web UI", icon: "⧉", disabled: true },
   { id: "advanced", label: "Advanced", icon: "⚑" },
+];
+
+/** Encryption presets shown in the Network pane (D7). */
+const ENCRYPTION_OPTIONS: Array<{ value: EncryptionMode; label: string }> = [
+  { value: "disabled", label: "Disabled (plaintext only)" },
+  { value: "allow", label: "Allow (accept encrypted)" },
+  { value: "prefer", label: "Prefer (try encrypted, retry)" },
+  { value: "require", label: "Require encryption" },
 ];
 
 export function PreferencesDialog() {
@@ -256,63 +274,14 @@ export function PreferencesDialog() {
           )}
 
           {section === "downloads" && (
-            <Group title="Saving Management">
-              <span className={forms.fieldLabel} style={{ width: "auto" }}>
-                Default save path
-              </span>
-              <div className={forms.field}>
-                <input
-                  className={forms.input}
-                  value={draft.defaultSavePath}
-                  onChange={(e) =>
-                    patch({ defaultSavePath: e.currentTarget.value })
-                  }
-                  spellCheck={false}
-                />
-                <button className={forms.browse} onClick={() => void browse()}>
-                  Browse…
-                </button>
-              </div>
-              <Checkbox
-                checked={false}
-                onChange={() => {}}
-                disabled
-                label="Keep incomplete torrents in a separate folder"
-                title="requires rtorrent watch/move configuration (v2)"
-              />
-              <span
-                className={forms.fieldLabel}
-                style={{ width: "auto", marginTop: 4 }}
-              >
-                Watched folder (auto-add .torrent files; takes effect on
-                restart)
-              </span>
-              <div className={forms.field}>
-                <input
-                  className={forms.input}
-                  value={draft.watchFolder}
-                  onChange={(e) =>
-                    patch({ watchFolder: e.currentTarget.value })
-                  }
-                  placeholder="(disabled)"
-                  spellCheck={false}
-                />
-                <button
-                  className={forms.browse}
-                  onClick={async () => {
-                    const dir = await open({ directory: true });
-                    if (typeof dir === "string") patch({ watchFolder: dir });
-                  }}
-                >
-                  Browse…
-                </button>
-              </div>
-            </Group>
+            <DownloadsSection draft={draft} patch={patch} browse={browse} />
           )}
 
           {section === "connection" && (
             <ConnectionSection
               transport={draft.transport}
+              profiles={draft.connectionProfiles}
+              onProfiles={(connectionProfiles) => patch({ connectionProfiles })}
               pollMs={draft.pollMs}
               stallWindowS={draft.stallWindowS}
               onTransport={setTransport}
@@ -335,18 +304,60 @@ export function PreferencesDialog() {
           )}
 
           {section === "speed" && (
-            <Group title="Speed Limits (KiB/s, 0 = unlimited)">
-              <NumberRow
-                label="Global download limit"
-                value={draft.downLimitKb}
-                onChange={(downLimitKb) => patch({ downLimitKb })}
-              />
-              <NumberRow
-                label="Global upload limit"
-                value={draft.upLimitKb}
-                onChange={(upLimitKb) => patch({ upLimitKb })}
-              />
-            </Group>
+            <>
+              <Group title="Speed Limits (KiB/s, 0 = unlimited)">
+                <NumberRow
+                  label="Global download limit"
+                  value={draft.downLimitKb}
+                  onChange={(downLimitKb) => patch({ downLimitKb })}
+                />
+                <NumberRow
+                  label="Global upload limit"
+                  value={draft.upLimitKb}
+                  onChange={(upLimitKb) => patch({ upLimitKb })}
+                />
+              </Group>
+
+              <Group title="Connection Limits (0 = default / unlimited)">
+                <NumberRow
+                  label="Max peers per torrent"
+                  value={draft.maxPeers}
+                  onChange={(maxPeers) => patch({ maxPeers })}
+                />
+                <NumberRow
+                  label="Global upload slots"
+                  value={draft.maxUploadsGlobal}
+                  onChange={(maxUploadsGlobal) => patch({ maxUploadsGlobal })}
+                />
+                <NumberRow
+                  label="Global download slots"
+                  value={draft.maxDownloadsGlobal}
+                  onChange={(maxDownloadsGlobal) =>
+                    patch({ maxDownloadsGlobal })
+                  }
+                />
+              </Group>
+
+              <Group title="Queue">
+                <NumberRow
+                  label="Max active downloads"
+                  value={draft.maxActiveDownloads}
+                  onChange={(maxActiveDownloads) =>
+                    patch({ maxActiveDownloads })
+                  }
+                />
+                <span className={forms.meta}>
+                  0 = no queue. Otherwise the app keeps the highest-priority N
+                  downloads running and starts/stops the rest to match.
+                </span>
+              </Group>
+
+              <TurtleGroup draft={draft} patch={patch} />
+            </>
+          )}
+
+          {section === "network" && (
+            <NetworkSection draft={draft} patch={patch} />
           )}
 
           {section === "bittorrent" && (
@@ -378,6 +389,26 @@ export function PreferencesDialog() {
               </Group>
 
               <Group title="Seeding limits">
+                <div className={forms.field}>
+                  <span className={forms.fieldLabel} style={{ width: 140 }}>
+                    When goal reached
+                  </span>
+                  <select
+                    className={forms.input}
+                    value={draft.seedGoalAction}
+                    aria-label="Action when the seed goal is reached"
+                    onChange={(e) =>
+                      patch({
+                        seedGoalAction: e.currentTarget
+                          .value as Settings["seedGoalAction"],
+                      })
+                    }
+                  >
+                    <option value="stop">Stop seeding</option>
+                    <option value="remove">Remove torrent</option>
+                    <option value="removeData">Remove torrent and data</option>
+                  </select>
+                </div>
                 <div className={styles.seedLimitLine}>
                   <span>Stop at ratio</span>
                   <SeedLimitInput
@@ -626,9 +657,458 @@ function SeedLimitInput({
   );
 }
 
-/** Connection section: transport picker + poll/stall + test button. */
+/** Network pane: encryption/PEX (D7), proxy (D8), bind/listen (D9). */
+function NetworkSection({
+  draft,
+  patch,
+}: {
+  draft: Settings;
+  patch: (p: Partial<Settings>) => void;
+}) {
+  return (
+    <>
+      <Group title="Encryption">
+        <div className={forms.field}>
+          <span className={forms.fieldLabel} style={{ width: 120 }}>
+            Protocol encryption
+          </span>
+          <select
+            className={forms.input}
+            value={draft.encryption}
+            aria-label="Protocol encryption preset"
+            onChange={(e) =>
+              patch({ encryption: e.currentTarget.value as EncryptionMode })
+            }
+          >
+            {ENCRYPTION_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span className={forms.meta}>
+          rtorrent doesn’t report its current encryption setting, so this shows
+          the preset rstorrent last applied on Apply.
+        </span>
+        <Checkbox
+          checked={draft.pexEnabled}
+          onChange={(pexEnabled) => patch({ pexEnabled })}
+          label="Enable peer exchange (PEX)"
+        />
+      </Group>
+
+      <Group title="Proxy">
+        <Checkbox
+          checked={draft.proxyTrackerHttp}
+          onChange={(proxyTrackerHttp) => patch({ proxyTrackerHttp })}
+          label="Route tracker HTTP requests through a proxy"
+        />
+        <div className={forms.field}>
+          <span className={forms.fieldLabel} style={{ width: 120 }}>
+            Proxy address
+          </span>
+          <input
+            className={forms.input}
+            value={draft.proxyAddress}
+            disabled={!draft.proxyTrackerHttp}
+            onChange={(e) => patch({ proxyAddress: e.currentTarget.value })}
+            placeholder="host:port"
+            spellCheck={false}
+          />
+        </div>
+        <span className={styles.warn}>
+          Only HTTP tracker announces are proxied — UDP trackers and peer
+          connections bypass it.
+        </span>
+      </Group>
+
+      <Group title="Binding">
+        <div className={forms.field}>
+          <span className={forms.fieldLabel} style={{ width: 120 }}>
+            Bind address
+          </span>
+          <input
+            className={forms.input}
+            value={draft.bindAddress}
+            onChange={(e) => patch({ bindAddress: e.currentTarget.value })}
+            placeholder="(all interfaces)"
+            spellCheck={false}
+          />
+        </div>
+        <div className={forms.field}>
+          <span className={forms.fieldLabel} style={{ width: 120 }}>
+            Reported address
+          </span>
+          <input
+            className={forms.input}
+            value={draft.localAddress}
+            onChange={(e) => patch({ localAddress: e.currentTarget.value })}
+            placeholder="(automatic)"
+            spellCheck={false}
+          />
+        </div>
+        <span className={forms.meta}>
+          Bind to a VPN interface’s address so traffic dies with the tunnel
+          instead of leaking. Clearing a bind takes effect after a daemon
+          restart.
+        </span>
+      </Group>
+    </>
+  );
+}
+
+/** A bordered block grouping one watch folder's fields. */
+const rowCard: React.CSSProperties = {
+  border: "1px solid var(--border-row)",
+  borderRadius: 4,
+  padding: 8,
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+};
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Minutes-since-midnight ↔ an <input type="time"> "HH:MM" value. */
+function minToTime(min: number): string {
+  const m = ((min % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+function timeToMin(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** Downloads pane: default path, run-on-complete (C13), watch folders (C12),
+ *  per-label default save paths (C11). */
+function DownloadsSection({
+  draft,
+  patch,
+  browse,
+}: {
+  draft: Settings;
+  patch: (p: Partial<Settings>) => void;
+  browse: () => void;
+}) {
+  const pickInto = async (apply: (dir: string) => void) => {
+    const dir = await open({ directory: true });
+    if (typeof dir === "string") apply(dir);
+  };
+
+  const setFolder = (i: number, next: Partial<WatchFolder>) =>
+    patch({
+      watchFolders: draft.watchFolders.map((f, idx) =>
+        idx === i ? { ...f, ...next } : f,
+      ),
+    });
+  const setDefault = (i: number, next: Partial<LabelDefault>) =>
+    patch({
+      labelDefaults: draft.labelDefaults.map((d, idx) =>
+        idx === i ? { ...d, ...next } : d,
+      ),
+    });
+
+  return (
+    <>
+      <Group title="Saving Management">
+        <span className={forms.fieldLabel} style={{ width: "auto" }}>
+          Default save path
+        </span>
+        <div className={forms.field}>
+          <input
+            className={forms.input}
+            value={draft.defaultSavePath}
+            onChange={(e) => patch({ defaultSavePath: e.currentTarget.value })}
+            spellCheck={false}
+          />
+          <button className={forms.browse} onClick={() => void browse()}>
+            Browse…
+          </button>
+        </div>
+      </Group>
+
+      <Group title="On Completion">
+        <span className={forms.fieldLabel} style={{ width: "auto" }}>
+          Run a command when a torrent completes
+        </span>
+        <input
+          className={forms.input}
+          value={draft.runOnComplete}
+          onChange={(e) => patch({ runOnComplete: e.currentTarget.value })}
+          placeholder="(disabled)   e.g.  /usr/local/bin/on-done %N %F"
+          spellCheck={false}
+        />
+        <span className={forms.meta}>
+          Runs on this machine, directly (no shell). Tokens: %N name · %F save
+          path · %H hash. Point it at a script for pipes or redirects.
+        </span>
+      </Group>
+
+      <Group title="Watch Folders (auto-add; takes effect on restart)">
+        {draft.watchFolders.length === 0 && (
+          <span className={forms.meta}>No watch folders.</span>
+        )}
+        {draft.watchFolders.map((f, i) => (
+          <div key={i} style={rowCard}>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Folder
+              </span>
+              <input
+                className={forms.input}
+                value={f.path}
+                onChange={(e) => setFolder(i, { path: e.currentTarget.value })}
+                placeholder="folder to watch"
+                spellCheck={false}
+              />
+              <button
+                className={forms.browse}
+                onClick={() => void pickInto((d) => setFolder(i, { path: d }))}
+              >
+                Browse…
+              </button>
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Label
+              </span>
+              <input
+                className={forms.input}
+                value={f.label}
+                onChange={(e) => setFolder(i, { label: e.currentTarget.value })}
+                placeholder="(none)"
+                spellCheck={false}
+              />
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Save to
+              </span>
+              <input
+                className={forms.input}
+                value={f.savePath}
+                onChange={(e) =>
+                  setFolder(i, { savePath: e.currentTarget.value })
+                }
+                placeholder="(label / global default)"
+                spellCheck={false}
+              />
+              <button
+                className={forms.browse}
+                onClick={() =>
+                  void pickInto((d) => setFolder(i, { savePath: d }))
+                }
+              >
+                Browse…
+              </button>
+              <button
+                className={styles.removeOverride}
+                title="Remove folder"
+                aria-label="Remove watch folder"
+                onClick={() =>
+                  patch({
+                    watchFolders: draft.watchFolders.filter(
+                      (_, idx) => idx !== i,
+                    ),
+                  })
+                }
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        ))}
+        <button
+          className={styles.addOverride}
+          onClick={() =>
+            patch({
+              watchFolders: [
+                ...draft.watchFolders,
+                { path: "", label: "", savePath: "" },
+              ],
+            })
+          }
+        >
+          + Add watch folder
+        </button>
+      </Group>
+
+      <Group title="Per-label Default Save Paths">
+        {draft.labelDefaults.length === 0 && (
+          <span className={forms.meta}>No per-label defaults.</span>
+        )}
+        {draft.labelDefaults.map((d, i) => (
+          <div className={forms.field} key={i}>
+            <input
+              className={forms.input}
+              style={{ maxWidth: 160 }}
+              value={d.label}
+              onChange={(e) => setDefault(i, { label: e.currentTarget.value })}
+              placeholder="label"
+              spellCheck={false}
+            />
+            <input
+              className={forms.input}
+              value={d.savePath}
+              onChange={(e) =>
+                setDefault(i, { savePath: e.currentTarget.value })
+              }
+              placeholder="save path"
+              spellCheck={false}
+            />
+            <button
+              className={forms.browse}
+              onClick={() =>
+                void pickInto((dir) => setDefault(i, { savePath: dir }))
+              }
+            >
+              Browse…
+            </button>
+            <button
+              className={styles.removeOverride}
+              title="Remove default"
+              aria-label="Remove label default"
+              onClick={() =>
+                patch({
+                  labelDefaults: draft.labelDefaults.filter(
+                    (_, idx) => idx !== i,
+                  ),
+                })
+              }
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          className={styles.addOverride}
+          onClick={() =>
+            patch({
+              labelDefaults: [
+                ...draft.labelDefaults,
+                { label: "", savePath: "" },
+              ],
+            })
+          }
+        >
+          + Add label default
+        </button>
+        <span className={forms.meta}>
+          Adding a torrent with a matching label pre-fills its save path from
+          here.
+        </span>
+      </Group>
+    </>
+  );
+}
+
+/** Speed pane: turtle-mode alternative limits + optional daily schedule (B14). */
+function TurtleGroup({
+  draft,
+  patch,
+}: {
+  draft: Settings;
+  patch: (p: Partial<Settings>) => void;
+}) {
+  const sch = draft.turtleSchedule;
+  const setSch = (next: Partial<TurtleSchedule>) =>
+    patch({ turtleSchedule: { ...sch, ...next } });
+  const toggleDay = (d: number) =>
+    setSch({
+      days: sch.days.includes(d)
+        ? sch.days.filter((x) => x !== d)
+        : [...sch.days, d].sort((a, b) => a - b),
+    });
+
+  return (
+    <Group title="Turtle Mode (alternative limits, KiB/s)">
+      <NumberRow
+        label="Turtle download limit"
+        value={draft.turtleDownKb}
+        onChange={(turtleDownKb) => patch({ turtleDownKb })}
+      />
+      <NumberRow
+        label="Turtle upload limit"
+        value={draft.turtleUpKb}
+        onChange={(turtleUpKb) => patch({ turtleUpKb })}
+      />
+      <Checkbox
+        checked={draft.turtleEnabled}
+        onChange={(turtleEnabled) => patch({ turtleEnabled })}
+        label="Turtle mode on now (manual)"
+      />
+      <Checkbox
+        checked={sch.enabled}
+        onChange={(enabled) => setSch({ enabled })}
+        label="Engage automatically on a daily schedule"
+      />
+      {sch.enabled && (
+        <>
+          <div className={forms.field}>
+            <span className={forms.fieldLabel} style={{ width: 64 }}>
+              From
+            </span>
+            <input
+              className={forms.input}
+              type="time"
+              aria-label="Turtle schedule start"
+              value={minToTime(sch.startMin)}
+              onChange={(e) =>
+                setSch({ startMin: timeToMin(e.currentTarget.value) })
+              }
+            />
+            <span style={{ margin: "0 6px" }}>to</span>
+            <input
+              className={forms.input}
+              type="time"
+              aria-label="Turtle schedule end"
+              value={minToTime(sch.endMin)}
+              onChange={(e) =>
+                setSch({ endMin: timeToMin(e.currentTarget.value) })
+              }
+            />
+          </div>
+          <div className={forms.field}>
+            <span className={forms.fieldLabel} style={{ width: 64 }}>
+              Days
+            </span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {DAY_LABELS.map((label, i) => (
+                <label
+                  key={label}
+                  style={{
+                    display: "flex",
+                    gap: 3,
+                    alignItems: "center",
+                    fontSize: 11,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={sch.days.length === 0 || sch.days.includes(i)}
+                    onChange={() => toggleDay(i)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <span className={forms.meta}>
+            No days selected = every day. An end time earlier than the start
+            wraps past midnight.
+          </span>
+        </>
+      )}
+    </Group>
+  );
+}
+
+/** Connection section: profiles (B10) + transport picker + poll/stall + test. */
 function ConnectionSection({
   transport,
+  profiles,
+  onProfiles,
   pollMs,
   stallWindowS,
   onTransport,
@@ -642,6 +1122,8 @@ function ConnectionSection({
   onForgetPassword,
 }: {
   transport: Transport;
+  profiles: ConnectionProfile[];
+  onProfiles: (p: ConnectionProfile[]) => void;
   pollMs: number;
   stallWindowS: number;
   onTransport: (t: Transport) => void;
@@ -654,8 +1136,95 @@ function ConnectionSection({
   passwordSaved: boolean;
   onForgetPassword: () => void;
 }) {
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileName, setProfileName] = useState("");
+
+  // The active profile is whichever one's transport matches the editor's.
+  const sameTransport = (t: Transport) =>
+    JSON.stringify(t) === JSON.stringify(transport);
+  const activeName =
+    profiles.find((p) => sameTransport(p.transport))?.name ?? "";
+
+  const saveProfile = () => {
+    const name = profileName.trim();
+    if (!name) return;
+    const others = profiles.filter((p) => p.name !== name);
+    onProfiles(
+      [...others, { name, transport }].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+    );
+    setProfileName("");
+    setSavingProfile(false);
+  };
+
   return (
     <Group title="rtorrent Connection">
+      <div className={forms.field}>
+        <span className={forms.fieldLabel}>Profile</span>
+        <select
+          className={forms.input}
+          value={activeName}
+          aria-label="Connection profile"
+          onChange={(e) => {
+            const p = profiles.find((x) => x.name === e.currentTarget.value);
+            if (p) onTransport(p.transport);
+          }}
+        >
+          <option value="">(unsaved)</option>
+          {profiles.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <button
+          className={forms.browse}
+          onClick={() => {
+            setProfileName(activeName);
+            setSavingProfile(true);
+          }}
+        >
+          Save as…
+        </button>
+        {activeName && (
+          <button
+            className={forms.browse}
+            onClick={() =>
+              onProfiles(profiles.filter((p) => p.name !== activeName))
+            }
+          >
+            Delete
+          </button>
+        )}
+      </div>
+      {savingProfile && (
+        <div className={forms.field}>
+          <span className={forms.fieldLabel} />
+          <input
+            className={forms.input}
+            autoFocus
+            placeholder="profile name…"
+            value={profileName}
+            onChange={(e) => setProfileName(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveProfile();
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                setSavingProfile(false);
+              }
+            }}
+          />
+          <button className={forms.browse} onClick={saveProfile}>
+            Save
+          </button>
+        </div>
+      )}
+      <span className={forms.meta}>
+        Save the current connection as a named profile, then switch daemons from
+        the dropdown. Applying reconnects.
+      </span>
+
       <div className={forms.field}>
         <span className={forms.fieldLabel}>Transport</span>
         {/* Windows cannot reach a socket inside the WSL VM, so the option is

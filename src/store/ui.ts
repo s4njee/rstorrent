@@ -56,6 +56,8 @@ export type ActiveFilter =
   | { type: "status"; value: string }
   | { type: "label"; value: string }
   | { type: "tracker"; value: string }
+  /** `value` is a native rtorrent view name (D12). */
+  | { type: "view"; value: string }
   /** `value` is a SmartFilter id, resolved against `smartFilters`. */
   | { type: "smart"; value: string }
   | null;
@@ -89,7 +91,9 @@ export type DialogKind =
   | "prefs"
   | "stats"
   | "remove"
-  | "rate-limit";
+  | "rate-limit"
+  | "tune-network"
+  | "shutdown";
 
 export interface ExternalAddRequest {
   id: number;

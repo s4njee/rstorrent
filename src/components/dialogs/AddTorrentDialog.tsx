@@ -97,6 +97,16 @@ export function AddTorrentDialog() {
     if (typeof dir === "string") setSavePath(dir);
   };
 
+  // C11: when the typed label exactly matches a configured default, pre-fill the
+  // save path from it. Only on an exact match, so it never fights free typing.
+  const onLabelChange = (value: string) => {
+    setLabel(value);
+    const preset = settings?.labelDefaults.find(
+      (d) => d.label === value && d.savePath,
+    );
+    if (preset) setSavePath(preset.savePath);
+  };
+
   /** Toggle every leaf under a node on/off together. */
   const toggleNode = (node: TreeNode, on: boolean) => {
     const idxs = leafIndexes(node);
@@ -198,7 +208,7 @@ export function AddTorrentDialog() {
             <input
               className={forms.input}
               value={label}
-              onChange={(e) => setLabel(e.currentTarget.value)}
+              onChange={(e) => onLabelChange(e.currentTarget.value)}
               placeholder="(none)"
               spellCheck={false}
             />

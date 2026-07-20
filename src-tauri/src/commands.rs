@@ -13,7 +13,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use crate::ipc::{
-    AddOptions, AddSource, DetailTab, LogLevel, Settings, Statistics, TorrentMeta, Transport,
+    AddOptions, AddSource, DaemonHealth, DetailTab, LogLevel, Settings, Statistics, TorrentMeta,
+    Transport,
 };
 use crate::open_requests::OpenRequestState;
 use crate::rtorrent::{client::RpcClient, LoadOptions, RtorrentApi, RtorrentError};
@@ -542,6 +543,67 @@ pub async fn open_destination(state: St<'_>, hash: String) -> Result<(), String>
     crate::localfs::reveal(&path)
 }
 
+/// One of the Peers-tab actions (B16).
+async fn run_peer_action(
+    app: &AppHandle,
+    state: &St<'_>,
+    hash: &str,
+    peer_id: &str,
+    verb: &str,
+    result: Result<(), RtorrentError>,
+) -> Result<(), String> {
+    if let Err(err) = result {
+        state.log(
+            app,
+            LogLevel::Error,
+            format!("{verb} peer failed: {err}"),
+            Some(hash.to_string()),
+        );
+        return Err(e(err));
+    }
+    state.log(
+        app,
+        LogLevel::Info,
+        format!("{verb} peer {peer_id}"),
+        Some(hash.to_string()),
+    );
+    state.detail_repoll.notify_one();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ban_peer(
+    app: AppHandle,
+    state: St<'_>,
+    hash: String,
+    peer_id: String,
+) -> Result<(), String> {
+    let result = state.backend().ban_peer(&hash, &peer_id).await;
+    run_peer_action(&app, &state, &hash, &peer_id, "banned", result).await
+}
+
+#[tauri::command]
+pub async fn snub_peer(
+    app: AppHandle,
+    state: St<'_>,
+    hash: String,
+    peer_id: String,
+) -> Result<(), String> {
+    let result = state.backend().snub_peer(&hash, &peer_id).await;
+    run_peer_action(&app, &state, &hash, &peer_id, "snubbed", result).await
+}
+
+#[tauri::command]
+pub async fn disconnect_peer(
+    app: AppHandle,
+    state: St<'_>,
+    hash: String,
+    peer_id: String,
+) -> Result<(), String> {
+    let result = state.backend().disconnect_peer(&hash, &peer_id).await;
+    run_peer_action(&app, &state, &hash, &peer_id, "disconnected", result).await
+}
+
 #[tauri::command]
 pub async fn set_file_priority(
     state: St<'_>,
@@ -575,13 +637,123 @@ pub async fn apply_settings(
     // Push daemon-affecting changes to rtorrent (best-effort; some may need a
     // restart to take effect on older builds).
     let backend = state.backend();
-    let _ = backend
-        .set_throttles(saved.down_limit_kb, saved.up_limit_kb)
-        .await;
+    // Global rate limits are owned by the poller now (it reconciles them to the
+    // turtle-effective value each tick, B14); nudge it to apply promptly.
     let _ = backend.set_port_range(&saved.port_range).await;
     let _ = backend.set_dht(saved.dht_enabled).await;
+    // Network-pane prefs (v1.6): encryption/PEX, proxy, bind, global caps.
+    crate::network_prefs::apply(backend.as_ref(), &saved).await;
     state.log(&app, LogLevel::Info, "settings updated", None);
+    state.repoll.notify_one();
     Ok(saved)
+}
+
+/// Toggle turtle mode's manual switch (B14). The poller applies the resulting
+/// effective limits on its next tick, which the nudge triggers immediately.
+#[tauri::command]
+pub fn set_turtle(state: St<'_>, enabled: bool) -> Settings {
+    let mut next = state.settings();
+    next.turtle_enabled = enabled;
+    let saved = state.update_settings(next);
+    state.repoll.notify_one();
+    saved
+}
+
+/// What the 1 Gbps tuner would do, for the confirmation dialog.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TuningPreview {
+    /// Where the managed block would be written; `None` for a remote daemon
+    /// whose config file isn't reachable from here.
+    pub rc_path: Option<String>,
+    /// The exact block that would be written to `.rtorrent.rc`.
+    pub block: String,
+    /// True when the daemon is local, so the file can be edited (otherwise the
+    /// tuner can only push the values live over XML-RPC).
+    pub can_write_file: bool,
+}
+
+/// The outcome of applying the tuner.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TuningResult {
+    pub rc_path: Option<String>,
+    pub file_written: bool,
+    pub file_error: Option<String>,
+    /// How many directives the running daemon accepted, out of `live_total`.
+    pub live_applied: usize,
+    pub live_total: usize,
+    pub live_error: Option<String>,
+}
+
+/// Preview the 1 Gbps tuning block and where it would be written (menu action).
+#[tauri::command]
+pub fn tuning_preview(state: St<'_>) -> TuningPreview {
+    let local = settings::is_localhost(&state.settings().transport);
+    TuningPreview {
+        rc_path: local.then(crate::rtorrent_rc::display_path),
+        block: crate::rtorrent_rc::render_block(),
+        can_write_file: local,
+    }
+}
+
+/// Apply the 1 Gbps tuning: write the managed block into a local daemon's
+/// `.rtorrent.rc`, and push the same values to the running daemon over XML-RPC
+/// so most take effect without a restart.
+#[tauri::command]
+pub async fn apply_tuning(app: AppHandle, state: St<'_>) -> Result<TuningResult, String> {
+    let local = settings::is_localhost(&state.settings().transport);
+    let live = crate::rtorrent_rc::live_calls();
+    let live_total = live.len();
+
+    // 1) Persist to .rtorrent.rc (local daemons only — a remote's file is not
+    //    ours to touch). The write may shell out to WSL, so keep it off the
+    //    async reactor.
+    let mut rc_path = None;
+    let mut file_written = false;
+    let mut file_error = None;
+    if local {
+        match tokio::task::spawn_blocking(crate::rtorrent_rc::write_block).await {
+            Ok(Ok(path)) => {
+                rc_path = Some(path);
+                file_written = true;
+            }
+            Ok(Err(err)) => file_error = Some(err),
+            Err(err) => file_error = Some(err.to_string()),
+        }
+    }
+
+    // 2) Apply live over XML-RPC (best-effort; partial acceptance is fine).
+    let mut live_error = None;
+    let live_applied = match state.backend().apply_config(&live).await {
+        Ok(n) => n,
+        Err(err) => {
+            live_error = Some(err.to_string());
+            0
+        }
+    };
+
+    let wrote = match &rc_path {
+        Some(p) => format!(", wrote {p}"),
+        None => String::new(),
+    };
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("applied 1 Gbps tuning: {live_applied}/{live_total} live{wrote}"),
+        None,
+    );
+    // Limits changed on the daemon; refresh promptly.
+    state.repoll.notify_one();
+
+    Ok(TuningResult {
+        rc_path,
+        file_written,
+        file_error,
+        live_applied,
+        live_total,
+        live_error,
+    })
 }
 
 #[tauri::command]
@@ -676,6 +848,29 @@ pub async fn get_statistics(state: St<'_>) -> Result<Statistics, String> {
         cache_overload_pct: raw.cache_overload_pct,
         queued_io: raw.queued_io,
     })
+}
+
+/// Daemon self-report for the Statistics dialog's Daemon tab (D16).
+#[tauri::command]
+pub async fn daemon_health(state: St<'_>) -> Result<DaemonHealth, String> {
+    state.backend().daemon_health().await.map_err(e)
+}
+
+/// Ask the daemon to write its session now (D13).
+#[tauri::command]
+pub async fn save_session(app: AppHandle, state: St<'_>) -> Result<(), String> {
+    state.backend().save_session().await.map_err(e)?;
+    state.log(&app, LogLevel::Info, "session saved", None);
+    Ok(())
+}
+
+/// Ask the daemon to shut down cleanly (D13). The connection will then drop and
+/// the poller reports disconnected until a daemon is running again.
+#[tauri::command]
+pub async fn shutdown_daemon(app: AppHandle, state: St<'_>) -> Result<(), String> {
+    state.backend().shutdown().await.map_err(e)?;
+    state.log(&app, LogLevel::Warn, "daemon shutdown requested", None);
+    Ok(())
 }
 
 /// Percent-encode a string for use as a magnet `dn=` value.

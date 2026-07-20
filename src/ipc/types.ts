@@ -64,6 +64,8 @@ export interface TorrentDto {
    *  and Finished columns; durable across daemon restarts. */
   startedAt: number;
   finishedAt: number;
+  /** Native rtorrent views this torrent belongs to (D12); empty until resolved. */
+  views: string[];
 }
 
 /** Global counters shown in the status bar and General detail tab. */
@@ -75,6 +77,8 @@ export interface GlobalStats {
   dhtNodes: number;
   /** Free bytes on the default save-path volume, or null if unknown/remote. */
   freeSpace: number | null;
+  /** Whether turtle mode is currently in effect (manual or scheduled) (B14). */
+  turtleActive: boolean;
 }
 
 /** Connection lifecycle to the rtorrent daemon. */
@@ -122,12 +126,15 @@ export interface TrackerRow {
 
 /** A peer row for the Peers detail tab. */
 export interface PeerRow {
+  /** rtorrent peer id (hex), used to target actions; not displayed. */
+  id: string;
   address: string;
   client: string;
   progress: number; // 0..100
   downRate: number;
   upRate: number;
-  flags: string; // e.g. "EI" (encrypted, incoming)
+  /** Compact flags (C16): E encrypted · I incoming · O obfuscated · P preferred · U unwanted. */
+  flags: string;
 }
 
 /** A file/folder node for the Content tab and Add-torrent file tree. */
@@ -220,6 +227,33 @@ export interface LabelSeedGoal extends SeedGoal {
   label: string;
 }
 
+/** What to do when a torrent reaches its seed goal (C14). */
+export type SeedGoalAction = "stop" | "remove" | "removeData";
+
+/** A per-label default save path (C11). */
+export interface LabelDefault {
+  label: string;
+  savePath: string;
+}
+
+/** One watched folder (C12); empty label/savePath fall back to defaults. */
+export interface WatchFolder {
+  path: string;
+  label: string;
+  savePath: string;
+}
+
+/** Daily window that auto-engages turtle mode (B14). */
+export interface TurtleSchedule {
+  enabled: boolean;
+  /** Window start, minutes since local midnight [0,1440). */
+  startMin: number;
+  /** Window end; if endMin <= startMin the window wraps past midnight. */
+  endMin: number;
+  /** Active weekdays, 0=Sunday..6=Saturday. Empty = every day. */
+  days: number[];
+}
+
 /** App settings shared with the frontend Preferences UI. */
 export interface Settings {
   transport: Transport;
@@ -232,13 +266,57 @@ export interface Settings {
   upLimitKb: number;
   portRange: string; // e.g. "6881-6899"
   dhtEnabled: boolean;
-  watchFolder: string; // auto-add .torrent files from here; empty = disabled
+  /** Legacy single watch folder; migrated into watchFolders on load (C12). */
+  watchFolder: string;
   /** Labels whose completed torrents should not produce a notification. */
   completionNotificationExcludedLabels: string[];
   /** App-owned throttle definitions replayed after daemon restarts. */
   torrentThrottles: NamedThrottle[];
   globalSeedGoal: SeedGoal;
   labelSeedGoals: LabelSeedGoal[];
+
+  // --- Network pane (v1.6) ---
+  /** Protocol-encryption preset (D7); write-only, see EncryptionMode. */
+  encryption: EncryptionMode;
+  /** Peer exchange on/off (D7). */
+  pexEnabled: boolean;
+  /** HTTP proxy host:port for tracker announces (D8); empty = none. */
+  proxyAddress: string;
+  /** Route tracker HTTP requests through proxyAddress (D8). */
+  proxyTrackerHttp: boolean;
+  /** Bind listen/outgoing to this address, e.g. a VPN interface (D9); empty = default. */
+  bindAddress: string;
+  /** Address reported to trackers/peers (D9); empty = default. */
+  localAddress: string;
+  /** Global peer cap per torrent (D11); 0 = daemon default. */
+  maxPeers: number;
+  /** Global simultaneous upload slots (D11); 0 = unlimited. */
+  maxUploadsGlobal: number;
+  /** Global simultaneous download slots (D11); 0 = unlimited. */
+  maxDownloadsGlobal: number;
+
+  // --- Automation (v1.7) ---
+  /** Keep at most this many torrents downloading; queue the rest (C9). 0 = off. */
+  maxActiveDownloads: number;
+  /** Per-label default save paths (C11). */
+  labelDefaults: LabelDefault[];
+  /** Watched folders for auto-add (C12). */
+  watchFolders: WatchFolder[];
+  /** Command run on completion with %N/%F/%H tokens (C13); empty = disabled. */
+  runOnComplete: string;
+  /** What to do when a torrent reaches its seed goal (C14). */
+  seedGoalAction: SeedGoalAction;
+  /** Turtle download limit, KiB/s; 0 = unlimited (B14). */
+  turtleDownKb: number;
+  /** Turtle upload limit, KiB/s; 0 = unlimited (B14). */
+  turtleUpKb: number;
+  /** Manual turtle-mode toggle (B14). */
+  turtleEnabled: boolean;
+  /** Optional daily schedule that auto-engages turtle mode (B14). */
+  turtleSchedule: TurtleSchedule;
+  /** Saved daemon connections (B10); the active one is mirrored in transport. */
+  connectionProfiles: ConnectionProfile[];
+
   mock: boolean;
 }
 
@@ -246,6 +324,52 @@ export interface NamedThrottle {
   name: string;
   downKb: number;
   upKb: number;
+}
+
+/**
+ * Protocol-encryption preset (D7). rtorrent 0.16.17 has no getter for the
+ * current mode, so this reflects the last preset rstorrent applied.
+ */
+export type EncryptionMode = "disabled" | "allow" | "prefer" | "require";
+
+/** What the 1 Gbps tuner would do, for the confirmation dialog. */
+export interface TuningPreview {
+  /** Where the block would be written; null for a remote daemon (unreachable). */
+  rcPath: string | null;
+  /** The exact block that would be written to .rtorrent.rc. */
+  block: string;
+  /** True when the daemon is local, so the rc file can be edited. */
+  canWriteFile: boolean;
+}
+
+/** The outcome of applying the 1 Gbps tuner. */
+export interface TuningResult {
+  rcPath: string | null;
+  fileWritten: boolean;
+  fileError: string | null;
+  /** How many directives the running daemon accepted, out of `liveTotal`. */
+  liveApplied: number;
+  liveTotal: number;
+  liveError: string | null;
+}
+
+/** A saved daemon connection (B10). */
+export interface ConnectionProfile {
+  name: string;
+  transport: Transport;
+}
+
+/** What the daemon reports about itself, for the Daemon tab (D16). */
+export interface DaemonHealth {
+  clientVersion: string;
+  apiVersion: string;
+  sessionPath: string;
+  memoryMax: number;
+  memoryCurrent: number;
+  openSockets: number;
+  maxOpenSockets: number;
+  maxOpenFiles: number;
+  httpMaxOpen: number;
 }
 
 /** Aggregate figures for the Statistics dialog; nulls render as "—". */

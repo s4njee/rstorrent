@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::ipc::{SeedGoal, Settings, Transport};
+use crate::ipc::{EncryptionMode, SeedGoal, SeedGoalAction, Settings, Transport, WatchFolder};
 
 impl Default for Settings {
     fn default() -> Self {
@@ -28,19 +28,52 @@ impl Default for Settings {
             torrent_throttles: Vec::new(),
             global_seed_goal: SeedGoal::default(),
             label_seed_goals: Vec::new(),
+            encryption: EncryptionMode::Allow,
+            pex_enabled: true,
+            proxy_address: String::new(),
+            proxy_tracker_http: false,
+            bind_address: String::new(),
+            local_address: String::new(),
+            max_peers: 0,
+            max_uploads_global: 0,
+            max_downloads_global: 0,
+            max_active_downloads: 0,
+            label_defaults: Vec::new(),
+            watch_folders: Vec::new(),
+            run_on_complete: String::new(),
+            seed_goal_action: SeedGoalAction::Stop,
+            turtle_down_kb: 0,
+            turtle_up_kb: 0,
+            turtle_enabled: false,
+            turtle_schedule: Default::default(),
+            connection_profiles: Vec::new(),
             // Honour the env var so `RSTORRENT_MOCK=1` flips the default on.
             mock: std::env::var("RSTORRENT_MOCK").is_ok(),
         }
     }
 }
 
+/// One-time migration: fold a legacy single `watch_folder` into the `watch_folders`
+/// list (C12), so the rest of the app only has to reason about the list.
+fn migrate(mut settings: Settings) -> Settings {
+    if settings.watch_folders.is_empty() && !settings.watch_folder.is_empty() {
+        settings.watch_folders.push(WatchFolder {
+            path: std::mem::take(&mut settings.watch_folder),
+            label: String::new(),
+            save_path: String::new(),
+        });
+    }
+    settings
+}
+
 /// Load settings from `path`, falling back to defaults if it's missing or
 /// unreadable (a corrupt file should never brick the app).
 pub fn load(path: &Path) -> Settings {
-    match std::fs::read_to_string(path) {
+    let loaded = match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
         Err(_) => Settings::default(),
-    }
+    };
+    migrate(loaded)
 }
 
 /// Persist settings to `path`, creating the parent directory as needed.
@@ -63,6 +96,17 @@ pub fn apply_patch(current: &Settings, patch: serde_json::Value) -> Settings {
         }
     }
     serde_json::from_value(base).unwrap_or_else(|_| current.clone())
+}
+
+/// The save path for a torrent with `label`, honoring the per-label defaults
+/// (C11) and falling back to the global default when there is no override.
+pub fn save_path_for_label(settings: &Settings, label: &str) -> String {
+    settings
+        .label_defaults
+        .iter()
+        .find(|d| d.label == label && !d.save_path.is_empty())
+        .map(|d| d.save_path.clone())
+        .unwrap_or_else(|| settings.default_save_path.clone())
 }
 
 /// True when the transport points at the local machine (gates delete-data /
@@ -111,7 +155,7 @@ fn strip_userinfo(url: &str) -> String {
 }
 
 /// Best-effort home directory (`$HOME`, or `%USERPROFILE%` on Windows).
-fn home_dir() -> PathBuf {
+pub(crate) fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)

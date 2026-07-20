@@ -17,9 +17,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter};
 
+use chrono::{Datelike, Local, Timelike};
+
 use crate::ipc::{
     ConnPhase, ConnState, DetailPayload, DetailTab, GlobalStats, LabelSeedGoal, LogLevel, SeedGoal,
-    Snapshot, TorrentDto,
+    SeedGoalAction, Snapshot, TorrentDto,
 };
 use crate::notifications::{self, CompletionTracker};
 use crate::rtorrent::{derive, RawGlobal, RawTorrent};
@@ -94,12 +96,12 @@ fn seed_goal_decisions(
 
             let message = if ratio_met {
                 format!(
-                    "seed goal reached: ratio {ratio:.1} ≥ {:.1} — stopped",
+                    "seed goal reached: ratio {ratio:.1} ≥ {:.1}",
                     goal.stop_ratio
                 )
             } else if time_met {
                 format!(
-                    "seed goal reached: seeded {:.1} h ≥ {:.1} h — stopped",
+                    "seed goal reached: seeded {:.1} h ≥ {:.1} h",
                     seeded_seconds.unwrap_or_default() as f64 / 3600.0,
                     goal.seed_hours
                 )
@@ -119,6 +121,141 @@ fn seed_goal_decisions(
         .collect()
 }
 
+/// Carry out the configured seed-goal action for the reached goals (C14):
+/// stop and remember (so a manual restart isn't re-stopped), or remove the
+/// torrent — optionally trashing its data for a local daemon.
+async fn apply_seed_goal(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    backend: &dyn crate::rtorrent::RtorrentApi,
+    settings: &crate::ipc::Settings,
+    raw: &[RawTorrent],
+    decisions: Vec<SeedGoalDecision>,
+    goal_stops: &mut HashMap<String, GoalStopRecord>,
+) {
+    let hashes: Vec<String> = decisions.iter().map(|d| d.hash.clone()).collect();
+    match settings.seed_goal_action {
+        SeedGoalAction::Stop => match backend.stop(&hashes).await {
+            Ok(()) => {
+                for d in decisions {
+                    goal_stops.insert(d.hash.clone(), d.record);
+                    state.log(
+                        app,
+                        LogLevel::Info,
+                        format!("{} — stopped", d.message),
+                        Some(d.hash),
+                    );
+                }
+            }
+            Err(error) => state.log(
+                app,
+                LogLevel::Error,
+                format!("could not stop torrent at seed goal: {error}"),
+                None,
+            ),
+        },
+        SeedGoalAction::Remove | SeedGoalAction::RemoveData => {
+            let with_data = settings.seed_goal_action == SeedGoalAction::RemoveData;
+            let local = settings::is_localhost(&settings.transport);
+            // Read base paths before erasing, so we can trash the data after.
+            let paths: Vec<String> = if with_data && local {
+                hashes
+                    .iter()
+                    .filter_map(|h| raw.iter().find(|t| &t.hash == h))
+                    .map(|t| t.base_path.clone())
+                    .filter(|p| !p.is_empty())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            match backend.erase(&hashes).await {
+                Ok(()) => {
+                    for p in &paths {
+                        match crate::localfs::trash(p) {
+                            Ok(_) => {
+                                state.log(app, LogLevel::Info, format!("moved to Trash: {p}"), None)
+                            }
+                            Err(err) => state.log(
+                                app,
+                                LogLevel::Warn,
+                                format!("could not trash {p}: {err}"),
+                                None,
+                            ),
+                        }
+                    }
+                    let verb = if with_data {
+                        "removed with data"
+                    } else {
+                        "removed"
+                    };
+                    for d in decisions {
+                        state.log(
+                            app,
+                            LogLevel::Info,
+                            format!("{} — {verb}", d.message),
+                            Some(d.hash),
+                        );
+                    }
+                }
+                Err(error) => state.log(
+                    app,
+                    LogLevel::Error,
+                    format!("could not remove torrent at seed goal: {error}"),
+                    None,
+                ),
+            }
+        }
+    }
+}
+
+/// Start/stop decisions to honor the max-active-downloads limit (C9).
+#[derive(Debug, Default, PartialEq, Eq)]
+struct QueueActions {
+    start: Vec<String>,
+    stop: Vec<String>,
+}
+
+/// `started_at` with 0 (unknown) sorted last, so torrents with a real start
+/// time keep their slots ahead of ones we can't order.
+fn started_key(t: &RawTorrent) -> i64 {
+    if t.started_at == 0 {
+        i64::MAX
+    } else {
+        t.started_at
+    }
+}
+
+/// Decide which downloads to start/stop to honor the max-active limit (C9).
+///
+/// Considers only incomplete torrents that are neither hash-checking nor in an
+/// error state. Keeps the highest-priority `max_active` of them active (ties
+/// broken by earliest start), stops the rest, and starts stopped ones to fill
+/// free slots. `max_active <= 0` disables queue management.
+fn queue_decisions(torrents: &[RawTorrent], max_active: i64) -> QueueActions {
+    let mut actions = QueueActions::default();
+    if max_active <= 0 {
+        return actions;
+    }
+    let mut downloads: Vec<&RawTorrent> = torrents
+        .iter()
+        .filter(|t| !t.complete && !t.hashing && t.message.is_empty())
+        .collect();
+    downloads.sort_by(|a, b| {
+        b.priority
+            .cmp(&a.priority)
+            .then_with(|| started_key(a).cmp(&started_key(b)))
+    });
+    for (i, t) in downloads.iter().enumerate() {
+        let want_active = (i as i64) < max_active;
+        if want_active && !t.is_active {
+            actions.start.push(t.hash.clone());
+        } else if !want_active && t.is_active {
+            actions.stop.push(t.hash.clone());
+        }
+    }
+    actions
+}
+
 /// Spawn the fast and detail polling loops.
 ///
 /// We use Tauri's async runtime (`tauri::async_runtime::spawn`) rather than
@@ -136,6 +273,12 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
     let mut failures: usize = 0;
     let mut completion_tracker = CompletionTracker::default();
     let mut goal_stops: HashMap<String, GoalStopRecord> = HashMap::new();
+    // Last global rate limits pushed to the daemon (B14). Recomputed each tick
+    // from turtle state; re-applied only on change. Cleared on disconnect so a
+    // reconnect re-applies.
+    let mut applied_limits: Option<(i64, i64)> = None;
+    // Successful-poll counter, used to refresh native views on a slow cadence.
+    let mut tick: u64 = 0;
 
     loop {
         let backend = state.backend();
@@ -177,6 +320,10 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                             );
                         }
                     }
+                    // Push the app-owned network prefs (encryption/PEX, proxy,
+                    // bind, global caps). rtorrent forgets runtime config on a
+                    // restart and several have no getter, so replay them here.
+                    crate::network_prefs::apply(backend.as_ref(), &state.settings()).await;
                     // (Re)connected: learn the version and log the transition.
                     let version = backend.client_version().await.ok();
                     let s = state.settings();
@@ -216,6 +363,23 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                     .observe(&raw, &settings.completion_notification_excluded_labels);
                 notifications::set_dock_badge(&app, notifications::active_download_count(&raw));
                 for completion in completed {
+                    // Run-on-complete hook (C13): fire the user's command, then
+                    // still post the notification.
+                    if !settings.run_on_complete.is_empty() {
+                        if let Some(program) = crate::hooks::run_on_complete(
+                            &settings.run_on_complete,
+                            &completion.name,
+                            &completion.base_path,
+                            &completion.hash,
+                        ) {
+                            state.log(
+                                &app,
+                                LogLevel::Info,
+                                format!("run-on-complete: launched {program}"),
+                                Some(completion.hash.clone()),
+                            );
+                        }
+                    }
                     notifications::post_completion(app.clone(), completion);
                 }
 
@@ -227,39 +391,73 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                     unix_now(),
                 );
                 if !decisions.is_empty() {
-                    let hashes: Vec<String> = decisions
-                        .iter()
-                        .map(|decision| decision.hash.clone())
-                        .collect();
-                    match backend.stop(&hashes).await {
-                        Ok(()) => {
-                            for decision in decisions {
-                                goal_stops.insert(decision.hash.clone(), decision.record);
-                                state.log(
-                                    &app,
-                                    LogLevel::Info,
-                                    decision.message,
-                                    Some(decision.hash),
-                                );
-                            }
-                        }
-                        Err(error) => state.log(
-                            &app,
-                            LogLevel::Error,
-                            format!("could not stop torrent at seed goal: {error}"),
-                            None,
+                    apply_seed_goal(
+                        &app,
+                        &state,
+                        backend.as_ref(),
+                        &settings,
+                        &raw,
+                        decisions,
+                        &mut goal_stops,
+                    )
+                    .await;
+                }
+
+                // Max-active-downloads queue (C9): keep the top N incomplete
+                // torrents downloading, stop the rest, promote as slots free.
+                let queue = queue_decisions(&raw, settings.max_active_downloads);
+                if !queue.stop.is_empty() && backend.stop(&queue.stop).await.is_ok() {
+                    state.log(
+                        &app,
+                        LogLevel::Info,
+                        format!(
+                            "queued {} download(s) over the active limit",
+                            queue.stop.len()
                         ),
-                    }
+                        None,
+                    );
+                }
+                if !queue.start.is_empty() && backend.start(&queue.start).await.is_ok() {
+                    state.log(
+                        &app,
+                        LogLevel::Info,
+                        format!("started {} queued download(s)", queue.start.len()),
+                        None,
+                    );
+                }
+
+                // Turtle mode (B14): compute the effective global limits for the
+                // current wall clock and push them only when they change.
+                let now = Local::now();
+                let turtle_active = crate::turtle::is_active(
+                    &settings,
+                    now.weekday().num_days_from_sunday() as u8,
+                    i64::from(now.hour() * 60 + now.minute()),
+                );
+                let limits = crate::turtle::effective_limits(&settings, turtle_active);
+                if applied_limits != Some(limits)
+                    && backend.set_throttles(limits.0, limits.1).await.is_ok()
+                {
+                    applied_limits = Some(limits);
                 }
 
                 resolve_trackers(&app, &state, &raw).await;
-                let snapshot = build_snapshot(&state, raw, globals).await;
+                // Refresh native views (D12) every ~5 successful polls — cheap
+                // enough to keep the sidebar current, rare enough to be light.
+                if tick % 5 == 0 {
+                    if let Ok(views) = backend.views().await {
+                        *state.views.lock().unwrap() = views;
+                    }
+                }
+                tick += 1;
+                let snapshot = build_snapshot(&state, raw, globals, turtle_active).await;
                 let _ = app.emit("state://snapshot", &snapshot);
             }
             Err(e) => {
                 failures += 1;
                 completion_tracker.reset();
                 goal_stops.clear();
+                applied_limits = None;
                 notifications::set_dock_badge(&app, 0);
                 let delay = BACKOFF[(failures - 1).min(BACKOFF.len() - 1)];
                 let s = state.settings();
@@ -346,9 +544,10 @@ async fn build_snapshot(
     state: &AppState,
     raw: Vec<crate::rtorrent::RawTorrent>,
     g: RawGlobal,
+    turtle_active: bool,
 ) -> Snapshot {
     let settings = state.settings();
-    let torrents: Vec<TorrentDto> = raw
+    let mut torrents: Vec<TorrentDto> = raw
         .iter()
         .map(|t| {
             let limits = settings
@@ -359,6 +558,25 @@ async fn build_snapshot(
             derive::to_dto(t, &state.tracker_host(&t.hash), limits)
         })
         .collect();
+
+    // Tag each torrent with the native views it belongs to (D12), inverting the
+    // cached name→hashes map the slow poll maintains.
+    {
+        let views = state.views.lock().unwrap();
+        if !views.is_empty() {
+            let mut by_hash: HashMap<&str, Vec<String>> = HashMap::new();
+            for (name, hashes) in views.iter() {
+                for h in hashes {
+                    by_hash.entry(h.as_str()).or_default().push(name.clone());
+                }
+            }
+            for dto in torrents.iter_mut() {
+                if let Some(v) = by_hash.get(dto.hash.as_str()) {
+                    dto.views = v.clone();
+                }
+            }
+        }
+    }
 
     // Free space is only meaningful for a local daemon, and on Windows costs a
     // `wsl.exe df` — so it is TTL-cached inside `localfs` and read off the
@@ -384,6 +602,7 @@ async fn build_snapshot(
             up_rate_limit: g.up_rate_limit,
             dht_nodes: g.dht_nodes,
             free_space,
+            turtle_active,
         },
         connection: state.conn(),
         torrents,
@@ -398,6 +617,7 @@ fn empty_globals() -> GlobalStats {
         up_rate_limit: 0,
         dht_nodes: 0,
         free_space: None,
+        turtle_active: false,
     }
 }
 
@@ -647,5 +867,50 @@ mod tests {
             1,
             "a hash is stopped at most once per poll"
         );
+    }
+
+    fn dl(hash: &str, priority: i64, active: bool, started_at: i64) -> RawTorrent {
+        RawTorrent {
+            hash: hash.into(),
+            complete: false,
+            is_active: active,
+            priority,
+            started_at,
+            ..RawTorrent::default()
+        }
+    }
+
+    #[test]
+    fn queue_keeps_top_priority_active_and_promotes_to_fill() {
+        // Three incomplete downloads, cap of 2. B (pri 3) and A (pri 2) should be
+        // the two active; C (pri 1) is queued.
+        let torrents = vec![
+            dl("A", 2, true, 100),
+            dl("B", 3, false, 90), // higher priority but stopped → promote
+            dl("C", 1, true, 80),  // lowest priority but active → stop
+        ];
+        let actions = queue_decisions(&torrents, 2);
+        assert_eq!(actions.start, vec!["B".to_string()]);
+        assert_eq!(actions.stop, vec!["C".to_string()]);
+    }
+
+    #[test]
+    fn queue_zero_is_disabled() {
+        let torrents = vec![dl("A", 2, false, 1), dl("B", 2, true, 2)];
+        assert_eq!(queue_decisions(&torrents, 0), QueueActions::default());
+    }
+
+    #[test]
+    fn queue_ignores_complete_hashing_and_errored() {
+        let mut complete = dl("DONE", 3, true, 1);
+        complete.complete = true;
+        let mut hashing = dl("CHK", 3, true, 1);
+        hashing.hashing = true;
+        let mut errored = dl("ERR", 3, true, 1);
+        errored.message = "tracker down".into();
+        let active = dl("A", 1, true, 1);
+        // Cap 0-of-these-managed: only "A" is a managed download; cap 1 keeps it.
+        let actions = queue_decisions(&[complete, hashing, errored, active], 1);
+        assert!(actions.start.is_empty() && actions.stop.is_empty());
     }
 }

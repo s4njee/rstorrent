@@ -258,22 +258,36 @@ impl RtorrentApi for MockClient {
     async fn peers(&self, _hash: &str) -> Result<Vec<PeerRow>> {
         Ok(vec![
             PeerRow {
+                id: "PEER0001".into(),
                 address: "203.0.113.7".into(),
                 client: "libtorrent 2.0.9".into(),
                 progress: 84.0,
                 down_rate: (1.2 * MIB) as i64,
                 up_rate: (120.0 * KIB) as i64,
-                flags: "EI".into(),
+                flags: "EIP".into(),
             },
             PeerRow {
+                id: "PEER0002".into(),
                 address: "198.51.100.42".into(),
                 client: "qBittorrent 4.6".into(),
                 progress: 61.0,
                 down_rate: (640.0 * KIB) as i64,
                 up_rate: 0,
-                flags: "E".into(),
+                flags: "EO".into(),
             },
         ])
+    }
+
+    async fn ban_peer(&self, _hash: &str, _peer_id: &str) -> Result<()> {
+        Ok(())
+    }
+
+    async fn snub_peer(&self, _hash: &str, _peer_id: &str) -> Result<()> {
+        Ok(())
+    }
+
+    async fn disconnect_peer(&self, _hash: &str, _peer_id: &str) -> Result<()> {
+        Ok(())
     }
 
     async fn files(&self, _hash: &str) -> Result<Vec<FileNode>> {
@@ -471,6 +485,54 @@ impl RtorrentApi for MockClient {
     }
 
     async fn set_port_range(&self, _range: &str) -> Result<()> {
+        Ok(())
+    }
+
+    async fn apply_config(&self, directives: &[(&str, i64)]) -> Result<usize> {
+        // The fixture daemon accepts every directive.
+        Ok(directives.len())
+    }
+
+    async fn apply_config_str(&self, directives: &[(&str, &str)]) -> Result<usize> {
+        Ok(directives.len())
+    }
+
+    async fn views(&self) -> Result<Vec<(String, Vec<String>)>> {
+        // Synthesize a couple of daemon-style membership views from the fixtures.
+        let state = self.state.lock().unwrap();
+        let pick = |f: fn(&RawTorrent) -> bool| -> Vec<String> {
+            state
+                .torrents
+                .iter()
+                .filter(|t| f(t))
+                .map(|t| t.hash.clone())
+                .collect()
+        };
+        Ok(vec![
+            ("seeding".to_string(), pick(|t| t.complete && t.is_active)),
+            ("leeching".to_string(), pick(|t| !t.complete && t.is_active)),
+        ])
+    }
+
+    async fn daemon_health(&self) -> Result<crate::ipc::DaemonHealth> {
+        Ok(crate::ipc::DaemonHealth {
+            client_version: "0.9.8".into(),
+            api_version: "11".into(),
+            session_path: "/home/you/.rtorrent/session".into(),
+            memory_max: (4.0 * GIB) as i64,
+            memory_current: (128.0 * MIB) as i64,
+            open_sockets: 214,
+            max_open_sockets: 3000,
+            max_open_files: 1024,
+            http_max_open: 128,
+        })
+    }
+
+    async fn save_session(&self) -> Result<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
 

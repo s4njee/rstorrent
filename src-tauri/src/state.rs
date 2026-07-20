@@ -31,6 +31,9 @@ pub struct AppState {
     pub log: LogBuffer,
     /// hash → primary tracker host, filled by the slow poll.
     pub tracker_cache: std::sync::Mutex<HashMap<String, String>>,
+    /// Native rtorrent views (name → member hashes), refreshed on the slow
+    /// cadence (D12). Inverted per-snapshot to tag each torrent's memberships.
+    pub views: std::sync::Mutex<Vec<(String, Vec<String>)>>,
     /// Which torrent+tab the detail poll should fetch, if any.
     pub detail_watch: std::sync::Mutex<Option<(String, DetailTab)>>,
     /// Latest connection state, mirrored into every snapshot.
@@ -66,6 +69,7 @@ impl AppState {
             settings_path,
             log: LogBuffer::new(),
             tracker_cache: std::sync::Mutex::new(HashMap::new()),
+            views: std::sync::Mutex::new(Vec::new()),
             detail_watch: std::sync::Mutex::new(None),
             conn: RwLock::new(conn),
             repoll: Notify::new(),

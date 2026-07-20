@@ -16,19 +16,23 @@
 pub mod ipc;
 
 mod commands;
+mod hooks;
 mod localfs;
 mod log;
 mod menu;
+mod network_prefs;
 mod notifications;
 mod open_requests;
 mod poller;
 mod rtorrent;
+mod rtorrent_rc;
 mod secrets;
 mod settings;
 mod state;
 mod stats;
 mod throttles;
 mod torrent_file;
+mod turtle;
 mod watcher;
 #[cfg(target_os = "windows")]
 mod wsl;
@@ -115,9 +119,15 @@ pub fn run() {
             commands::queue_move,
             commands::copy_magnet,
             commands::open_destination,
+            commands::ban_peer,
+            commands::snub_peer,
+            commands::disconnect_peer,
             commands::set_file_priority,
             commands::get_settings,
             commands::apply_settings,
+            commands::set_turtle,
+            commands::tuning_preview,
+            commands::apply_tuning,
             commands::test_connection,
             commands::set_http_password,
             commands::has_http_password,
@@ -126,6 +136,9 @@ pub fn run() {
             commands::set_detail_watch,
             commands::get_log,
             commands::get_statistics,
+            commands::daemon_health,
+            commands::save_session,
+            commands::shutdown_daemon,
         ])
         .build(tauri::generate_context!())
         .expect("error while building rstorrent");

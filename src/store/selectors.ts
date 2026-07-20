@@ -49,6 +49,8 @@ function matchesFilter(
       return t.label === filter.value;
     case "tracker":
       return t.trackerHost === filter.value;
+    case "view":
+      return t.views.includes(filter.value);
     case "smart": {
       const saved = smartFilters.find((f) => f.id === filter.value);
       // A dangling id shows everything rather than an unexplained empty table
@@ -128,6 +130,7 @@ export interface SidebarCounts {
   status: Record<string, number>;
   labels: Array<{ value: string; count: number }>;
   trackers: Array<{ value: string; count: number }>;
+  views: Array<{ value: string; count: number }>;
 }
 
 /**
@@ -147,6 +150,7 @@ export function sidebarCounts(torrents: TorrentDto[]): SidebarCounts {
   };
   const labelMap = new Map<string, number>();
   const trackerMap = new Map<string, number>();
+  const viewMap = new Map<string, number>();
 
   for (const t of torrents) {
     if (t.status in status) status[t.status] += 1;
@@ -154,6 +158,8 @@ export function sidebarCounts(torrents: TorrentDto[]): SidebarCounts {
     if (t.label) labelMap.set(t.label, (labelMap.get(t.label) ?? 0) + 1);
     if (t.trackerHost)
       trackerMap.set(t.trackerHost, (trackerMap.get(t.trackerHost) ?? 0) + 1);
+    // A torrent can be in several views, so each membership counts.
+    for (const v of t.views) viewMap.set(v, (viewMap.get(v) ?? 0) + 1);
   }
 
   const toSorted = (m: Map<string, number>) =>
@@ -161,7 +167,12 @@ export function sidebarCounts(torrents: TorrentDto[]): SidebarCounts {
       .map(([value, count]) => ({ value, count }))
       .sort((a, b) => a.value.localeCompare(b.value));
 
-  return { status, labels: toSorted(labelMap), trackers: toSorted(trackerMap) };
+  return {
+    status,
+    labels: toSorted(labelMap),
+    trackers: toSorted(trackerMap),
+    views: toSorted(viewMap),
+  };
 }
 
 /**

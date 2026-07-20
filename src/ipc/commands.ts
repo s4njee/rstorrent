@@ -10,12 +10,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AddOptions,
+  DaemonHealth,
   DetailTab,
   LogEntry,
   Settings,
   Statistics,
   TorrentMeta,
   Transport,
+  TuningPreview,
+  TuningResult,
 } from "./types";
 
 /** Source for an add request: a local .torrent file or a magnet/URL string. */
@@ -116,6 +119,21 @@ export function openDestination(hash: string): Promise<void> {
   return invoke("open_destination", { hash });
 }
 
+/** Ban a peer and drop the connection (B16). */
+export function banPeer(hash: string, peerId: string): Promise<void> {
+  return invoke("ban_peer", { hash, peerId });
+}
+
+/** Snub a peer — stop uploading to it, without disconnecting (B16). */
+export function snubPeer(hash: string, peerId: string): Promise<void> {
+  return invoke("snub_peer", { hash, peerId });
+}
+
+/** Disconnect a peer now, without banning it (B16). */
+export function disconnectPeer(hash: string, peerId: string): Promise<void> {
+  return invoke("disconnect_peer", { hash, peerId });
+}
+
 /** Change a single file's download priority (0 off / 1 normal / 2 high). */
 export function setFilePriority(
   hash: string,
@@ -131,6 +149,11 @@ export function getSettings(): Promise<Settings> {
 
 export function applySettings(patch: Partial<Settings>): Promise<Settings> {
   return invoke("apply_settings", { patch });
+}
+
+/** Flip turtle mode's manual switch (B14); resolves with the saved settings. */
+export function setTurtle(enabled: boolean): Promise<Settings> {
+  return invoke("set_turtle", { enabled });
 }
 
 /** Probe a candidate connection; resolves with the daemon version or rejects. */
@@ -179,6 +202,21 @@ export function getStatistics(): Promise<Statistics> {
   return invoke("get_statistics");
 }
 
+/** Daemon self-report for the Statistics dialog's Daemon tab (D16). */
+export function daemonHealth(): Promise<DaemonHealth> {
+  return invoke("daemon_health");
+}
+
+/** Ask the daemon to write its session now (D13). */
+export function saveSession(): Promise<void> {
+  return invoke("save_session");
+}
+
+/** Ask the daemon to shut down cleanly (D13). */
+export function shutdownDaemon(): Promise<void> {
+  return invoke("shutdown_daemon");
+}
+
 /** Hydrate the Log tab with the current ring-buffer contents. */
 export function getLog(): Promise<LogEntry[]> {
   return invoke("get_log");
@@ -187,4 +225,14 @@ export function getLog(): Promise<LogEntry[]> {
 /** Ask the poller to attempt a reconnect immediately. */
 export function retryConnection(): Promise<void> {
   return invoke("retry_connection");
+}
+
+/** Preview the 1 Gbps tuning block and where it would be written. */
+export function tuningPreview(): Promise<TuningPreview> {
+  return invoke("tuning_preview");
+}
+
+/** Write the 1 Gbps tuning to .rtorrent.rc and apply it to the running daemon. */
+export function applyTuning(): Promise<TuningResult> {
+  return invoke("apply_tuning");
 }

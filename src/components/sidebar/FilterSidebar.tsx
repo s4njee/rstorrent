@@ -171,6 +171,20 @@ export function FilterSidebar() {
         </div>
       ))}
 
+      {/* Native rtorrent views (D12): the daemon's own membership groups. */}
+      {counts.views.length > 0 && <div className={styles.group}>Views</div>}
+      {counts.views.map((v) => (
+        <div
+          key={v.value}
+          className={`${styles.row} ${isActive("view", v.value) ? styles.active : ""}`}
+          onClick={() => choose({ type: "view", value: v.value })}
+          title={`rtorrent view: ${v.value}`}
+        >
+          <span className={styles.label}>{v.value}</span>
+          <span className={styles.count}>{v.count}</span>
+        </div>
+      ))}
+
       <div className={`${styles.group} ${styles.groupWithAction}`}>
         <span>Smart</span>
         <button

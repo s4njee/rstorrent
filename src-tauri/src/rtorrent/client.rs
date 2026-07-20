@@ -233,6 +233,12 @@ fn tracker_target(hash: &str, index: usize) -> String {
     format!("{hash}:t{index}")
 }
 
+/// A `p.*` command target: the torrent hash and the peer's id (`HASH:p<id>`),
+/// mirroring the tracker/file `HASH:tN`/`HASH:fN` addressing.
+fn peer_target(hash: &str, peer_id: &str) -> String {
+    format!("{hash}:p{peer_id}")
+}
+
 fn tracker_insert_call(hash: &str, group: i64, url: &str) -> (&'static str, Vec<Value>) {
     (
         "d.tracker.insert",
@@ -526,13 +532,17 @@ impl RtorrentApi for RpcClient {
                 &[
                     Value::Str(hash.into()),
                     Value::Str(String::new()),
-                    Value::Str("p.address=".into()),
-                    Value::Str("p.client_version=".into()),
-                    Value::Str("p.completed_percent=".into()),
-                    Value::Str("p.down_rate=".into()),
-                    Value::Str("p.up_rate=".into()),
-                    Value::Str("p.is_encrypted=".into()),
-                    Value::Str("p.is_incoming=".into()),
+                    Value::Str("p.id=".into()), // 0  target for p.* actions
+                    Value::Str("p.address=".into()), // 1
+                    Value::Str("p.client_version=".into()), // 2
+                    Value::Str("p.completed_percent=".into()), // 3
+                    Value::Str("p.down_rate=".into()), // 4
+                    Value::Str("p.up_rate=".into()), // 5
+                    Value::Str("p.is_encrypted=".into()), // 6  E
+                    Value::Str("p.is_incoming=".into()), // 7  I
+                    Value::Str("p.is_obfuscated=".into()), // 8  O
+                    Value::Str("p.is_preferred=".into()), // 9  P
+                    Value::Str("p.is_unwanted=".into()), // 10 U
                 ],
             )
             .await?;
@@ -541,23 +551,55 @@ impl RtorrentApi for RpcClient {
             .iter()
             .filter_map(Value::as_array)
             .map(|r| {
+                let flag = |i: usize| r.get(i).and_then(Value::as_bool).unwrap_or(false);
                 let mut flags = String::new();
-                if r.get(5).and_then(Value::as_bool).unwrap_or(false) {
-                    flags.push('E');
-                }
-                if r.get(6).and_then(Value::as_bool).unwrap_or(false) {
-                    flags.push('I');
+                for (i, ch) in [(6, 'E'), (7, 'I'), (8, 'O'), (9, 'P'), (10, 'U')] {
+                    if flag(i) {
+                        flags.push(ch);
+                    }
                 }
                 PeerRow {
-                    address: r.first().and_then(Value::as_str).unwrap_or("").to_string(),
-                    client: r.get(1).and_then(Value::as_str).unwrap_or("").to_string(),
-                    progress: r.get(2).and_then(Value::as_i64).unwrap_or(0) as f64,
-                    down_rate: r.get(3).and_then(Value::as_i64).unwrap_or(0),
-                    up_rate: r.get(4).and_then(Value::as_i64).unwrap_or(0),
+                    id: r.first().and_then(Value::as_str).unwrap_or("").to_string(),
+                    address: r.get(1).and_then(Value::as_str).unwrap_or("").to_string(),
+                    client: r.get(2).and_then(Value::as_str).unwrap_or("").to_string(),
+                    progress: r.get(3).and_then(Value::as_i64).unwrap_or(0) as f64,
+                    down_rate: r.get(4).and_then(Value::as_i64).unwrap_or(0),
+                    up_rate: r.get(5).and_then(Value::as_i64).unwrap_or(0),
                     flags,
                 }
             })
             .collect())
+    }
+
+    async fn ban_peer(&self, hash: &str, peer_id: &str) -> Result<()> {
+        // Mark banned, then drop the connection so the ban takes effect now.
+        let target = peer_target(hash, peer_id);
+        let calls = [
+            (
+                "p.banned.set",
+                vec![Value::Str(target.clone()), Value::Int(1)],
+            ),
+            ("p.disconnect", vec![Value::Str(target)]),
+        ];
+        for r in self.multicall(&calls).await? {
+            r?;
+        }
+        Ok(())
+    }
+
+    async fn snub_peer(&self, hash: &str, peer_id: &str) -> Result<()> {
+        self.call(
+            "p.snubbed.set",
+            &[Value::Str(peer_target(hash, peer_id)), Value::Int(1)],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn disconnect_peer(&self, hash: &str, peer_id: &str) -> Result<()> {
+        self.call("p.disconnect", &[Value::Str(peer_target(hash, peer_id))])
+            .await
+            .map(|_| ())
     }
 
     async fn files(&self, hash: &str) -> Result<Vec<FileNode>> {
@@ -763,6 +805,39 @@ impl RtorrentApi for RpcClient {
         .map(|_| ())
     }
 
+    async fn apply_config(&self, directives: &[(&str, i64)]) -> Result<usize> {
+        if directives.is_empty() {
+            return Ok(0);
+        }
+        // Each global setter takes an empty target followed by the value, the
+        // same shape the throttle/port setters above already use.
+        let calls: Vec<(&str, Vec<Value>)> = directives
+            .iter()
+            .map(|(method, value)| (*method, vec![Value::Str(String::new()), Value::Int(*value)]))
+            .collect();
+        // Best-effort: a value an older build rejects shouldn't sink the rest,
+        // so faults are counted as skipped rather than propagated.
+        let results = self.multicall(&calls).await?;
+        Ok(results.iter().filter(|r| r.is_ok()).count())
+    }
+
+    async fn apply_config_str(&self, directives: &[(&str, &str)]) -> Result<usize> {
+        if directives.is_empty() {
+            return Ok(0);
+        }
+        let calls: Vec<(&str, Vec<Value>)> = directives
+            .iter()
+            .map(|(method, value)| {
+                (
+                    *method,
+                    vec![Value::Str(String::new()), Value::Str((*value).to_string())],
+                )
+            })
+            .collect();
+        let results = self.multicall(&calls).await?;
+        Ok(results.iter().filter(|r| r.is_ok()).count())
+    }
+
     async fn set_dht(&self, enabled: bool) -> Result<()> {
         let mode = if enabled { "auto" } else { "disable" };
         self.call(
@@ -855,6 +930,101 @@ impl RtorrentApi for RpcClient {
             r?;
         }
         Ok(())
+    }
+
+    async fn views(&self) -> Result<Vec<(String, Vec<String>)>> {
+        let list = self.call("view.list", &[]).await?;
+        // `main`/`default` hold everything, so they're noise in the sidebar.
+        let names: Vec<String> = list
+            .as_array()
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|n| !matches!(*n, "main" | "default"))
+            .map(str::to_string)
+            .collect();
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+        // One round-trip: each view's member hashes via d.multicall2 over it.
+        let calls: Vec<(&str, Vec<Value>)> = names
+            .iter()
+            .map(|n| {
+                (
+                    "d.multicall2",
+                    vec![
+                        Value::Str(String::new()),
+                        Value::Str(n.clone()),
+                        Value::Str("d.hash=".into()),
+                    ],
+                )
+            })
+            .collect();
+        let results = self.multicall(&calls).await?;
+        let mut out = Vec::with_capacity(names.len());
+        for (name, res) in names.into_iter().zip(results) {
+            let hashes = match res {
+                Ok(v) => v
+                    .as_array()
+                    .map(|rows| {
+                        rows.iter()
+                            .filter_map(Value::as_array)
+                            .filter_map(|r| {
+                                r.first().and_then(Value::as_str).map(|s| s.to_uppercase())
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                Err(_) => Vec::new(),
+            };
+            out.push((name, hashes));
+        }
+        Ok(out)
+    }
+
+    async fn daemon_health(&self) -> Result<crate::ipc::DaemonHealth> {
+        let r = self
+            .multicall(&[
+                ("system.client_version", vec![]),
+                ("system.api_version", vec![]),
+                ("session.path", vec![]),
+                ("pieces.memory.max", vec![]),
+                ("pieces.memory.current", vec![]),
+                ("network.open_sockets", vec![]),
+                ("network.max_open_sockets", vec![]),
+                ("network.max_open_files", vec![]),
+                ("network.http.max_open", vec![]),
+            ])
+            .await?;
+        let ok = |i: usize| r.get(i).and_then(|x| x.as_ref().ok());
+        let s = |i: usize| ok(i).and_then(Value::as_str).unwrap_or("").to_string();
+        let n = |i: usize| ok(i).and_then(Value::as_i64).unwrap_or(0);
+        // api_version comes back as an integer on some builds, a string on others.
+        let api_version = ok(1)
+            .map(|v| match v.as_i64() {
+                Some(i) => i.to_string(),
+                None => v.as_str().unwrap_or("").to_string(),
+            })
+            .unwrap_or_default();
+        Ok(crate::ipc::DaemonHealth {
+            client_version: s(0),
+            api_version,
+            session_path: s(2),
+            memory_max: n(3),
+            memory_current: n(4),
+            open_sockets: n(5),
+            max_open_sockets: n(6),
+            max_open_files: n(7),
+            http_max_open: n(8),
+        })
+    }
+
+    async fn save_session(&self) -> Result<()> {
+        self.call("session.save", &[]).await.map(|_| ())
+    }
+
+    async fn shutdown(&self) -> Result<()> {
+        self.call("system.shutdown.normal", &[]).await.map(|_| ())
     }
 }
 

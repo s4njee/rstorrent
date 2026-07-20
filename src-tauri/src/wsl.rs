@@ -16,8 +16,9 @@
 //! installed, and the app still has to run (mock mode, or a remote daemon over
 //! HTTP), just with the local-filesystem affordances disabled.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -54,7 +55,12 @@ pub fn distro() -> Option<&'static Distro> {
 /// process wrote, so asking the shell to echo the values keeps this UTF-8.
 fn probe() -> Option<Distro> {
     let out = wsl_command()
-        .args(["-e", "sh", "-c", "printf '%s\\n%s\\n' \"$WSL_DISTRO_NAME\" \"$HOME\""])
+        .args([
+            "-e",
+            "sh",
+            "-c",
+            "printf '%s\\n%s\\n' \"$WSL_DISTRO_NAME\" \"$HOME\"",
+        ])
         .output()
         .ok()?;
     if !out.status.success() {
@@ -113,7 +119,10 @@ fn drvfs_to_windows(linux: &str) -> Option<PathBuf> {
         Some(_) => return None,
     };
     let drive = letter.to_ascii_uppercase();
-    Some(PathBuf::from(format!("{drive}:\\{}", tail.replace('/', "\\"))))
+    Some(PathBuf::from(format!(
+        "{drive}:\\{}",
+        tail.replace('/', "\\")
+    )))
 }
 
 /// Translate a Windows path (from a folder picker or a dropped file) into the
@@ -241,6 +250,60 @@ mv -- "$p" "$t/files/$n"
     }
 }
 
+/// Read a file under the WSL user's home (`$HOME/<rel>`).
+///
+/// Returns `Some(contents)` when WSL is reachable (an empty string if the file
+/// simply doesn't exist yet), and `None` only when WSL itself can't be run — so
+/// the caller can tell "no such file" apart from "no WSL".
+pub fn read_home_file(rel: &str) -> Option<String> {
+    let out = wsl_command()
+        // `$1` carries the relative path so it can't be reinterpreted by the
+        // shell; a missing file yields empty output, not an error.
+        .args([
+            "-e",
+            "sh",
+            "-c",
+            r#"cat "$HOME/$1" 2>/dev/null || true"#,
+            "_",
+            rel,
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Write `content` to `$HOME/<rel>` inside the WSL VM, replacing the file.
+pub fn write_home_file(rel: &str, content: &str) -> Result<(), String> {
+    let mut child = wsl_command()
+        .args(["-e", "sh", "-c", r#"cat > "$HOME/$1""#, "_", rel])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("could not run wsl.exe: {e}"))?;
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or("could not open a pipe to wsl.exe")?;
+        stdin
+            .write_all(content.as_bytes())
+            .map_err(|e| format!("could not write to wsl.exe: {e}"))?;
+        // stdin drops here, sending EOF so `cat` finishes.
+    }
+    let out = child
+        .wait_with_output()
+        .map_err(|e| format!("wsl.exe did not finish: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,7 +312,10 @@ mod tests {
 
     #[test]
     fn drvfs_paths_map_to_drive_letters() {
-        assert_eq!(drvfs_to_windows("/mnt/c/users/you"), Some(PathBuf::from(r"C:\users\you")));
+        assert_eq!(
+            drvfs_to_windows("/mnt/c/users/you"),
+            Some(PathBuf::from(r"C:\users\you"))
+        );
         assert_eq!(drvfs_to_windows("/mnt/d"), Some(PathBuf::from(r"D:\")));
         // Not a single-letter mount: `/mnt/data` is an ordinary VM directory.
         assert_eq!(drvfs_to_windows("/mnt/data/x"), None);
@@ -258,18 +324,30 @@ mod tests {
 
     #[test]
     fn windows_paths_map_to_drvfs() {
-        assert_eq!(to_wsl(Path::new(r"C:\Users\you\x.torrent")), Some("/mnt/c/Users/you/x.torrent".into()));
+        assert_eq!(
+            to_wsl(Path::new(r"C:\Users\you\x.torrent")),
+            Some("/mnt/c/Users/you/x.torrent".into())
+        );
         assert_eq!(to_wsl(Path::new(r"D:\")), Some("/mnt/d".into()));
         assert_eq!(to_wsl(Path::new(r"E:")), Some("/mnt/e".into()));
     }
 
     #[test]
     fn unc_wsl_shares_map_back_to_vm_paths() {
-        assert_eq!(to_wsl(Path::new(r"\\wsl.localhost\Ubuntu\home\you\dl")), Some("/home/you/dl".into()));
+        assert_eq!(
+            to_wsl(Path::new(r"\\wsl.localhost\Ubuntu\home\you\dl")),
+            Some("/home/you/dl".into())
+        );
         // The legacy `\\wsl$\` spelling and odd casing both still resolve.
         assert_eq!(to_wsl(Path::new(r"\\wsl$\Ubuntu\srv")), Some("/srv".into()));
-        assert_eq!(to_wsl(Path::new(r"\\WSL.LOCALHOST\Ubuntu\srv")), Some("/srv".into()));
-        assert_eq!(to_wsl(Path::new(r"\\wsl.localhost\Ubuntu")), Some("/".into()));
+        assert_eq!(
+            to_wsl(Path::new(r"\\WSL.LOCALHOST\Ubuntu\srv")),
+            Some("/srv".into())
+        );
+        assert_eq!(
+            to_wsl(Path::new(r"\\wsl.localhost\Ubuntu")),
+            Some("/".into())
+        );
     }
 
     #[test]

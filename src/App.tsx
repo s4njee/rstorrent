@@ -20,6 +20,7 @@ import {
   getLog,
   retryConnection,
   takeOpenRequests,
+  saveSession,
 } from "./ipc/commands";
 import { parseOpenRequests } from "./externalOpen";
 import { enqueueAddSources } from "./addQueue";
@@ -77,12 +78,25 @@ export default function App() {
       }),
       onDetail((d) => setDetail(d)),
       onLog((entry) => useLog.getState().append(entry)),
-      // Native menu items open the matching dialog.
-      onMenuAction((action) =>
+      // Native menu items: most open a dialog; the daemon actions are handled
+      // directly (save runs now, shutdown asks for confirmation first).
+      onMenuAction((action) => {
+        if (action === "save-session") {
+          void saveSession();
+          return;
+        }
         useUi
           .getState()
-          .openDialog(action as "prefs" | "add-file" | "add-magnet" | "stats"),
-      ),
+          .openDialog(
+            action as
+              | "prefs"
+              | "add-file"
+              | "add-magnet"
+              | "stats"
+              | "tune-network"
+              | "shutdown",
+          );
+      }),
       onNotificationClick((hash) => {
         const ui = useUi.getState();
         ui.closeDialog();

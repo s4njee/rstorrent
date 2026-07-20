@@ -23,6 +23,20 @@ Sizes: S ≤ 2 h, M ≤ half day, L ≈ day, XL = needs breaking down.
   C4 smart filters · C6 rate/ETA smoothing · C7 private-torrent affordances ·
   C21 CI (fmt/clippy/test on macOS, lint/types/vitest on Linux).
 - **B9** — remote daemons over HTTP(S) XML-RPC, passwords in the Keychain.
+- **v1.6 "network"** — D7 encryption/PEX · D8 tracker HTTP proxy · D9 bind/
+  listen addresses · D11 global connection caps (all in a new Preferences →
+  Network pane + Speed's Connection Limits) · B16 peer actions + C16 richer
+  peer flags in the Peers tab. Network prefs are replayed on every (re)connect
+  so they survive a daemon restart.
+- **v1.7 "automation"** — C9 max-active-downloads queue · C11 per-label default
+  save paths · C12 multiple watch folders · C13 client-side run-on-complete
+  hook · C14 seed-goal action (stop/remove/remove-with-data) · B14 turtle mode
+  (alt limits, manual toggle + daily schedule). The poller now owns global
+  rate-limit application (turtle-aware, restart-surviving).
+- **v2.0 "seedbox" (core)** — B10 connection profiles · D12 native daemon views
+  in the sidebar · D13 session controls (Daemon menu: save / shut down) · D16
+  daemon health tab in Statistics. **Deferred to follow-up passes:** B11 (RSS +
+  auto-add, XL) and C22 (delta snapshots).
 
 Still open from v1 close-out (tasks.md): `E13-S2` virtualization, `E13-S4`
 accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
@@ -32,24 +46,52 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 ## 1 · Carried over, still worth doing
 
 - [ ] **B7 · Auto-update** (M) — needs E14-S2 signing first.
-- [ ] **B10 · Connection profiles** (M) — unblocked by B9; pairs with D16.
+- [x] **B10 · Connection profiles** (M) — Preferences → Connection gains a
+  profile dropdown: save the current connection under a name, then switch
+  daemons from the list (Apply reconnects). Stored as `connection_profiles`;
+  the active one is mirrored in `transport`. HTTP passwords stay per-endpoint in
+  the Keychain. Shipped v2.0.
 - [ ] **B11 · RSS + auto-add rules** (XL) — fills the disabled prefs nav.
 - [ ] **B12 · Move data on Set location** (L) — build with C10.
 - [ ] **B13 · Torrent creation** (L).
-- [ ] **B14 · Scheduler / turtle limits** (M) — see also D14.
-- [ ] **B16 · Peer actions** (S) — now grounded: `p.banned.set`,
-  `p.snubbed.set`, `p.disconnect` all present. Do together with C16.
+- [x] **B14 · Scheduler / turtle limits** (M) — turtle mode: alternative
+  down/up limits with a manual toggle (🐢 in the status bar) and an optional
+  daily schedule (start/end time + weekdays, overnight-wrap aware). The poller
+  computes the effective limits each tick from `chrono::Local` and pushes them
+  on change; it now owns global-limit application, so limits also survive a
+  daemon restart. Shipped v1.7. (Deep choke-group scheduling stays D14/icebox.)
+- [x] **B16 · Peer actions** (S) — right-click a peer in the Peers tab to Snub
+  (`p.snubbed.set`), Disconnect (`p.disconnect`), or Ban (`p.banned.set` +
+  disconnect). Targets the peer by `HASH:p<p.id>`. Shipped with C16 (v1.6).
 - [ ] **B17 · Menu-bar item + dock menu** (M).
 - [ ] **B18 · Windows/Linux** (XL) · **B19 · Web UI** (L) · **B20 · l10n** (M)
   · **B21 · Import from other clients** (M) · **B22 · Light theme** (S) — icebox.
 - [ ] **C5 · Label rename in sidebar** (S).
 - [ ] **C8 · Availability overlay on pieces bar** (M) — `d.chunks_seen` confirmed.
-- [ ] **C9 · Max-active-downloads queue** (M) · **C10 · Move-on-complete** (L)
-  · **C11 · Per-label defaults** (M) · **C12 · Multiple watch folders** (M)
-  · **C13 · Run-on-complete hook** (S) · **C14 · Auto-remove at seed goal** (S).
+- [x] **C9 · Max-active-downloads queue** (M) — Preferences → Speed → Queue.
+  The poller keeps the highest-priority N incomplete torrents active and
+  starts/stops the rest each tick (errored/hash-checking torrents excluded).
+  0 = off. Shipped v1.7.
+- [ ] **C10 · Move-on-complete** (L).
+- [x] **C11 · Per-label defaults** (M) — per-label default save paths
+  (Preferences → Downloads); the Add dialog pre-fills the save path when the
+  typed label matches, and watch-folder adds resolve folder → label default →
+  global. Shipped v1.7.
+- [x] **C12 · Multiple watch folders** (M) — `watch_folders` list, each with an
+  optional label and save path; the watcher spawns one per folder. The legacy
+  single `watch_folder` is migrated in on load. Shipped v1.7.
+- [x] **C13 · Run-on-complete hook** (S) — a client-side command run on
+  completion with `%N`/`%F`/`%H` tokens, executed directly (no shell, so no
+  injection; per-token substitution keeps spaced values one argument). Distinct
+  from the daemon-side `execute.*` non-goal. Shipped v1.7.
+- [x] **C14 · Auto-remove at seed goal** (S) — seed-goal action Stop / Remove /
+  Remove-with-data (Preferences → BitTorrent), extending the poller's seed-goal
+  handling; Remove-with-data trashes files for a local daemon. Shipped v1.7.
 - [ ] **C15 · Per-file progress bars** (S) — fold into D6.
-- [ ] **C16 · Richer peer info** (S) — `p.is_encrypted`, `p.is_incoming`,
-  `p.is_obfuscated`, `p.is_preferred`, `p.is_unwanted` all present.
+- [x] **C16 · Richer peer info** (S) — the Peers-tab Flags column now folds in
+  `p.is_encrypted`/`p.is_incoming`/`p.is_obfuscated`/`p.is_preferred`/
+  `p.is_unwanted` as E·I·O·P·U (legend in the column tooltip). Shipped with B16
+  (v1.6).
 - [ ] **C17 · Global transfer graph + history** (M).
 - [x] **C18 · Announce countdown in Trackers** (S) — Next column shows
   "in 12m" from `t.activity_time_next`; Last column shows "4m ago" from
@@ -109,44 +151,44 @@ The biggest functional gaps against qBittorrent, all with confirmed methods.
 A "Network" pane in Preferences, mapping rtorrent's global knobs. All
 confirmed present; each is a labeled control with the daemon default shown.
 
-- [ ] **D7 · Encryption & PEX prefs** (M) — `protocol.encryption.set`
-  (require/prefer/allow-plaintext presets over the raw flag list),
-  `protocol.pex.set` toggle. Write-mostly: encryption has no getter on
-  0.16.17, so persist the last-applied preset in settings and say so in the UI.
+- [x] **D7 · Encryption & PEX prefs** (M) — new Preferences → Network pane:
+  encryption preset dropdown (`protocol.encryption.set` — disabled/allow/
+  prefer/require flag lists) and a `protocol.pex.set` toggle. Encryption has no
+  getter on 0.16.17, so the preset is persisted in settings and the UI says it
+  shows the last-applied value. Shipped v1.6.
 
-- [ ] **D8 · Proxy support** (M) — `network.proxy.global.set` /
-  `network.http.proxy_address.set`. One proxy URL field + "apply to tracker
-  HTTP requests" checkbox. Warn that UDP trackers bypass an HTTP proxy.
+- [x] **D8 · Proxy support** (M) — Network pane: a proxy `host:port` field and
+  an "apply to tracker HTTP requests" checkbox (`network.http.proxy_address.set`),
+  with a warning that UDP trackers and peer connections bypass it. Shipped v1.6.
 
-- [ ] **D9 · Bind & listen controls** (M) — `network.bind_address.set`
-  (with `.ipv4`/`.ipv6` variants), `network.local_address.set`, alongside the
-  existing port range. The VPN-binding use case: bind to the tunnel interface
-  address so traffic dies with the VPN instead of leaking.
+- [x] **D9 · Bind & listen controls** (M) — Network pane: `network.bind_address`
+  and `network.local_address` fields alongside the existing port range, for the
+  VPN-binding use case. Only pushed when set (rebinding drops connections), so
+  clearing a bind takes effect on the next daemon restart. Shipped v1.6.
 
 - [ ] **D10 · IP blocklist** (L) — `ip_tables.insert_table`/`add_address` +
   `network.block.ipv4.set`. Load a local P2P-format blocklist file, show
   loaded-range count. File parsing is ours; the daemon only takes ranges.
 
-- [ ] **D11 · Global connection caps** (S) — `throttle.max_peers.normal.set`,
-  `throttle.max_uploads.global.set`, `throttle.max_downloads.global.set` etc.
-  in Preferences → Transfers, next to the existing global rate limits.
+- [x] **D11 · Global connection caps** (S) — Preferences → Speed gains a
+  "Connection Limits" group: max peers per torrent (`throttle.max_peers.normal`
+  /`.seed`), global upload slots (`throttle.max_uploads.global`), global
+  download slots (`throttle.max_downloads.global`); 0 = daemon default. Shipped
+  v1.6.
 
 ---
 
 ## 4 · D-items — daemon integration (P2)
 
-- [ ] **D12 · Native views in the sidebar** (M) — `view.list`, `d.views`,
-  `d.views.push_back_unique`/`remove`. Surface the daemon's own views
-  (`started`, `stopped`, `complete`, custom ones from .rtorrent.rc) as a
-  sidebar group. Read-only first; view *membership* editing later. Smart
-  filters stay client-side — these are the daemon-side complement visible to
-  every client, not just ours.
+- [x] **D12 · Native views in the sidebar** (M) — the poller slow-polls
+  `view.list` + per-view `d.multicall2` membership (excluding `main`/`default`),
+  tags each torrent's DTO with its views, and the sidebar shows a **Views**
+  group that filters like labels/trackers. Read-only (membership editing later);
+  smart filters stay client-side. Shipped v2.0.
 
-- [ ] **D13 · Session controls** (S) — File menu: "Save session now"
-  (`session.save`), "Shut down daemon…" (`system.shutdown.normal`, with
-  confirm). The pair rstorrent conspicuously lacks for being a *client*:
-  clean daemon lifecycle without reaching for tmux. Complements C20
-  (start) — together they close the loop.
+- [x] **D13 · Session controls** (S) — a **Daemon** menu: "Save Session"
+  (`session.save`, runs immediately) and "Shut Down Daemon…"
+  (`system.shutdown.normal`, behind a confirm dialog). Shipped v2.0.
 
 - [ ] **D14 · Choke-group / scheduling primitives** (P3, XL) —
   `protocol.choke_heuristics.*`, `schedule2`. rtorrent's deepest knobs; a GUI
@@ -158,11 +200,11 @@ confirmed present; each is a labeled control with the daemon default shown.
   wrap stays reachable, and it doubles as our own probe UI. Read-only unless
   "allow mutations" is armed per-session.
 
-- [ ] **D16 · Daemon health panel** (M) — surface what the daemon says about
-  itself: `system.client_version`/`api_version`, `session.path`, uptime
-  (`system.time` − start), `pieces.memory.*` cache stats, open sockets
-  (`network.open_sockets`), `network.http.*` settings in effect. Lives in the
-  Statistics dialog as a second tab. Pairs with B10 profiles.
+- [x] **D16 · Daemon health panel** (M) — the Statistics dialog gains a
+  **Daemon** tab: `system.client_version`/`api_version`, `session.path`,
+  `pieces.memory.*` cache, open/max sockets, max open files, `network.http`
+  max-open. (Uptime dropped — rtorrent exposes no reliable start time.) Shipped
+  v2.0.
 
 ---
 
@@ -193,9 +235,9 @@ confirmed present; each is a labeled control with the daemon default shown.
 ## Suggested release slices
 
 - **v1.5 — "control"**: D1, D2, D17, D4, C5 (+ C18/D18 as the Trackers pass)
-- **v1.6 — "network"**: D7, D8, D9, D11, B16+C16 as one Peers pass
-- **v1.7 — "automation"**: C9, C11, C12, C13, C14, B14
-- **v2.0 — "seedbox"**: B10, D12, D13, D16, C22, B11
+- **v1.6 — "network"**: D7, D8, D9, D11, B16+C16 as one Peers pass — ✅ shipped
+- **v1.7 — "automation"**: C9, C11, C12, C13, C14, B14 — ✅ shipped
+- **v2.0 — "seedbox"**: B10, D12, D13, D16 ✅ shipped (core) · B11, C22 deferred
 - Anytime: D3, D5, D6, D10, D15, C17, C19, C23, C24, C25
 - Icebox: D14, B18–B22
 

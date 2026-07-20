@@ -25,6 +25,17 @@ pub fn setup(app: &App) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+Shift+O")
         .build(app)?;
     let stats = MenuItemBuilder::with_id("menu:stats", "Statistics").build(app)?;
+    let tune = MenuItemBuilder::with_id("menu:tune-network", "Tune for 1 Gbps…").build(app)?;
+
+    // Daemon lifecycle (D13): write the session, or shut the daemon down.
+    let save_session = MenuItemBuilder::with_id("menu:save-session", "Save Session").build(app)?;
+    let shutdown =
+        MenuItemBuilder::with_id("menu:shutdown-daemon", "Shut Down Daemon…").build(app)?;
+    let daemon_menu = SubmenuBuilder::new(app, "Daemon")
+        .item(&save_session)
+        .separator()
+        .item(&shutdown)
+        .build()?;
 
     // Edit menu: predefined clipboard actions, so the system shortcuts keep
     // working inside dialog text inputs on both platforms.
@@ -59,10 +70,11 @@ pub fn setup(app: &App) -> tauri::Result<()> {
             .item(&add_magnet)
             .separator()
             .item(&stats)
+            .item(&tune)
             .build()?;
 
         MenuBuilder::new(app)
-            .items(&[&app_menu, &torrent_menu, &edit_menu])
+            .items(&[&app_menu, &torrent_menu, &daemon_menu, &edit_menu])
             .build()?
     };
 
@@ -75,6 +87,7 @@ pub fn setup(app: &App) -> tauri::Result<()> {
             .item(&add_magnet)
             .separator()
             .item(&stats)
+            .item(&tune)
             .separator()
             .item(&prefs)
             .separator()
@@ -86,7 +99,7 @@ pub fn setup(app: &App) -> tauri::Result<()> {
             .build()?;
 
         MenuBuilder::new(app)
-            .items(&[&file_menu, &edit_menu, &help_menu])
+            .items(&[&file_menu, &daemon_menu, &edit_menu, &help_menu])
             .build()?
     };
 

@@ -101,6 +101,8 @@ pub fn to_dto(t: &RawTorrent, tracker_host: &str, named_limits: Option<(i64, i64
         up_rate_limit: named_limits.map(|limits| limits.1.saturating_mul(1024)),
         started_at: t.started_at,
         finished_at: t.finished_at,
+        // Native-view membership is filled in by the poller after to_dto (D12).
+        views: Vec::new(),
     }
 }
 

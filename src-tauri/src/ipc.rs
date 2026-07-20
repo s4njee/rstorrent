@@ -58,6 +58,10 @@ pub struct TorrentDto {
     /// `d.load_date`), so no separate "added" field until D6's sticky metadata.
     pub started_at: i64,
     pub finished_at: i64,
+    /// Native rtorrent views this torrent belongs to (D12); filled by the
+    /// poller from `view.list`. Empty until the first view refresh.
+    #[serde(default)]
+    pub views: Vec<String>,
 }
 
 /// Global counters for the status bar and General tab.
@@ -70,6 +74,9 @@ pub struct GlobalStats {
     pub up_rate_limit: i64,
     pub dht_nodes: i64,
     pub free_space: Option<i64>,
+    /// Whether turtle mode is currently in effect (manual toggle or an active
+    /// schedule window) (B14).
+    pub turtle_active: bool,
 }
 
 /// Connection lifecycle phase.
@@ -135,11 +142,16 @@ pub struct TrackerRow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerRow {
+    /// rtorrent peer id (hex), used to target `p.*` actions (`HASH:p<id>`).
+    /// Not shown; empty on the mock backend.
+    pub id: String,
     pub address: String,
     pub client: String,
     pub progress: f64,
     pub down_rate: i64,
     pub up_rate: i64,
+    /// Compact flag string (C16): E encrypted · I incoming · O obfuscated ·
+    /// P preferred · U unwanted.
     pub flags: String,
 }
 
@@ -260,6 +272,33 @@ pub enum Transport {
     },
 }
 
+/// A saved, named daemon connection (B10). The active connection is whichever
+/// profile's transport currently sits in [`Settings::transport`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionProfile {
+    pub name: String,
+    pub transport: Transport,
+}
+
+/// What the daemon reports about itself (D16), for the Statistics dialog's
+/// Daemon tab. Numeric fields are 0 / strings empty when a build doesn't expose
+/// the corresponding method.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaemonHealth {
+    pub client_version: String,
+    pub api_version: String,
+    pub session_path: String,
+    /// `pieces.memory.max` / `pieces.memory.current`, bytes.
+    pub memory_max: i64,
+    pub memory_current: i64,
+    pub open_sockets: i64,
+    pub max_open_sockets: i64,
+    pub max_open_files: i64,
+    pub http_max_open: i64,
+}
+
 /// Ratio/time limits applied to a completed torrent. Zero disables a rule.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -312,6 +351,79 @@ pub struct Settings {
     /// Per-label replacements for the global goal, including explicit no-limit rows.
     #[serde(default)]
     pub label_seed_goals: Vec<LabelSeedGoal>,
+
+    // --- Network pane (v1.6) ---
+    /// Protocol-encryption preset (D7). Write-only on 0.16.17 — see [`EncryptionMode`].
+    #[serde(default = "default_encryption")]
+    pub encryption: EncryptionMode,
+    /// Peer exchange (`protocol.pex.set`) (D7).
+    #[serde(default = "default_pex_enabled")]
+    pub pex_enabled: bool,
+    /// HTTP proxy `host:port` for tracker announces (D8); empty = none.
+    #[serde(default)]
+    pub proxy_address: String,
+    /// Whether to route tracker HTTP requests through [`Self::proxy_address`] (D8).
+    #[serde(default)]
+    pub proxy_tracker_http: bool,
+    /// `network.bind_address` — bind outgoing/listen to this address, e.g. a VPN
+    /// interface (D9); empty = don't manage (the daemon default, all interfaces).
+    #[serde(default)]
+    pub bind_address: String,
+    /// `network.local_address` — the address reported to trackers/peers (D9);
+    /// empty = don't manage.
+    #[serde(default)]
+    pub local_address: String,
+    /// Global peer cap per torrent (`throttle.max_peers.normal/seed`) (D11);
+    /// 0 = leave the daemon default.
+    #[serde(default)]
+    pub max_peers: i64,
+    /// Global simultaneous upload slots (`throttle.max_uploads.global`) (D11);
+    /// 0 = unlimited.
+    #[serde(default)]
+    pub max_uploads_global: i64,
+    /// Global simultaneous download slots (`throttle.max_downloads.global`) (D11);
+    /// 0 = unlimited.
+    #[serde(default)]
+    pub max_downloads_global: i64,
+
+    // --- Automation (v1.7) ---
+    /// Keep at most this many torrents downloading; the app queues the rest
+    /// (C9). 0 = unlimited (no queue management).
+    #[serde(default)]
+    pub max_active_downloads: i64,
+    /// Per-label default save paths (C11).
+    #[serde(default)]
+    pub label_defaults: Vec<LabelDefault>,
+    /// Watched folders for auto-add (C12). Supersedes [`Self::watch_folder`],
+    /// which is migrated into this list on load.
+    #[serde(default)]
+    pub watch_folders: Vec<WatchFolder>,
+    /// Command run on this machine when a torrent completes (C13); empty =
+    /// disabled. Tokens `%N` (name), `%F` (save path), `%H` (hash) are
+    /// substituted. Run directly (no shell) — point it at a script for pipes.
+    #[serde(default)]
+    pub run_on_complete: String,
+    /// What to do when a torrent reaches its seed goal (C14).
+    #[serde(default)]
+    pub seed_goal_action: SeedGoalAction,
+    /// Turtle (alternative) download limit, KiB/s; 0 = unlimited (B14).
+    #[serde(default)]
+    pub turtle_down_kb: i64,
+    /// Turtle upload limit, KiB/s; 0 = unlimited (B14).
+    #[serde(default)]
+    pub turtle_up_kb: i64,
+    /// Manual turtle-mode toggle (B14). The effective state is this OR an active
+    /// schedule window.
+    #[serde(default)]
+    pub turtle_enabled: bool,
+    /// Optional daily schedule that auto-engages turtle mode (B14).
+    #[serde(default)]
+    pub turtle_schedule: TurtleSchedule,
+
+    /// Saved daemon connections (B10). The active one is mirrored in `transport`.
+    #[serde(default)]
+    pub connection_profiles: Vec<ConnectionProfile>,
+
     pub mock: bool,
 }
 
@@ -325,8 +437,96 @@ pub struct NamedThrottle {
     pub up_kb: i64,
 }
 
+/// Outgoing/incoming BitTorrent protocol encryption preset (D7).
+///
+/// rtorrent 0.16.17 has no getter for `protocol.encryption`, so the app can't
+/// read the daemon's current mode — it persists the last preset it applied and
+/// shows that (the UI says as much).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EncryptionMode {
+    /// No encryption (`none`).
+    Disabled,
+    /// Accept encrypted peers, plaintext outgoing (`allow_incoming,try_outgoing`).
+    #[default]
+    Allow,
+    /// Try encrypted outgoing, retry with encryption on failure.
+    Prefer,
+    /// Require encryption both ways.
+    Require,
+}
+
+impl EncryptionMode {
+    /// The `protocol.encryption.set` flag list for this preset.
+    pub fn flags(self) -> &'static str {
+        match self {
+            EncryptionMode::Disabled => "none",
+            EncryptionMode::Allow => "allow_incoming,try_outgoing",
+            EncryptionMode::Prefer => "allow_incoming,try_outgoing,enable_retry",
+            EncryptionMode::Require => "allow_incoming,require,require_RC4,enable_retry",
+        }
+    }
+}
+
+/// What to do with a torrent when its seed goal is reached (C14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SeedGoalAction {
+    /// Stop seeding but keep the torrent (the original v1 behavior).
+    #[default]
+    Stop,
+    /// Remove the torrent from rtorrent, leaving the data on disk.
+    Remove,
+    /// Remove the torrent and move its data to the Trash (local daemons only).
+    RemoveData,
+}
+
+/// A per-label default (C11): overrides the global save path for torrents added
+/// with this label.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelDefault {
+    pub label: String,
+    pub save_path: String,
+}
+
+/// One watched folder (C12). `label`/`save_path` are optional per-folder
+/// overrides; empty means "fall back to the label default, then the global
+/// default save path".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchFolder {
+    pub path: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub save_path: String,
+}
+
+/// Daily window that auto-engages turtle mode (B14).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurtleSchedule {
+    pub enabled: bool,
+    /// Window start, minutes since local midnight `[0, 1440)`.
+    pub start_min: i64,
+    /// Window end, minutes since local midnight. If `end <= start` the window
+    /// wraps past midnight (e.g. 23:00→06:00).
+    pub end_min: i64,
+    /// Active weekdays, `0 = Sunday .. 6 = Saturday`. Empty = every day.
+    pub days: Vec<u8>,
+}
+
 fn default_port_range() -> String {
     "6881-6899".to_string()
+}
+
+fn default_pex_enabled() -> bool {
+    true
+}
+
+fn default_encryption() -> EncryptionMode {
+    EncryptionMode::Allow
 }
 
 /// Aggregate figures for the Statistics dialog.

@@ -10,6 +10,8 @@ import { AddMagnetDialog } from "./AddMagnetDialog";
 import { PreferencesDialog } from "./PreferencesDialog";
 import { StatisticsDialog } from "./StatisticsDialog";
 import { RateLimitDialog } from "./RateLimitDialog";
+import { TuneNetworkDialog } from "./TuneNetworkDialog";
+import { ShutdownDialog } from "./ShutdownDialog";
 
 export function DialogHost() {
   const dialog = useUi((s) => s.dialog);
@@ -28,6 +30,10 @@ export function DialogHost() {
       return <StatisticsDialog />;
     case "rate-limit":
       return <RateLimitDialog />;
+    case "tune-network":
+      return <TuneNetworkDialog />;
+    case "shutdown":
+      return <ShutdownDialog />;
     default:
       return null;
   }

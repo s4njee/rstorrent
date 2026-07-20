@@ -18,6 +18,8 @@ pub struct Completion {
     pub hash: String,
     pub name: String,
     pub size_bytes: i64,
+    /// On-disk base path, for the run-on-complete hook's `%F` (C13).
+    pub base_path: String,
 }
 
 /// Remembers the last observed completion flag for torrents in one session.
@@ -45,6 +47,7 @@ impl CompletionTracker {
                     hash: torrent.hash.clone(),
                     name: torrent.name.clone(),
                     size_bytes: torrent.size_bytes,
+                    base_path: torrent.base_path.clone(),
                 });
             }
             next.insert(torrent.hash.clone(), torrent.complete);
@@ -140,7 +143,10 @@ pub fn post_completion(app: AppHandle, completion: Completion) {
 pub fn post_completion(app: AppHandle, completion: Completion) {
     use tauri_winrt_notification::{Duration, Sound, Toast};
 
-    let body = format!("Download complete · {}", format_bytes(completion.size_bytes));
+    let body = format!(
+        "Download complete · {}",
+        format_bytes(completion.size_bytes)
+    );
     let hash = completion.hash.clone();
     let build = |app_id: &str| {
         let app = app.clone();

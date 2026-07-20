@@ -14,13 +14,17 @@ import { useDetail } from "../../store/detail";
 import { useLog } from "../../store/log";
 import {
   addTracker,
+  banPeer,
+  disconnectPeer,
   removeTracker,
   setFilePriority,
   setTrackerEnabled,
+  snubPeer,
 } from "../../ipc/commands";
 import type {
   DetailTab,
   FileNode,
+  PeerRow,
   PieceInfo,
   Status,
   TorrentDto,
@@ -116,20 +120,7 @@ function TabContent({
         />
       );
     case "peers":
-      return (
-        <SimpleTable
-          headers={["Address", "Client", "Done", "Down", "Up", "Flags"]}
-          rows={(forThis?.peers ?? []).map((p) => [
-            p.address,
-            p.client,
-            `${p.progress.toFixed(0)}%`,
-            formatRate(p.downRate),
-            formatRate(p.upRate),
-            p.flags,
-          ])}
-          empty="no peers"
-        />
-      );
+      return <PeersTable hash={torrent.hash} peers={forThis?.peers ?? []} />;
     case "content":
       // Key by hash so the optimistic-priority state resets when the selected
       // torrent changes (otherwise an override would bleed onto another torrent).
@@ -323,6 +314,125 @@ function TrackersTable({
   );
 }
 
+/** Legend for the peer flag letters (C16), shown as the Flags column tooltip. */
+const PEER_FLAGS_LEGEND =
+  "E encrypted · I incoming · O obfuscated · P preferred · U unwanted";
+
+interface PeerMenuState {
+  x: number;
+  y: number;
+  peer: PeerRow;
+}
+
+/** Peers tab: connected peers with richer flags (C16) and a right-click menu
+ *  to ban / snub / disconnect a peer (B16). */
+function PeersTable({ hash, peers }: { hash: string; peers: PeerRow[] }) {
+  const [menu, setMenu] = useState<PeerMenuState | null>(null);
+
+  const runMenuAction = async (action: () => Promise<void>) => {
+    setMenu(null);
+    try {
+      await action();
+    } catch {
+      // The Rust command writes the failure to the app log.
+    }
+  };
+
+  if (peers.length === 0)
+    return <div className={styles.placeholder}>no peers</div>;
+
+  return (
+    <>
+      <table className={styles.dtable}>
+        <thead>
+          <tr>
+            <th>Address</th>
+            <th>Client</th>
+            <th>Done</th>
+            <th>Down</th>
+            <th>Up</th>
+            <th title={PEER_FLAGS_LEGEND}>Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+          {peers.map((p, i) => (
+            <tr
+              key={p.id || `${p.address}:${i}`}
+              onContextMenu={(event) => {
+                // Without a peer id there's nothing to target, so no menu.
+                if (!p.id) return;
+                event.preventDefault();
+                setMenu({ x: event.clientX, y: event.clientY, peer: p });
+              }}
+            >
+              <td>{p.address}</td>
+              <td>{p.client}</td>
+              <td>{p.progress.toFixed(0)}%</td>
+              <td>{formatRate(p.downRate)}</td>
+              <td>{formatRate(p.upRate)}</td>
+              <td className={styles.dim} title={PEER_FLAGS_LEGEND}>
+                {p.flags || "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {menu && (
+        <>
+          <div
+            className={menuStyles.overlay}
+            onMouseDown={() => setMenu(null)}
+            onContextMenu={(event) => event.preventDefault()}
+          />
+          <div
+            className={menuStyles.menu}
+            style={{
+              left: Math.min(menu.x, window.innerWidth - 220),
+              top: Math.min(menu.y, window.innerHeight - 130),
+            }}
+          >
+            <div
+              className={menuStyles.item}
+              onClick={() =>
+                void runMenuAction(() => snubPeer(hash, menu.peer.id))
+              }
+            >
+              <span className={menuStyles.icon}>
+                <PauseIcon size={11} />
+              </span>
+              Snub
+            </div>
+            <div
+              className={menuStyles.item}
+              onClick={() =>
+                void runMenuAction(() => disconnectPeer(hash, menu.peer.id))
+              }
+            >
+              <span className={menuStyles.icon}>
+                <RemoveIcon size={11} />
+              </span>
+              Disconnect
+            </div>
+            <div className={menuStyles.sep} />
+            <div
+              className={`${menuStyles.item} ${menuStyles.danger}`}
+              onClick={() =>
+                void runMenuAction(() => banPeer(hash, menu.peer.id))
+              }
+            >
+              <span className={menuStyles.icon}>
+                <RemoveIcon size={11} />
+              </span>
+              Ban
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 /** Priority label cycle for the Content tab (0 off → 1 normal → 2 high). */
 const PRIORITY_LABELS = ["skip", "normal", "high"];
 
@@ -478,38 +588,5 @@ function General({
         ))}
       </div>
     </div>
-  );
-}
-
-function SimpleTable({
-  headers,
-  rows,
-  empty,
-}: {
-  headers: string[];
-  rows: string[][];
-  empty: string;
-}) {
-  if (rows.length === 0)
-    return <div className={styles.placeholder}>{empty}</div>;
-  return (
-    <table className={styles.dtable}>
-      <thead>
-        <tr>
-          {headers.map((h) => (
-            <th key={h}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i}>
-            {r.map((c, j) => (
-              <td key={j}>{c}</td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }

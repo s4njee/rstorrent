@@ -47,6 +47,7 @@ function mk(
     upRateLimit: null,
     startedAt: 0,
     finishedAt: 0,
+    views: [],
   };
 }
 

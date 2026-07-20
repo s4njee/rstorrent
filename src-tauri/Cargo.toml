@@ -51,6 +51,11 @@ notify = "7"          # watched-folder auto-add (E11-S5)
 thiserror = "2"       # typed error enums across the rtorrent layer
 async-trait = "0.1"   # dyn-compatible async RtorrentApi trait (Scgi vs Mock)
 
+# --- Time ---
+# Local wall-clock (weekday + time-of-day) for the turtle-mode schedule (B14).
+# `clock` pulls the platform's local-timezone offset; already in the tree.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
 tauri-plugin-deep-link = "2"         # magnet: scheme handling through LaunchServices
