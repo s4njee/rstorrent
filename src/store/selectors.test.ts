@@ -45,6 +45,8 @@ function mk(
     throttleName: "",
     downRateLimit: null,
     upRateLimit: null,
+    startedAt: 0,
+    finishedAt: 0,
   };
 }
 

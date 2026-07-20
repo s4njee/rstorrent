@@ -61,7 +61,9 @@ function sameTorrent(a: TorrentDto, b: TorrentDto): boolean {
     a.name === b.name &&
     a.throttleName === b.throttleName &&
     a.downRateLimit === b.downRateLimit &&
-    a.upRateLimit === b.upRateLimit
+    a.upRateLimit === b.upRateLimit &&
+    a.startedAt === b.startedAt &&
+    a.finishedAt === b.finishedAt
   );
 }
 

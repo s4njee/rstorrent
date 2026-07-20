@@ -19,6 +19,8 @@ export const COLUMN_IDS = [
   "ratio",
   "label",
   "tracker",
+  "started",
+  "finished",
 ] as const;
 
 export type ColumnId = (typeof COLUMN_IDS)[number];
@@ -29,6 +31,9 @@ export interface ColumnDefinition {
   defaultWidth: number;
   minWidth: number;
   flexible?: boolean;
+  /** Hidden until the user enables it via the column menu (optional depth
+   *  columns like the date fields), rather than shown on first run. */
+  defaultHidden?: boolean;
 }
 
 export const COLUMN_DEFINITIONS: readonly ColumnDefinition[] = [
@@ -50,6 +55,20 @@ export const COLUMN_DEFINITIONS: readonly ColumnDefinition[] = [
   { id: "ratio", label: "Ratio", defaultWidth: 46, minWidth: 40 },
   { id: "label", label: "Label", defaultWidth: 72, minWidth: 52 },
   { id: "tracker", label: "Tracker", defaultWidth: 110, minWidth: 70 },
+  {
+    id: "started",
+    label: "Started",
+    defaultWidth: 72,
+    minWidth: 52,
+    defaultHidden: true,
+  },
+  {
+    id: "finished",
+    label: "Finished",
+    defaultWidth: 72,
+    minWidth: 52,
+    defaultHidden: true,
+  },
 ];
 
 export interface ColumnState {
@@ -74,7 +93,7 @@ export function defaultColumnState(): ColumnState {
       COLUMN_DEFINITIONS.map((column) => [column.id, column.defaultWidth]),
     ) as Record<ColumnId, number>,
     visibility: Object.fromEntries(
-      COLUMN_DEFINITIONS.map((column) => [column.id, true]),
+      COLUMN_DEFINITIONS.map((column) => [column.id, !column.defaultHidden]),
     ) as Record<ColumnId, boolean>,
   };
 }
@@ -171,7 +190,11 @@ function normalizeColumnState(value: unknown): ColumnState {
 
     const visible = visibility[id];
     defaults.visibility[id] =
-      id === "name" ? true : typeof visible === "boolean" ? visible : true;
+      id === "name"
+        ? true
+        : typeof visible === "boolean"
+          ? visible
+          : !DEFINITIONS_BY_ID[id].defaultHidden;
   }
 
   return defaults;

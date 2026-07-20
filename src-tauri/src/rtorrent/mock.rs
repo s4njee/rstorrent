@@ -36,11 +36,19 @@ struct MockTracker {
     enabled: bool,
     seeds: i64,
     leeches: i64,
-    last_announce: String,
+    /// Unix seconds of the last announce (0 = never), matching the real DTO.
+    last_announce: i64,
 }
 
 impl MockTracker {
     fn row(&self, index: usize) -> TrackerRow {
+        let kind = if self.url.starts_with("udp") {
+            "udp"
+        } else if self.url.starts_with("http") {
+            "http"
+        } else {
+            "dht"
+        };
         TrackerRow {
             index,
             url: self.url.clone(),
@@ -52,7 +60,10 @@ impl MockTracker {
             },
             seeds: self.seeds,
             leeches: self.leeches,
-            last_announce: self.last_announce.clone(),
+            kind: kind.into(),
+            // Next announce ~28 min out, as a real working tracker reports.
+            next_announce: if self.enabled { unix_now() + 1680 } else { 0 },
+            last_announce: self.last_announce,
         }
     }
 }
@@ -237,7 +248,7 @@ impl RtorrentApi for MockClient {
         for hash in hashes {
             if let Some(trackers) = state.trackers.get_mut(hash) {
                 for tracker in trackers.iter_mut().filter(|tracker| tracker.enabled) {
-                    tracker.last_announce = "just now".into();
+                    tracker.last_announce = unix_now();
                 }
             }
         }
@@ -542,7 +553,7 @@ fn mock_tracker(url: &str) -> MockTracker {
         enabled: true,
         seeds: 34,
         leeches: 12,
-        last_announce: "2m ago".into(),
+        last_announce: unix_now() - 120, // ~2 min ago
     }
 }
 
@@ -616,6 +627,10 @@ fn t(
 ) -> RawTorrent {
     let size_bytes = size as i64;
     let complete = done_pct >= 100.0;
+    // A plausible chunk count (~1 MiB pieces); when idle chunks_hashed tracks
+    // completed chunks, matching a real daemon that isn't mid-check.
+    let size_chunks = (size_bytes / (1024 * 1024)).max(1);
+    let chunks_hashed = (size_chunks as f64 * done_pct / 100.0) as i64;
     RawTorrent {
         hash: hash.to_string(),
         name: name.to_string(),
@@ -639,6 +654,10 @@ fn t(
         is_private: false,
         throttle_name: String::new(),
         finished_at: if complete { unix_now() - 3 * 3600 } else { 0 },
+        chunks_hashed,
+        size_chunks,
+        // Started a day ago; downloading ones a bit more recently.
+        started_at: unix_now() - if complete { 26 * 3600 } else { 5 * 3600 },
     }
 }
 
@@ -886,8 +905,10 @@ mod tests {
         assert_eq!(rows[1].status, "disabled");
 
         c.set_tracker_enabled("C3", 1, true).await.unwrap();
+        let before = unix_now();
         c.force_reannounce(&["C3".into()]).await.unwrap();
-        assert_eq!(c.trackers("C3").await.unwrap()[1].last_announce, "just now");
+        // Reannounce stamps the last-announce time to ~now.
+        assert!(c.trackers("C3").await.unwrap()[1].last_announce >= before);
 
         c.remove_tracker("C3", 1).await.unwrap();
         assert!(!c.trackers("C3").await.unwrap()[1].enabled);

@@ -76,6 +76,44 @@ export function formatRatio(ratio: number): string {
   return ratio.toFixed(2);
 }
 
+/**
+ * Countdown to a future Unix time: "in 12m". Returns "—" for 0 (unset) or a
+ * past time — rtorrent leaves the next-announce time in the past for a tracker
+ * that's overdue or failing, and "115s ago" would misread as informative.
+ */
+export function formatCountdown(unixSeconds: number, now = Date.now()): string {
+  if (!unixSeconds) return "—";
+  const deltaSec = Math.round(unixSeconds - now / 1000);
+  return deltaSec > 0 ? `in ${formatDuration(deltaSec)}` : "—";
+}
+
+/**
+ * Elapsed time since a past Unix time: "4m ago". "—" for 0 (never happened).
+ * Used for a tracker's last successful announce.
+ */
+export function formatAgo(unixSeconds: number, now = Date.now()): string {
+  if (!unixSeconds) return "—";
+  const deltaSec = Math.max(0, Math.round(now / 1000 - unixSeconds));
+  return `${formatDuration(deltaSec)} ago`;
+}
+
+/**
+ * A Unix-seconds timestamp as a compact date for the Added/Finished columns.
+ * 0 (rtorrent's "unknown") renders as —. Same-year dates drop the year to save
+ * width; older ones keep it. Absolute, not relative: it doesn't drift between
+ * polls and needs no ticking clock.
+ */
+export function formatDate(unixSeconds: number, now = new Date()): string {
+  if (!unixSeconds) return "—";
+  const d = new Date(unixSeconds * 1000);
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString(undefined, {
+    year: sameYear ? undefined : "2-digit",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /** Free-space status-bar string, or empty when unknown. */
 export function formatFree(freeBytes: number | null): string {
   return freeBytes == null ? "" : `free: ${formatBytes(freeBytes)}`;

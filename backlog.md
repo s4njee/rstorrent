@@ -51,9 +51,10 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 - [ ] **C16 · Richer peer info** (S) — `p.is_encrypted`, `p.is_incoming`,
   `p.is_obfuscated`, `p.is_preferred`, `p.is_unwanted` all present.
 - [ ] **C17 · Global transfer graph + history** (M).
-- [ ] **C18 · Announce countdown in Trackers** (S) — **probe done, it's a go:**
-  `t.activity_time_next`, `t.success_time_last`, `t.min_interval`,
-  `t.normal_interval` all exist on 0.16.17. Show "next announce in 12m".
+- [x] **C18 · Announce countdown in Trackers** (S) — Next column shows
+  "in 12m" from `t.activity_time_next`; Last column shows "4m ago" from
+  `t.success_time_last`. A next-announce in the past (failing/overdue tracker)
+  renders "—" rather than a misleading "115s ago". Landed with D18.
 - [ ] **C19 · Quick Look / open from Content** (M) · **C20 · Start rtorrent
   from the app** (L) · **C22 · Delta snapshots** (M) · **C23 · Session
   export/import** (S) · **C24 · Homebrew cask** (S) · **C25 · Log tab
@@ -80,11 +81,13 @@ The biggest functional gaps against qBittorrent, all with confirmed methods.
   `d.peers_min.set`, `d.uploads_max.set` in the existing per-torrent limits
   dialog (RateLimitDialog grows a second section). Read side into General.
 
-- [ ] **D4 · Added / Started / Finished columns** (S) — `d.load_date`,
-  `d.timestamp.started`, `d.timestamp.finished` (all present; finished is
-  already fetched for seed goals). Three new optional columns + sort,
-  default-off except Added. Unlocks "what did I add last week" without
-  leaving the table.
+- [x] **D4 · Started / Finished columns** (S) — `d.timestamp.started` +
+  `d.timestamp.finished` as optional sortable columns (both default-hidden,
+  toggled from the column menu). **"Added" was dropped:** `d.load_date` is
+  session-scoped — a probe showed it resets to *today* on every daemon
+  restart, so it'd lie after any restart. The started/finished timestamps live
+  in the resume file and survive. A durable added-date waits for D6 (sticky
+  `d.custom` metadata).
 
 - [ ] **D5 · Super seeding** (S) — initial-seed connection type via
   `d.connection_current.set = "initial_seed"` (readable via
@@ -165,13 +168,19 @@ confirmed present; each is a labeled control with the daemon default shown.
 
 ## 5 · D-items — observability (P1)
 
-- [ ] **D17 · Hash-check progress** (S) — the `checking` status currently
-  sits at an indeterminate spinner; `d.chunks_hashed` / `d.size_chunks` make
-  it a real percentage in the progress column. Do with D1.
+- [x] **D17 · Hash-check progress** (S) — while `checking`, the progress bar
+  now tracks the verification sweep (`d.chunks_hashed` / `d.size_chunks`)
+  rather than the byte-completion behind it. Derived in `to_dto` so no new UI —
+  the existing progress column shows it. `chunks_hashed` equals completed
+  chunks when idle, so the checking-status guard is load-bearing (tested both
+  ways). D1 (Force recheck) was already shipped in the context menu.
 
-- [ ] **D18 · Scrape & swarm detail in Trackers** (S) — `t.scrape_time_last`,
-  `t.latest_new_peers`, `t.latest_sum_peers`, `t.type` (udp/http/dht) as
-  columns; C18's countdown lands in the same table pass.
+- [x] **D18 · Tracker type + detail columns** (S) — Trackers tab gains a Type
+  column (`t.type` → http/udp/dht) alongside the existing Seeds/Leeches scrape
+  counts and the new Last/Next timing (C18). `t.last_announce` (previously a
+  hardcoded-empty string in the DTO) is now the real `t.success_time_last`.
+  Dropped `t.latest_new_peers`/`sum_peers` for now — Seeds/Leeches already
+  cover swarm size and the row was getting wide.
 
 - [ ] **D19 · Error taxonomy** (M) — classify `d.message` (tracker timeout vs
   unregistered vs storage error vs missing files) into distinct statuses and

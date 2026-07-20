@@ -88,6 +88,16 @@ pub struct RawTorrent {
     pub throttle_name: String,
     /// `d.timestamp.finished`: Unix seconds, or zero when unavailable.
     pub finished_at: i64,
+    /// `d.chunks_hashed`: chunks verified so far. Counts up during a hash check;
+    /// equals the completed-chunk count when idle, so only meaningful while
+    /// [`Self::hashing`] (see the `Checking` progress in [`derive`]).
+    pub chunks_hashed: i64,
+    /// `d.size_chunks`: total chunks — the denominator for `chunks_hashed`.
+    pub size_chunks: i64,
+    /// `d.timestamp.started`: Unix seconds first started. Unlike `d.load_date`
+    /// (which resets when the daemon reloads its session) this is persisted in
+    /// the resume file, so it's the durable "since" for the Started column (D4).
+    pub started_at: i64,
 }
 
 /// Raw global counters fetched alongside the torrent list each poll.

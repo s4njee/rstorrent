@@ -9,11 +9,47 @@ import {
   formatRatio,
   formatDownCell,
   formatUpCell,
+  formatDate,
+  formatCountdown,
+  formatAgo,
 } from "./format";
 
 const GIB = 1_073_741_824;
 const MIB = 1_048_576;
 const KIB = 1_024;
+
+describe("formatDate", () => {
+  it("renders — for the unknown (0) timestamp", () => {
+    expect(formatDate(0)).toBe("—");
+  });
+  it("drops the year within the current year, keeps it otherwise", () => {
+    const now = new Date("2026-07-20T12:00:00Z");
+    // A date earlier the same year: no year shown.
+    expect(formatDate(Date.UTC(2026, 6, 17) / 1000, now)).not.toMatch(
+      /26|2026/,
+    );
+    // A prior-year date: year present.
+    expect(formatDate(Date.UTC(2025, 11, 30) / 1000, now)).toMatch(/25|2025/);
+  });
+});
+
+describe("formatCountdown / formatAgo (tracker times)", () => {
+  const now = 1_784_584_112_000; // fixed "now" in ms
+  const nowSec = now / 1000;
+
+  it("counts down to a future announce", () => {
+    expect(formatCountdown(nowSec + 720, now)).toBe("in 12m0s");
+  });
+  it("shows — for an unset or overdue next announce", () => {
+    expect(formatCountdown(0, now)).toBe("—");
+    // rtorrent leaves next-announce in the past for a failing tracker.
+    expect(formatCountdown(nowSec - 100, now)).toBe("—");
+  });
+  it("shows elapsed time since the last announce", () => {
+    expect(formatAgo(nowSec - 240, now)).toBe("4m0s ago");
+    expect(formatAgo(0, now)).toBe("—");
+  });
+});
 
 describe("formatBytes", () => {
   it("matches design size strings", () => {

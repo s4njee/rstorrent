@@ -39,6 +39,9 @@ const LIST_COMMANDS: &[&str] = &[
     "d.is_private=",         // 19
     "d.throttle_name=",      // 20
     "d.timestamp.finished=", // 21
+    "d.chunks_hashed=",      // 22  hash-check progress (D17)
+    "d.size_chunks=",        // 23  total chunks — denominator for 22
+    "d.timestamp.started=",  // 24  durable first-started time (D4)
 ];
 
 /// rtorrent client that talks to a live daemon, local (SCGI) or remote (HTTP).
@@ -187,6 +190,16 @@ fn load_commands(opts: &LoadOptions) -> Vec<String> {
     cmds
 }
 
+/// Map rtorrent's `t.type` enum to a short label. 1=http, 2=udp, 3=dht.
+fn tracker_kind(t: i64) -> &'static str {
+    match t {
+        1 => "http",
+        2 => "udp",
+        3 => "dht",
+        _ => "",
+    }
+}
+
 /// Classify a tracker row for the Status column.
 ///
 /// Order matters: a disabled tracker isn't "failing", it's off. A tracker with
@@ -309,6 +322,9 @@ fn row_to_raw(row: &[Value]) -> RawTorrent {
         is_private: b(19),
         throttle_name: s(20),
         finished_at: n(21),
+        chunks_hashed: n(22),
+        size_chunks: n(23),
+        started_at: n(24),
     }
 }
 
@@ -416,6 +432,9 @@ impl RtorrentApi for RpcClient {
                     // while every row otherwise looks "working").
                     Value::Str("t.failed_counter=".into()),
                     Value::Str("t.success_counter=".into()),
+                    Value::Str("t.type=".into()), // 7  http/udp/dht
+                    Value::Str("t.activity_time_next=".into()), // 8  unix, next announce
+                    Value::Str("t.success_time_last=".into()), // 9  unix, last success
                 ],
             )
             .await?;
@@ -435,7 +454,9 @@ impl RtorrentApi for RpcClient {
                     status: tracker_status(enabled, usable, failed),
                     seeds: r.get(3).and_then(Value::as_i64).unwrap_or(0),
                     leeches: r.get(4).and_then(Value::as_i64).unwrap_or(0),
-                    last_announce: String::new(),
+                    kind: tracker_kind(r.get(7).and_then(Value::as_i64).unwrap_or(0)).to_string(),
+                    next_announce: r.get(8).and_then(Value::as_i64).unwrap_or(0),
+                    last_announce: r.get(9).and_then(Value::as_i64).unwrap_or(0),
                 }
             })
             .collect())
@@ -680,12 +701,21 @@ impl RtorrentApi for RpcClient {
     async fn set_file_priority(&self, hash: &str, index: usize, priority: i64) -> Result<()> {
         // f.* commands target `HASH:fINDEX`.
         let target = format!("{hash}:f{index}");
-        self.call(
-            "f.priority.set",
-            &[Value::Str(target), Value::Int(priority)],
-        )
-        .await
-        .map(|_| ())
+        // Setting the priority isn't enough: rtorrent only re-plans which chunks
+        // to fetch after d.update_priorities, so without it a "skip"/"high"
+        // change silently does nothing until the daemon restarts. Send both in
+        // one round-trip.
+        let calls = [
+            (
+                "f.priority.set",
+                vec![Value::Str(target), Value::Int(priority)],
+            ),
+            ("d.update_priorities", vec![Value::Str(hash.into())]),
+        ];
+        for r in self.multicall(&calls).await? {
+            r?;
+        }
+        Ok(())
     }
 
     async fn base_path(&self, hash: &str) -> Result<String> {

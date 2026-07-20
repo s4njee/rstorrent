@@ -12,7 +12,9 @@ import { useMemo, useState } from "react";
 import { useTorrents } from "../../store/torrents";
 import { canSaveSmartFilter, useUi, type ActiveFilter } from "../../store/ui";
 import { sidebarCounts, smartFilterCounts } from "../../store/selectors";
+import { setLabel } from "../../ipc/commands";
 import styles from "./FilterSidebar.module.css";
+import menuStyles from "../menu/ContextMenu.module.css";
 
 /** The fixed Status rows, in the design's order. */
 const STATUS_ROWS: Array<{ key: string; label: string }> = [
@@ -36,6 +38,17 @@ export function FilterSidebar() {
 
   const [naming, setNaming] = useState(false);
   const [draftName, setDraftName] = useState("");
+
+  // Label right-click menu (C5) and the inline rename it opens.
+  const [labelMenu, setLabelMenu] = useState<{
+    x: number;
+    y: number;
+    value: string;
+  } | null>(null);
+  const [renaming, setRenaming] = useState<{
+    value: string;
+    draft: string;
+  } | null>(null);
 
   const counts = useMemo(() => sidebarCounts(torrents), [torrents]);
   const smartCounts = useMemo(
@@ -64,6 +77,28 @@ export function FilterSidebar() {
     (value === "all" && !filter) ||
     (filter?.type === type && filter.value === value);
 
+  /** Hashes currently carrying a given label. */
+  const hashesWithLabel = (label: string) =>
+    torrents.filter((t) => t.label === label).map((t) => t.hash);
+
+  /** Rewrite (or clear, when `next` is "") a label across every torrent that
+   *  has it. If the active filter was that label, retarget it so the view
+   *  doesn't strand empty. */
+  const applyLabel = (from: string, next: string) => {
+    const hashes = hashesWithLabel(from);
+    if (hashes.length) void setLabel(hashes, next);
+    if (filter?.type === "label" && filter.value === from) {
+      setFilter(next ? { type: "label", value: next } : null);
+    }
+  };
+
+  const commitRename = () => {
+    if (!renaming) return;
+    const next = renaming.draft.trim();
+    if (next && next !== renaming.value) applyLabel(renaming.value, next);
+    setRenaming(null);
+  };
+
   return (
     <div className={styles.sidebar}>
       <div className={styles.group} style={{ paddingTop: 2 }}>
@@ -85,16 +120,41 @@ export function FilterSidebar() {
       ))}
 
       {counts.labels.length > 0 && <div className={styles.group}>Labels</div>}
-      {counts.labels.map((l) => (
-        <div
-          key={l.value}
-          className={`${styles.row} ${isActive("label", l.value) ? styles.active : ""}`}
-          onClick={() => choose({ type: "label", value: l.value })}
-        >
-          <span className={styles.label}>{l.value}</span>
-          <span className={styles.count}>{l.count}</span>
-        </div>
-      ))}
+      {counts.labels.map((l) =>
+        renaming?.value === l.value ? (
+          <div key={l.value} className={styles.naming}>
+            <input
+              className={styles.nameInput}
+              autoFocus
+              value={renaming.draft}
+              onChange={(e) =>
+                setRenaming({ value: l.value, draft: e.currentTarget.value })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setRenaming(null);
+                }
+              }}
+              onBlur={commitRename}
+            />
+          </div>
+        ) : (
+          <div
+            key={l.value}
+            className={`${styles.row} ${isActive("label", l.value) ? styles.active : ""}`}
+            onClick={() => choose({ type: "label", value: l.value })}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setLabelMenu({ x: e.clientX, y: e.clientY, value: l.value });
+            }}
+          >
+            <span className={styles.label}>{l.value}</span>
+            <span className={styles.count}>{l.count}</span>
+          </div>
+        ),
+      )}
 
       {counts.trackers.length > 0 && (
         <div className={styles.group}>Trackers</div>
@@ -181,6 +241,45 @@ export function FilterSidebar() {
 
       {smartFilters.length === 0 && !naming && (
         <div className={styles.smartHint}>filter or search, then + to save</div>
+      )}
+
+      {labelMenu && (
+        <>
+          <div
+            className={menuStyles.overlay}
+            onMouseDown={() => setLabelMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setLabelMenu(null);
+            }}
+          />
+          <div
+            className={menuStyles.menu}
+            style={{
+              left: Math.min(labelMenu.x, window.innerWidth - 180),
+              top: Math.min(labelMenu.y, window.innerHeight - 80),
+            }}
+          >
+            <div
+              className={menuStyles.item}
+              onClick={() => {
+                setRenaming({ value: labelMenu.value, draft: labelMenu.value });
+                setLabelMenu(null);
+              }}
+            >
+              Rename label…
+            </div>
+            <div
+              className={`${menuStyles.item} ${menuStyles.danger}`}
+              onClick={() => {
+                applyLabel(labelMenu.value, "");
+                setLabelMenu(null);
+              }}
+            >
+              Remove label
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

@@ -60,6 +60,10 @@ export interface TorrentDto {
   /** Named limits in bytes/s; null means inherit the corresponding global. */
   downRateLimit: number | null;
   upRateLimit: number | null;
+  /** Unix seconds first started / finished, 0 when unknown. Drive the Started
+   *  and Finished columns; durable across daemon restarts. */
+  startedAt: number;
+  finishedAt: number;
 }
 
 /** Global counters shown in the status bar and General detail tab. */
@@ -108,7 +112,12 @@ export interface TrackerRow {
   status: string; // "working" | "updating" | "disabled" | "error" | ...
   seeds: number;
   leeches: number;
-  lastAnnounce: string;
+  /** Tracker protocol: "http" / "udp" / "dht", empty if unknown. */
+  kind: string;
+  /** Unix seconds of the next scheduled announce; 0 or past → shown as —. */
+  nextAnnounce: number;
+  /** Unix seconds of the last successful announce; 0 = never. */
+  lastAnnounce: number;
 }
 
 /** A peer row for the Peers detail tab. */

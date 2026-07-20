@@ -53,6 +53,11 @@ pub struct TorrentDto {
     /// global limit; `Some(0)` is an unlimited direction within a named group.
     pub down_rate_limit: Option<i64>,
     pub up_rate_limit: Option<i64>,
+    /// Unix seconds first started / finished; 0 when unknown. Drive the Started
+    /// and Finished columns (D4). Durable across daemon restarts (unlike
+    /// `d.load_date`), so no separate "added" field until D6's sticky metadata.
+    pub started_at: i64,
+    pub finished_at: i64,
 }
 
 /// Global counters for the status bar and General tab.
@@ -118,7 +123,13 @@ pub struct TrackerRow {
     pub status: String,
     pub seeds: i64,
     pub leeches: i64,
-    pub last_announce: String,
+    /// Tracker protocol: "http" / "udp" / "dht" (empty if unknown).
+    pub kind: String,
+    /// Unix seconds of the next scheduled announce; 0 when unset. May be in the
+    /// past for a tracker that's overdue/failing — the UI shows "—" then.
+    pub next_announce: i64,
+    /// Unix seconds of the last successful announce; 0 = never.
+    pub last_announce: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
