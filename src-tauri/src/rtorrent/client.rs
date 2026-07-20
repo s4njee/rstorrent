@@ -686,12 +686,21 @@ impl RtorrentApi for RpcClient {
     async fn set_file_priority(&self, hash: &str, index: usize, priority: i64) -> Result<()> {
         // f.* commands target `HASH:fINDEX`.
         let target = format!("{hash}:f{index}");
-        self.call(
-            "f.priority.set",
-            &[Value::Str(target), Value::Int(priority)],
-        )
-        .await
-        .map(|_| ())
+        // Setting the priority isn't enough: rtorrent only re-plans which chunks
+        // to fetch after d.update_priorities, so without it a "skip"/"high"
+        // change silently does nothing until the daemon restarts. Send both in
+        // one round-trip.
+        let calls = [
+            (
+                "f.priority.set",
+                vec![Value::Str(target), Value::Int(priority)],
+            ),
+            ("d.update_priorities", vec![Value::Str(hash.into())]),
+        ];
+        for r in self.multicall(&calls).await? {
+            r?;
+        }
+        Ok(())
     }
 
     async fn base_path(&self, hash: &str) -> Result<String> {

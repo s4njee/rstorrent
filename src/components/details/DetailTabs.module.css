@@ -78,6 +78,32 @@
   white-space: nowrap;
 }
 
+/* Content tab (D2/C15): give the progress bar room and let the filename ellipsis
+   rather than shove the other columns off. */
+.fileProgressCol {
+  width: 120px;
+}
+.dtable td.fileProgressCol {
+  vertical-align: middle;
+}
+
+/* The clickable priority cell — cursor + the cyan the rest of the app uses for
+   affordances, so it reads as interactive. */
+.filePriority {
+  cursor: pointer;
+  color: var(--text-body);
+  user-select: none;
+}
+.filePriority:hover {
+  color: var(--accent-cyan-bright);
+}
+
+/* A skipped file (priority 0): dim the whole row so "not downloading" reads at
+   a glance. */
+.fileSkipped td {
+  color: var(--text-dim);
+}
+
 .trackerPane {
   min-height: 100%;
 }
