@@ -636,9 +636,11 @@ impl RtorrentApi for RpcClient {
     }
 
     async fn pieces(&self, hash: &str) -> Result<PieceInfo> {
-        // One round-trip for all four fields. `d.bitfield` is the piece bitmap;
+        // One round-trip for all five fields. `d.bitfield` is the piece bitmap;
         // rtorrent returns an all-`F` string for a complete torrent and may
-        // return an empty string before any chunks exist.
+        // return an empty string before any chunks exist. `d.chunks_seen` is the
+        // per-chunk peer-availability buffer (base64 raw bytes); it faults on a
+        // closed torrent, so we tolerate its column being an error.
         let h = || vec![Value::Str(hash.to_string())];
         let r = self
             .multicall(&[
@@ -646,6 +648,7 @@ impl RtorrentApi for RpcClient {
                 ("d.completed_chunks", h()),
                 ("d.chunk_size", h()),
                 ("d.bitfield", h()),
+                ("d.chunks_seen", h()),
             ])
             .await?;
         let num = |i: usize| {
@@ -660,11 +663,30 @@ impl RtorrentApi for RpcClient {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        // `d.chunks_seen` arrives as `<base64>` (Value::Bytes) since the counts
+        // span 0..255 and aren't valid XML text; some builds hand back a raw
+        // string instead. Re-encode to base64 for the frontend, dropping an
+        // all-empty buffer to `None` so the bar stays hidden when there's no
+        // swarm data.
+        let availability = r
+            .get(4)
+            .and_then(|x| x.as_ref().ok())
+            .and_then(|v| match v {
+                Value::Bytes(b) => Some(b.clone()),
+                Value::Str(s) => Some(s.as_bytes().to_vec()),
+                _ => None,
+            })
+            .filter(|b| b.iter().any(|&c| c != 0))
+            .map(|b| {
+                use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+                B64.encode(b)
+            });
         Ok(PieceInfo {
             size_chunks: num(0),
             completed_chunks: num(1),
             chunk_size: num(2),
             bitfield,
+            availability,
         })
     }
 
