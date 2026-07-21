@@ -409,6 +409,13 @@ export interface DaemonHealth {
   httpMaxOpen: number;
 }
 
+/** One result from the raw XML-RPC console (D15): the decoded response (any JSON
+ *  shape) and the round-trip time in ms. */
+export interface XmlRpcResult {
+  value: unknown;
+  elapsedMs: number;
+}
+
 /** Aggregate figures for the Statistics dialog; nulls render as "—". */
 export interface Statistics {
   sessionDown: number;

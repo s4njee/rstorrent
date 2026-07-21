@@ -299,6 +299,15 @@ pub struct DaemonHealth {
     pub http_max_open: i64,
 }
 
+/// One result from the raw XML-RPC console (D15): the decoded response as JSON
+/// (whatever shape the method returns) plus how long the round-trip took.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct XmlRpcResult {
+    pub value: serde_json::Value,
+    pub elapsed_ms: u64,
+}
+
 /// Ratio/time limits applied to a completed torrent. Zero disables a rule.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

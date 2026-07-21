@@ -14,7 +14,7 @@ use tauri::{AppHandle, State};
 
 use crate::ipc::{
     AddOptions, AddSource, DaemonHealth, DetailTab, FeedItem, LogLevel, Settings, Statistics,
-    TorrentMeta, Transport,
+    TorrentMeta, Transport, XmlRpcResult,
 };
 use crate::open_requests::OpenRequestState;
 use crate::rtorrent::{client::RpcClient, LoadOptions, RtorrentApi, RtorrentError};
@@ -906,6 +906,46 @@ pub async fn rss_download(
     state.log(&app, LogLevel::Info, "added from RSS", None);
     state.repoll.notify_one();
     Ok(())
+}
+
+/// Raw XML-RPC console passthrough (D15). Vets `method`/`args` against the
+/// console policy (mutation gate + always-blocked families), sends it, and
+/// returns the decoded result as JSON. `args` is the console's JSON-array text;
+/// `allow_mutations` is the per-session arm.
+#[tauri::command]
+pub async fn xmlrpc_call(
+    app: AppHandle,
+    state: St<'_>,
+    method: String,
+    args: String,
+    allow_mutations: bool,
+) -> Result<XmlRpcResult, String> {
+    let params = crate::xmlrpc_console::parse_args(&args)?;
+    crate::xmlrpc_console::check_policy(&method, &params, allow_mutations)?;
+
+    let method = method.trim().to_string();
+    let side_effecting = crate::xmlrpc_console::is_mutating(&method)
+        || method.to_ascii_lowercase().contains("multicall");
+
+    let started = std::time::Instant::now();
+    let value = state.backend().xmlrpc(&method, params).await.map_err(e)?;
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+
+    // An armed, state-changing call should be logged and reflected promptly.
+    if allow_mutations && side_effecting {
+        state.log(
+            &app,
+            LogLevel::Warn,
+            &format!("xml-rpc console: {method}"),
+            None,
+        );
+        state.repoll.notify_one();
+    }
+
+    Ok(XmlRpcResult {
+        value: crate::xmlrpc_console::value_to_json(&value),
+        elapsed_ms,
+    })
 }
 
 /// Percent-encode a string for use as a magnet `dn=` value.

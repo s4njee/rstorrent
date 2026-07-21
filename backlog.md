@@ -202,11 +202,16 @@ confirmed present; each is a labeled control with the daemon default shown.
   `protocol.choke_heuristics.*`, `schedule2`. rtorrent's deepest knobs; a GUI
   that does them justice is a project. Icebox until someone actually asks.
 
-- [ ] **D15 · Raw XML-RPC console** (M) — a hidden-by-default power tool
-  (Help ▸ hold ⌥): method name + args → pretty-printed result, with
-  `system.listMethods` autocomplete. Every capability this file will never
-  wrap stays reachable, and it doubles as our own probe UI. Read-only unless
-  "allow mutations" is armed per-session.
+- [x] **D15 · Raw XML-RPC console** (M) — a hidden-by-default power tool,
+  reached only by ⌘/Ctrl+Shift+X (the native menu can't do the "hold ⌥"
+  reveal, so there's no menu entry): method name + JSON-array args →
+  pretty-printed result, with `system.listMethods` autocomplete. Every
+  capability this file will never wrap stays reachable, and it doubles as our
+  own probe UI. A new `xmlrpc` passthrough on `RtorrentApi` (mock answers the
+  introspection calls) carries the call; policy lives in `xmlrpc_console.rs` —
+  read-only unless "allow mutations" is armed for the session, and `execute.*`
+  / `method.insert` / `method.erase` / `method.set_key` are refused always
+  (also scanned inside `*.multicall` args so they can't be smuggled). Shipped.
 
 - [x] **D16 · Daemon health panel** (M) — the Statistics dialog gains a
   **Daemon** tab: `system.client_version`/`api_version`, `session.path`,
@@ -246,7 +251,7 @@ confirmed present; each is a labeled control with the daemon default shown.
 - **v1.6 — "network"**: D7, D8, D9, D11, B16+C16 as one Peers pass — ✅ shipped
 - **v1.7 — "automation"**: C9, C11, C12, C13, C14, B14 — ✅ shipped
 - **v2.0 — "seedbox"**: B10, D12, D13, D16, B11 ✅ shipped · C22 deferred
-- Anytime: D3, D5, D6, D10, D15, C17, C19, C23, C24, C25
+- Anytime: D3, D5, D6, D10, C17, C19, C23, C24, C25 (D15 ✅ shipped)
 - Icebox: D14, B18–B22
 
 ## Non-goals (unchanged, deliberate)

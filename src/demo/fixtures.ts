@@ -266,6 +266,47 @@ function bitfield(chunks: number, done: number): string {
   return hex;
 }
 
+/** A representative slice of rtorrent's method table for the XML-RPC console
+ *  (D15) autocomplete in the browser demo. */
+export const xmlrpcMethods: string[] = [
+  "system.listMethods",
+  "system.client_version",
+  "system.api_version",
+  "session.path",
+  "throttle.global_up.rate",
+  "throttle.global_down.rate",
+  "throttle.global_up.max_rate.set",
+  "d.multicall2",
+  "d.name",
+  "d.size_bytes",
+  "d.complete",
+  "d.start",
+  "d.stop",
+  "load.normal",
+];
+
+/** Canned XML-RPC console response for the demo: the method table for
+ *  `system.listMethods`, a plausible value for a couple of getters, else a
+ *  short note. `elapsedMs` fills the status line. */
+export function xmlrpcResult(method: string): {
+  value: unknown;
+  elapsedMs: number;
+} {
+  const table: Record<string, unknown> = {
+    "system.listMethods": xmlrpcMethods,
+    "system.client_version": "0.9.8",
+    "system.api_version": "0.13.8",
+    "session.path": "/home/demo/.session/",
+    "throttle.global_up.rate": 3670016,
+    "throttle.global_down.rate": 12582912,
+  };
+  const value =
+    method in table
+      ? table[method]
+      : `demo backend: '${method}' returns live data against a real daemon`;
+  return { value, elapsedMs: 3 };
+}
+
 /** Detail payload (pieces bar) for a torrent's General tab, sized to its own
  *  completion so the bar matches the row. */
 export function piecesDetail(hash: string): DetailPayload {

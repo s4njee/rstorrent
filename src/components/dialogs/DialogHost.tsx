@@ -12,6 +12,7 @@ import { StatisticsDialog } from "./StatisticsDialog";
 import { RateLimitDialog } from "./RateLimitDialog";
 import { TuneNetworkDialog } from "./TuneNetworkDialog";
 import { ShutdownDialog } from "./ShutdownDialog";
+import { XmlRpcConsoleDialog } from "./XmlRpcConsoleDialog";
 
 export function DialogHost() {
   const dialog = useUi((s) => s.dialog);
@@ -34,6 +35,8 @@ export function DialogHost() {
       return <TuneNetworkDialog />;
     case "shutdown":
       return <ShutdownDialog />;
+    case "xmlrpc":
+      return <XmlRpcConsoleDialog />;
     default:
       return null;
   }

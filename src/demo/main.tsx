@@ -34,6 +34,8 @@ mockIPC(
         return fx.statistics;
       case "daemon_health":
         return fx.daemonHealth;
+      case "xmlrpc_call":
+        return fx.xmlrpcResult((args as { method: string }).method);
       case "take_open_requests":
         return [];
       case "set_detail_watch": {
@@ -95,6 +97,14 @@ function clickNav(label: string) {
   (el as HTMLElement | undefined)?.click();
 }
 
+/** Click a button by its exact visible label (for scripted demo screens). */
+function clickButton(label: string) {
+  const el = Array.from(document.querySelectorAll("button")).find(
+    (b) => b.textContent?.trim() === label,
+  );
+  (el as HTMLElement | undefined)?.click();
+}
+
 function drive() {
   void emit("state://snapshot", fx.snapshot);
   const ui = useUi.getState();
@@ -108,6 +118,12 @@ function drive() {
     case "prefs":
       ui.openDialog("prefs");
       setTimeout(() => clickNav("Connection"), 80);
+      break;
+    case "xmlrpc":
+      ui.select("C3");
+      ui.openDialog("xmlrpc");
+      // Fire the default method so the result pane is populated for the shot.
+      setTimeout(() => clickButton("Run"), 160);
       break;
     default:
       ui.select("C3");

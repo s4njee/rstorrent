@@ -1026,6 +1026,12 @@ impl RtorrentApi for RpcClient {
     async fn shutdown(&self) -> Result<()> {
         self.call("system.shutdown.normal", &[]).await.map(|_| ())
     }
+
+    async fn xmlrpc(&self, method: &str, params: Vec<Value>) -> Result<Value> {
+        // A thin passthrough to the private low-level call; the command layer
+        // has already vetted the method against the console's policy (D15).
+        self.call(method, &params).await
+    }
 }
 
 #[cfg(test)]

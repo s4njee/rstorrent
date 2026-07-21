@@ -20,6 +20,7 @@ import type {
   Transport,
   TuningPreview,
   TuningResult,
+  XmlRpcResult,
 } from "./types";
 
 /** Source for an add request: a local .torrent file or a magnet/URL string. */
@@ -230,6 +231,19 @@ export function rssDownload(
   savePath: string,
 ): Promise<void> {
   return invoke("rss_download", { link, label, savePath });
+}
+
+/**
+ * Raw XML-RPC console passthrough (D15). `args` is JSON-array text; the backend
+ * enforces the read-only / mutation policy and rejects blocked methods, so a
+ * rejected promise here carries the user-facing reason.
+ */
+export function xmlrpcCall(
+  method: string,
+  args: string,
+  allowMutations: boolean,
+): Promise<XmlRpcResult> {
+  return invoke("xmlrpc_call", { method, args, allowMutations });
 }
 
 /** Hydrate the Log tab with the current ring-buffer contents. */

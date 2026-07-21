@@ -46,6 +46,13 @@ export function useKeyboardShortcuts() {
         ui.selectAll(visibleHashes());
         return;
       }
+      // ⌘⇧X — the hidden entry point to the raw XML-RPC console (D15). Stays
+      // active even while typing, since it's the tool's only way in.
+      if (mod && e.shiftKey && e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        ui.openDialog("xmlrpc");
+        return;
+      }
       // Note: ⌘O / ⌘⇧O (add file/magnet) and ⌘, (Preferences) are owned by the
       // native menu, which intercepts them before the webview — see menu.rs.
 

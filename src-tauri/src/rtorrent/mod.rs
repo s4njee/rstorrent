@@ -257,6 +257,12 @@ pub trait RtorrentApi: Send + Sync {
 
     /// Ask the daemon to shut down cleanly (`system.shutdown.normal`) (D13).
     async fn shutdown(&self) -> Result<()>;
+
+    /// Raw XML-RPC passthrough for the console power tool (D15). Sends `method`
+    /// with `params` verbatim and returns the decoded value. All policy — the
+    /// mutation gate and the always-blocked `execute.*` / `method.insert`
+    /// families — is enforced at the command layer, not here.
+    async fn xmlrpc(&self, method: &str, params: Vec<xmlrpc::Value>) -> Result<xmlrpc::Value>;
 }
 
 /// Build the appropriate backend for the given settings. When `mock` is set (or

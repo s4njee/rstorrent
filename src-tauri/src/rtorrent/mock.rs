@@ -13,12 +13,37 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 
+use super::xmlrpc::Value;
 use super::{LoadOptions, RawGlobal, RawTorrent, Result, RtorrentApi};
 use crate::ipc::{FileNode, PeerRow, TrackerRow};
 
 const GIB: f64 = 1_073_741_824.0;
 const MIB: f64 = 1_048_576.0;
 const KIB: f64 = 1_024.0;
+
+/// A small, representative slice of rtorrent's method table for the XML-RPC
+/// console (D15) in mock mode: some read-only getters, a couple of mutating
+/// setters, and one `execute.*` entry, so autocomplete and the read-only /
+/// mutating / blocked policy paths are all exercisable without a daemon.
+const MOCK_METHODS: &[&str] = &[
+    "system.listMethods",
+    "system.client_version",
+    "system.api_version",
+    "system.library_version",
+    "session.path",
+    "throttle.global_up.rate",
+    "throttle.global_down.rate",
+    "throttle.global_up.max_rate",
+    "throttle.global_up.max_rate.set",
+    "d.multicall2",
+    "d.name",
+    "d.size_bytes",
+    "d.complete",
+    "d.start",
+    "d.stop",
+    "load.normal",
+    "execute.throw",
+];
 
 /// Mutable fixture state guarded by a mutex (locks are held only for the brief,
 /// non-awaiting critical sections that read or mutate the torrent list).
@@ -534,6 +559,32 @@ impl RtorrentApi for MockClient {
 
     async fn shutdown(&self) -> Result<()> {
         Ok(())
+    }
+
+    async fn xmlrpc(&self, method: &str, _params: Vec<super::xmlrpc::Value>) -> Result<Value> {
+        // There's no daemon behind the mock, so answer the introspection calls
+        // that make the console demoable (autocomplete + a real-looking result)
+        // and fault on anything that would need actual rtorrent state.
+        match method {
+            "system.listMethods" => Ok(Value::Array(
+                MOCK_METHODS
+                    .iter()
+                    .map(|m| Value::Str((*m).to_string()))
+                    .collect(),
+            )),
+            "system.client_version" => Ok(Value::Str("0.9.8".into())),
+            "system.api_version" => Ok(Value::Str("0.13.8".into())),
+            "system.library_version" => Ok(Value::Str("0.13.8".into())),
+            "session.path" => Ok(Value::Str("/home/mock/.session/".into())),
+            "throttle.global_up.rate" => Ok(Value::Int(3_670_016)),
+            "throttle.global_down.rate" => Ok(Value::Int(12_582_912)),
+            _ => Err(super::RtorrentError::Fault {
+                code: -506,
+                message: format!(
+                    "mock backend: '{method}' is not implemented (connect to a real rtorrent to run it)"
+                ),
+            }),
+        }
     }
 
     async fn set_dht(&self, _enabled: bool) -> Result<()> {
