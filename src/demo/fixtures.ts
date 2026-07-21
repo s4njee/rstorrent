@@ -266,6 +266,23 @@ function bitfield(chunks: number, done: number): string {
   return hex;
 }
 
+/** Per-chunk peer availability (`d.chunks_seen`), base64-encoded: a gentle
+ *  swarm wave of 2..6 peers with one scarce single-peer valley, mirroring the
+ *  mock backend so the demo availability bar looks like a real swarm. */
+function availability(chunks: number): string {
+  const bytes = new Uint8Array(chunks);
+  for (let i = 0; i < chunks; i++) {
+    const phase = i / chunks;
+    bytes[i] =
+      phase >= 0.42 && phase < 0.52
+        ? 1
+        : Math.round(Math.sin(phase * Math.PI * 3) * 2.5 + 3.5);
+  }
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
 /** Detail payload (pieces bar) for a torrent's General tab, sized to its own
  *  completion so the bar matches the row. */
 export function piecesDetail(hash: string): DetailPayload {
@@ -280,6 +297,7 @@ export function piecesDetail(hash: string): DetailPayload {
       completedChunks: done,
       chunkSize: 512 * KIB,
       bitfield: bitfield(chunks, done),
+      availability: availability(chunks),
     },
   };
 }

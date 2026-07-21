@@ -7,7 +7,17 @@ import {
   hasPiece,
   countPieces,
   bucketFractions,
+  availabilityToBytes,
+  bucketAverages,
+  distributedCopies,
 } from "./bitfield";
+
+/** Base64 of the given per-chunk peer counts, as the backend would send it. */
+function b64(counts: number[]): string {
+  let bin = "";
+  for (const c of counts) bin += String.fromCharCode(c);
+  return btoa(bin);
+}
 
 describe("bitfieldToBytes / hasPiece", () => {
   it("reads MSB-first within each byte", () => {
@@ -83,5 +93,71 @@ describe("bucketFractions", () => {
     expect(Array.from(bucketFractions(new Uint8Array(), 0, 4))).toEqual([
       0, 0, 0, 0,
     ]);
+  });
+});
+
+describe("availabilityToBytes", () => {
+  it("decodes base64 into full-range per-chunk counts", () => {
+    expect(Array.from(availabilityToBytes(b64([0, 1, 2, 255])))).toEqual([
+      0, 1, 2, 255,
+    ]);
+  });
+
+  it("returns empty for blank or garbled input", () => {
+    expect(availabilityToBytes("").length).toBe(0);
+    expect(availabilityToBytes("   ").length).toBe(0);
+    expect(availabilityToBytes("!!not base64!!").length).toBe(0);
+  });
+});
+
+describe("bucketAverages", () => {
+  it("averages each bucket's peer count and reports the peak", () => {
+    const c = availabilityToBytes(b64([4, 4, 0, 0]));
+    const { avg, max } = bucketAverages(c, 4, 2);
+    expect(Array.from(avg)).toEqual([4, 0]);
+    expect(max).toBe(4);
+  });
+
+  it("averages a straddling bucket", () => {
+    const c = availabilityToBytes(b64([2, 4]));
+    const { avg, max } = bucketAverages(c, 2, 1);
+    expect(avg[0]).toBeCloseTo(3);
+    expect(max).toBeCloseTo(3);
+  });
+
+  it("handles more buckets than chunks without dropping any", () => {
+    const c = availabilityToBytes(b64([5, 5]));
+    const { avg, max } = bucketAverages(c, 2, 4);
+    expect(avg.length).toBe(4);
+    expect(Array.from(avg).every((v) => v === 5)).toBe(true);
+    expect(max).toBe(5);
+  });
+
+  it("degenerate inputs return zeroed avg and zero max", () => {
+    const { avg, max } = bucketAverages(new Uint8Array(), 0, 3);
+    expect(Array.from(avg)).toEqual([0, 0, 0]);
+    expect(max).toBe(0);
+  });
+});
+
+describe("distributedCopies", () => {
+  it("is the rarest chunk's count plus the fraction above it", () => {
+    // rarest = 1, three of four chunks exceed it → 1 + 3/4.
+    const c = availabilityToBytes(b64([1, 2, 2, 2]));
+    expect(distributedCopies(c, 4)).toBeCloseTo(1.75);
+  });
+
+  it("uniform availability reports whole copies", () => {
+    const c = availabilityToBytes(b64([3, 3, 3]));
+    expect(distributedCopies(c, 3)).toBe(3);
+  });
+
+  it("a single scarce chunk floors the whole torrent", () => {
+    const c = availabilityToBytes(b64([0, 9, 9, 9]));
+    expect(distributedCopies(c, 4)).toBeCloseTo(0.75);
+  });
+
+  it("no data means zero copies", () => {
+    expect(distributedCopies(new Uint8Array(), 0)).toBe(0);
   });
 });
