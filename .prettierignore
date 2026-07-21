@@ -1,4 +1,6 @@
 dist
+dist-web
+target
 src-tauri/target
 .claude
 design

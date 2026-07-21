@@ -14,6 +14,8 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import ReactDOM from "react-dom/client";
+import { setBackend } from "../ipc/backend";
+import { tauriBackend } from "../ipc/tauri";
 import "../theme/tokens.css";
 import "../theme/global.css";
 import * as fx from "./fixtures";
@@ -54,6 +56,10 @@ mockIPC(
   },
   { shouldMockEvents: true },
 );
+
+// The demo drives the real UI over Tauri's mock IPC, so it registers the Tauri
+// backend — its invoke/listen calls are intercepted by mockIPC above.
+setBackend(tauriBackend);
 
 // Smart filters are read from localStorage when the UI store initializes, so
 // seed them before the store module is imported below.

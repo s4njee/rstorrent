@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><style>
+html,body{margin:0;height:100%;background:#0f1114;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#c8cdd6}
+a{color:#58c4dd}a:hover{color:#8fdcee}
+input{font-family:ui-monospace,Menlo,monospace}
+</style></helmet>
+<div style="display:flex;flex-direction:column;height:100vh;min-height:640px;background:#0f1114;font-size:11.5px">
+
+  <!-- app bar -->
+  <div style="display:flex;align-items:center;gap:14px;padding:0 16px;height:46px;flex:none;background:#191c21;border-bottom:1px solid #000">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="width:22px;height:22px;border-radius:5px;background:#1d2b33;border:1px solid #58c4dd;display:flex;align-items:center;justify-content:center;color:#8fdcee;font-weight:700;font-size:12px">r</span>
+      <span style="font-weight:700;color:#d6dae2;font-size:12.5px;letter-spacing:.02em">rtorrent<span style="color:#565e6b;font-weight:400"> / web</span></span>
+    </div>
+    <span style="width:1px;height:20px;background:#2a2f38"></span>
+    <div style="display:flex;gap:4px">
+      <button style="display:flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid #58c4dd;background:#1d2b33;color:#8fdcee;border-radius:5px;font-size:11px;font-weight:600;font-family:inherit"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1v10M1 6h10" stroke="#8fdcee" stroke-width="1.8" fill="none"></path></svg>Add</button>
+      <button style="display:flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid #2a2f38;background:#22262d;color:#c8cdd6;border-radius:5px;font-size:11px;font-family:inherit"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 1v5a3.5 3.5 0 0 0 7 0V1" stroke="#8b93a2" stroke-width="1.6" fill="none"></path><path d="M1 1.5h3M8 1.5h3" stroke="#8b93a2" stroke-width="1.6"></path></svg>Magnet</button>
+    </div>
+    <span style="flex:1"></span>
+    <input value="" placeholder="/ search torrents" style="width:240px;padding:5px 11px;border:1px solid #2a2f38;border-radius:5px;background:#0f1114;font-size:11px;color:#c8cdd6" readonly="readonly"></input>
+    <div style="display:flex;align-items:center;gap:14px;font-size:10.5px">
+      <span style="color:#8fdcee">↓ 9.5 MiB/s</span>
+      <span style="color:#7fd8a4">↑ 2.6 MiB/s</span>
+    </div>
+    <span style="width:1px;height:20px;background:#2a2f38"></span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:#7fd8a4"><span style="width:7px;height:7px;border-radius:50%;background:#57d597"></span>connected</span>
+      <button style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;background:none;border-radius:5px" title="Settings"><svg width="14" height="14" viewBox="0 0 12 12"><path d="M1 3h10M1 6h10M1 9h10" stroke="#8b93a2" stroke-width="1.3"></path><circle cx="4" cy="3" r="1.6" fill="#191c21" stroke="#8b93a2" stroke-width="1.3"></circle><circle cx="8" cy="6" r="1.6" fill="#191c21" stroke="#8b93a2" stroke-width="1.3"></circle><circle cx="3.5" cy="9" r="1.6" fill="#191c21" stroke="#8b93a2" stroke-width="1.3"></circle></svg></button>
+      <span style="width:24px;height:24px;border-radius:50%;background:#22262d;border:1px solid #2a2f38;display:flex;align-items:center;justify-content:center;color:#8b93a2;font-size:10px">op</span>
+    </div>
+  </div>
+
+  <!-- body -->
+  <div style="display:flex;flex:1;min-height:0">
+    <!-- sidebar -->
+    <div style="width:186px;flex:none;background:#14161a;border-right:1px solid #23272e;padding:12px 8px;overflow-y:auto;font-size:10.5px">
+      <div style="padding:2px 8px 5px;font-size:9.5px;font-weight:700;color:#565e6b;text-transform:uppercase;letter-spacing:.08em">Status</div>
+      <sc-for list="{{ statusNav }}" as="s" hint-placeholder-count="7">
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:{{ s.bg }};border-left:2px solid {{ s.edge }};color:{{ s.fg }}">
+          <span style="width:7px;height:7px;border-radius:50%;flex:none;background:{{ s.dot }}"></span>
+          <span style="flex:1">{{ s.name }}</span><span style="color:#565e6b">{{ s.n }}</span>
+        </div>
+      </sc-for>
+      <div style="padding:14px 8px 5px;font-size:9.5px;font-weight:700;color:#565e6b;text-transform:uppercase;letter-spacing:.08em">Labels</div>
+      <sc-for list="{{ labelNav }}" as="s" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-left:2px solid transparent;color:#8b93a2">
+          <span style="color:#565e6b">#</span><span style="flex:1">{{ s.name }}</span><span style="color:#565e6b">{{ s.n }}</span>
+        </div>
+      </sc-for>
+      <div style="padding:14px 8px 5px;font-size:9.5px;font-weight:700;color:#565e6b;text-transform:uppercase;letter-spacing:.08em">Trackers</div>
+      <sc-for list="{{ trackerNav }}" as="s" hint-placeholder-count="4">
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-left:2px solid transparent;color:#8b93a2">
+          <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</span><span style="color:#565e6b">{{ s.n }}</span>
+        </div>
+      </sc-for>
+      <div style="margin:16px 8px 0;padding:10px;border:1px solid #23272e;border-radius:6px;background:#171a1f">
+        <div style="display:flex;justify-content:space-between;font-size:9.5px;color:#565e6b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px"><span>Disk</span><span>412 GiB free</span></div>
+        <div style="height:5px;border-radius:3px;background:#22262d;overflow:hidden"><div style="height:100%;width:63%;background:#58c4dd"></div></div>
+      </div>
+    </div>
+
+    <!-- main column -->
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <!-- action strip -->
+      <div style="display:flex;align-items:center;gap:2px;padding:6px 10px;flex:none;background:#14161a;border-bottom:1px solid #23272e">
+        <button style="display:flex;align-items:center;justify-content:center;width:26px;height:24px;border:none;background:none;border-radius:4px" title="Resume"><svg width="12" height="12" viewBox="0 0 12 12"><polygon points="3,1.5 10.5,6 3,10.5" fill="#8b93a2"></polygon></svg></button>
+        <button style="display:flex;align-items:center;justify-content:center;width:26px;height:24px;border:none;background:none;border-radius:4px" title="Pause"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="2.5" y="1.5" width="2.6" height="9" fill="#8b93a2"></rect><rect x="7" y="1.5" width="2.6" height="9" fill="#8b93a2"></rect></svg></button>
+        <button style="display:flex;align-items:center;justify-content:center;width:26px;height:24px;border:none;background:none;border-radius:4px" title="Remove"><svg width="13" height="13" viewBox="0 0 12 12"><path d="M1.5 3h9M3 3l.7 7h4.6L9 3M4.8 3V1.6h2.4V3" stroke="#8b93a2" stroke-width="1.3" fill="none"></path></svg></button>
+        <span style="width:1px;height:16px;background:#2a2f38;margin:0 5px"></span>
+        <button style="display:flex;align-items:center;justify-content:center;width:26px;height:24px;border:none;background:none;border-radius:4px" title="Move up queue"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 10.5V2M2.8 5.2 6 2l3.2 3.2" stroke="#8b93a2" stroke-width="1.6" fill="none"></path></svg></button>
+        <button style="display:flex;align-items:center;justify-content:center;width:26px;height:24px;border:none;background:none;border-radius:4px" title="Move down queue"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 1.5V10M2.8 6.8 6 10l3.2-3.2" stroke="#8b93a2" stroke-width="1.6" fill="none"></path></svg></button>
+        <span style="flex:1"></span>
+        <span style="font-size:10.5px;color:#565e6b">1 of 10 selected</span>
+      </div>
+
+      <!-- table -->
+      <div style="flex:1;min-height:0;overflow-y:auto;background:#14161a">
+        <div style="display:grid;grid-template-columns:minmax(220px,1fr) 70px 100px 90px 52px 52px 80px 80px 66px 50px 78px minmax(90px,120px);align-items:center;position:sticky;top:0;background:#191c21;border-bottom:1px solid #23272e;font-size:10px;font-weight:600;color:#565e6b;text-transform:uppercase;letter-spacing:.05em;z-index:1">
+          <span style="padding:6px 12px">Name ▾</span><span style="padding:6px;text-align:right">Size</span><span style="padding:6px">Done</span><span style="padding:6px">Status</span><span style="padding:6px;text-align:right">S</span><span style="padding:6px;text-align:right">P</span><span style="padding:6px;text-align:right">Down</span><span style="padding:6px;text-align:right">Up</span><span style="padding:6px;text-align:right">ETA</span><span style="padding:6px;text-align:right">Ratio</span><span style="padding:6px">Label</span><span style="padding:6px">Tracker</span>
+        </div>
+        <sc-for list="{{ rows }}" as="t" hint-placeholder-count="10">
+          <div style="display:grid;grid-template-columns:minmax(220px,1fr) 70px 100px 90px 52px 52px 80px 80px 66px 50px 78px minmax(90px,120px);align-items:center;height:25px;background:{{ t.bg }};border-bottom:1px solid #1a1d22" style-hover="background:#1a2026">
+            <span style="padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d6dae2">{{ t.name }}</span>
+            <span style="padding:0 6px;text-align:right;font-size:10.5px;color:#8b93a2">{{ t.size }}</span>
+            <span style="padding:0 6px;display:flex;align-items:center;gap:6px"><span style="flex:1;height:8px;background:#22262d;border-radius:1px;overflow:hidden"><span style="display:block;height:100%;width:{{ t.doneW }};background:{{ t.bar }}"></span></span><span style="font-size:9.5px;color:#565e6b;width:26px;text-align:right">{{ t.pct }}</span></span>
+            <span style="padding:0 6px;font-size:10.5px;white-space:nowrap;overflow:hidden;color:{{ t.stFg }}">{{ t.statusLc }}</span>
+            <span style="padding:0 6px;text-align:right;font-size:10.5px;color:#8b93a2">{{ t.seedsN }}</span>
+            <span style="padding:0 6px;text-align:right;font-size:10.5px;color:#8b93a2">{{ t.peersN }}</span>
+            <span style="padding:0 6px;text-align:right;font-size:10.5px;color:#8fdcee">{{ t.dl }}</span>
+            <span style="padding:0 6px;text-align:right;font-size:10.5px;color:#7fd8a4">{{ t.ul }}</span>
+            <span style="padding:0 6px;text-align:right;font-size:10.5px;white-space:nowrap;color:#8b93a2">{{ t.eta }}</span>
+            <span style="padding:0 6px;text-align:right;font-size:10.5px;color:#8b93a2">{{ t.ratio }}</span>
+            <span style="padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;color:#565e6b">{{ t.label }}</span>
+            <span style="padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;color:#565e6b">{{ t.tracker }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- detail panel -->
+      <div style="flex:none;border-top:1px solid #23272e;background:#191c21">
+        <div style="display:flex;align-items:center;gap:14px;padding:7px 14px 0;font-size:11px">
+          <span style="padding:2px 0 7px;font-weight:600;color:#8fdcee;border-bottom:2px solid #58c4dd">general</span>
+          <span style="padding:2px 0 7px;color:#565e6b">trackers</span><span style="padding:2px 0 7px;color:#565e6b">peers</span><span style="padding:2px 0 7px;color:#565e6b">content</span><span style="padding:2px 0 7px;color:#565e6b">speed</span><span style="padding:2px 0 7px;color:#565e6b">log</span>
+          <span style="flex:1"></span>
+          <span style="padding:2px 0 7px;color:#565e6b;font-size:10px">Fedora-Workstation-Live-x86_64-41-1.4.iso</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px 24px;padding:10px 14px;border-top:1px solid #23272e;background:#14161a;font-size:10.5px">
+          <span><b style="color:#565e6b;font-weight:600">active:</b> 2h14m</span><span><b style="color:#565e6b;font-weight:600">down:</b> 1.6 GiB</span><span><b style="color:#565e6b;font-weight:600">up:</b> 312 MiB</span><span><b style="color:#565e6b;font-weight:600">ratio:</b> 0.19</span>
+          <span><b style="color:#565e6b;font-weight:600">eta:</b> 4m12s</span><span><b style="color:#565e6b;font-weight:600">conns:</b> 34/100</span><span><b style="color:#565e6b;font-weight:600">dl-limit:</b> ∞</span><span><b style="color:#565e6b;font-weight:600">ul-limit:</b> 5.0M</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- footer -->
+  <div style="display:flex;align-items:center;gap:18px;padding:5px 16px;height:26px;flex:none;box-sizing:border-box;background:#191c21;border-top:1px solid #000;font-size:10.5px;color:#565e6b">
+    <span>rtorrent 0.9.8 · SCGI @ 127.0.0.1:5000</span><span>dht: 387 nodes</span>
+    <span style="flex:1"></span>
+    <span>10 torrents</span><span style="color:#8fdcee">↓ 9.5 MiB/s</span><span style="color:#7fd8a4">↑ 2.6 MiB/s</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const base = [
+      {name:'ubuntu-24.04.2-desktop-amd64.iso', size:'5.8 GiB', done:100, st:'sd', status:'Seeding', seedsN:'142', peersN:'87', dl:'—', ul:'1.2 MiB/s', eta:'∞', ratio:'2.41', label:'linux-iso', tracker:'torrent.ubuntu…'},
+      {name:'debian-12.9.0-amd64-netinst.iso', size:'631 MiB', done:100, st:'sd', status:'Seeding', seedsN:'98', peersN:'12', dl:'—', ul:'214 KiB/s', eta:'∞', ratio:'3.87', label:'linux-iso', tracker:'bttracker.debi…'},
+      {name:'Fedora-Workstation-Live-x86_64-41-1.4.iso', size:'2.3 GiB', done:67.4, st:'dl', status:'Downloading', seedsN:'34', peersN:'12', dl:'8.4 MiB/s', ul:'620 KiB/s', eta:'4m12s', ratio:'0.19', label:'linux-iso', tracker:'linuxtracker.o…', sel:true},
+      {name:'archlinux-2026.07.01-x86_64.iso', size:'1.1 GiB', done:23.1, st:'dl', status:'Downloading', seedsN:'18', peersN:'6', dl:'1.1 MiB/s', ul:'88 KiB/s', eta:'13m40s', ratio:'0.04', label:'linux-iso', tracker:'linuxtracker.o…'},
+      {name:'linuxmint-22.1-cinnamon-64bit.iso', size:'2.8 GiB', done:45.2, st:'pa', status:'Paused', seedsN:'—', peersN:'—', dl:'—', ul:'—', eta:'—', ratio:'0.11', label:'linux-iso', tracker:'linuxtracker.o…'},
+      {name:'Big.Buck.Bunny.2008.2160p.mkv', size:'7.9 GiB', done:100, st:'sd', status:'Seeding', seedsN:'211', peersN:'140', dl:'—', ul:'980 KiB/s', eta:'∞', ratio:'5.02', label:'video', tracker:'tracker.blend…'},
+      {name:'Sintel.2010.2160p.mkv', size:'5.1 GiB', done:91.8, st:'dl', status:'Downloading', seedsN:'26', peersN:'9', dl:'2.9 MiB/s', ul:'410 KiB/s', eta:'2m28s', ratio:'0.44', label:'video', tracker:'tracker.blend…'},
+      {name:'openSUSE-Tumbleweed-DVD-x86_64.iso', size:'4.4 GiB', done:12.0, st:'st', status:'Stalled', seedsN:'0', peersN:'2', dl:'0 B/s', ul:'—', eta:'∞', ratio:'0.01', label:'linux-iso', tracker:'linuxtracker.o…'},
+      {name:'raspios-bookworm-arm64-full.img.xz', size:'2.7 GiB', done:100, st:'pa', status:'Paused', seedsN:'—', peersN:'—', dl:'—', ul:'—', eta:'—', ratio:'1.08', label:'sbc', tracker:'downloads.ras…'},
+      {name:'Cosmos.Laundromat.2015.4K.mkv', size:'3.2 GiB', done:66.7, st:'er', status:'Trk error', seedsN:'0', peersN:'0', dl:'—', ul:'—', eta:'—', ratio:'0.31', label:'video', tracker:'tracker.blend…'},
+    ];
+    const bar = {dl:'#58c4dd',sd:'#57d597',pa:'#4a515c',st:'#d5a04c',er:'#e05d5d'};
+    const stFg = {dl:'#8fdcee',sd:'#7fd8a4',pa:'#565e6b',st:'#d5a04c',er:'#e05d5d'};
+    const rows = base.map((t,i)=>({...t,
+      doneW: t.done+'%', pct: Math.round(t.done)+'%', statusLc: t.status.toLowerCase(),
+      bar: bar[t.st], stFg: stFg[t.st],
+      bg: t.sel?'#1d2b33':(i%2?'#171a1f':'#14161a')}));
+
+    const dots = {all:'#58c4dd', downloading:'#58c4dd', seeding:'#57d597', completed:'#7fd8a4', paused:'#4a515c', stalled:'#d5a04c', error:'#e05d5d'};
+    const statusNav = [
+      {name:'all', n:10, active:true}, {name:'downloading', n:3}, {name:'seeding', n:4},
+      {name:'completed', n:5}, {name:'paused', n:2}, {name:'stalled', n:1}, {name:'error', n:1},
+    ].map(s=>({...s, dot:dots[s.name],
+      fg:s.active?'#8fdcee':'#8b93a2', bg:s.active?'#1d2b33':'transparent',
+      edge:s.active?'#58c4dd':'transparent'}));
+
+    const labelNav = [{name:'linux-iso',n:6},{name:'video',n:3},{name:'sbc',n:1}];
+    const trackerNav = [{name:'torrent.ubuntu.com',n:2},{name:'bttracker.debian.org',n:2},{name:'linuxtracker.org',n:4},{name:'tracker.blender.org',n:3}];
+
+    return { rows, statusNav, labelNav, trackerNav };
+  }
+}
+</script>
+</body>
+</html>

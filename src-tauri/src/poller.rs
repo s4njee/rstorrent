@@ -595,30 +595,17 @@ async fn build_snapshot(
     };
 
     Snapshot {
-        globals: GlobalStats {
-            down_rate: g.down_rate,
-            up_rate: g.up_rate,
-            down_rate_limit: g.down_rate_limit,
-            up_rate_limit: g.up_rate_limit,
-            dht_nodes: g.dht_nodes,
-            free_space,
-            turtle_active,
-        },
+        // Total-volume size is only surfaced by the web disk card; the desktop
+        // status bar shows free space alone, so `disk_size` stays `None` here
+        // (WE0-S2). Globals assembly itself is shared with the web server.
+        globals: rtorrent_core::snapshot::to_globals(&g, free_space, None, turtle_active),
         connection: state.conn(),
         torrents,
     }
 }
 
 fn empty_globals() -> GlobalStats {
-    GlobalStats {
-        down_rate: 0,
-        up_rate: 0,
-        down_rate_limit: 0,
-        up_rate_limit: 0,
-        dht_nodes: 0,
-        free_space: None,
-        turtle_active: false,
-    }
+    rtorrent_core::snapshot::empty_globals()
 }
 
 /// The ~2s detail poll for the watched torrent/tab.

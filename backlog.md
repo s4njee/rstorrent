@@ -72,8 +72,14 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
   (`p.snubbed.set`), Disconnect (`p.disconnect`), or Ban (`p.banned.set` +
   disconnect). Targets the peer by `HASH:p<p.id>`. Shipped with C16 (v1.6).
 - [ ] **B17 · Menu-bar item + dock menu** (M).
-- [ ] **B18 · Windows/Linux** (XL) · **B19 · Web UI** (L) · **B20 · l10n** (M)
-  · **B21 · Import from other clients** (M) · **B22 · Light theme** (S) — icebox.
+- [~] **B19 · Web UI** (L) — **in progress.** A self-hosted `rstorrent-web` axum
+  server (in the workspace) serves the shared React UI over an HTTP backend:
+  live table, filters, detail tabs, mutations, upload/magnet adds, single-password
+  auth. Read/write verified against the mock end-to-end; live-daemon QA, pixel
+  parity, browser add-dialog wiring, and a Playwright suite remain. See
+  `design/tasks.md` (epics WE0–WE6) and [docs/web-setup.md](docs/web-setup.md).
+- [ ] **B18 · Windows/Linux** (XL) · **B20 · l10n** (M) · **B21 · Import from
+  other clients** (M) · **B22 · Light theme** (S) — icebox.
 - [ ] **C5 · Label rename in sidebar** (S).
 - [ ] **C8 · Availability overlay on pieces bar** (M) — `d.chunks_seen` confirmed.
 - [x] **C9 · Max-active-downloads queue** (M) — Preferences → Speed → Queue.

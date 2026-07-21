@@ -4,16 +4,23 @@
 //! [`AppState`], starts the background poller, and exposes the command surface.
 //! Module map:
 //!   * [`ipc`]         — serde types shared with the frontend (mirrors `src/ipc/types.ts`).
-//!   * [`rtorrent`]    — all daemon communication (SCGI/XML-RPC) + the mock backend.
+//!   * [`rtorrent`]    — all daemon communication (SCGI/XML-RPC) + the mock
+//!     backend, re-exported from the `rtorrent-core` crate.
 //!   * [`state`]       — the shared `AppState` (backend, settings, log, caches).
 //!   * [`settings`]    — settings model + JSON persistence.
 //!   * [`log`]         — bounded app event log.
 //!   * [`poller`]      — background polling loops that push snapshots to the UI.
 //!   * [`commands`]    — `#[tauri::command]` handlers.
-//!   * [`torrent_file`]— `.torrent` metadata parsing for the Add dialog.
+//!   * [`torrent_file`]— `.torrent` metadata parsing (re-exported from `rtorrent-core`).
 //!   * `wsl`           — (Windows only) path translation across the WSL boundary.
 
 pub mod ipc;
+
+// The daemon client, keychain, and .torrent parsing now live in the shared,
+// Tauri-free `rtorrent-core` crate. Re-export them at their historical paths so
+// the rest of the app (and its `crate::rtorrent::…` / `crate::secrets::…` /
+// `crate::torrent_file::…` references) keep working unchanged.
+pub use rtorrent_core::{rtorrent, secrets, torrent_file};
 
 mod commands;
 mod hooks;
@@ -25,14 +32,11 @@ mod notifications;
 mod open_requests;
 mod poller;
 mod rss;
-mod rtorrent;
 mod rtorrent_rc;
-mod secrets;
 mod settings;
 mod state;
 mod stats;
 mod throttles;
-mod torrent_file;
 mod turtle;
 mod watcher;
 #[cfg(target_os = "windows")]

@@ -1,0 +1,31 @@
+/*
+ * Web-shell token overrides.
+ *
+ * Loaded after tokens.css by the web entry only. The Dark Ops desktop and web
+ * specs share a palette, so the color tokens in tokens.css already carry the
+ * right hex (bg/chrome = --bg-panel, bg/surface = --bg-app, bg/page = --bg-field,
+ * bg/raised = --bg-track, …). This file only carries what genuinely differs for
+ * the browser UI: the taller row, a hover shade, the disk-card radius, and the
+ * web 12-column grid template. Keep hex out of components — it lives here.
+ */
+
+:root {
+  /* Web table rows are 25px (the desktop's are 23px). */
+  --row-height: 25px;
+
+  /* Table row hover (web design/README.md; the desktop table has no hover). */
+  --bg-row-hover: #1a2026;
+
+  /* Sidebar disk card. */
+  --radius-card: 6px;
+
+  /* The web app bar / action strip / footer metrics (design/README.md). */
+  --appbar-height: 46px;
+  --footer-height: 26px;
+  --sidebar-width: 186px;
+
+  /* The web 12-column grid template: Name · Size · Done · Status · S · P ·
+     Down · Up · ETA · Ratio · Label · Tracker. */
+  --col-template-web: minmax(220px, 1fr) 70px 100px 90px 52px 52px 80px 80px
+    66px 50px 78px minmax(90px, 120px);
+}
