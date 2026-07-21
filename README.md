@@ -14,17 +14,17 @@ WSL2 and translates paths across the boundary — see
 
 rstorrent is a *client* — it does not embed a BitTorrent engine.
 
-<!-- TODO capture (see docs/images/README.md):
 ![The rstorrent main window](docs/images/main-window.png)
--->
 
 ## Status
 
-Milestones M0–M1 are complete: a live main window (toolbar, filter sidebar,
-sortable torrent table, detail tabs, status bar) driven by a background poller,
-running against either a live daemon or the built-in mock. Verified against
-Homebrew's **rtorrent 0.16.17** on macOS, and **rtorrent 0.16.18** built in WSL
-on Windows.
+The core client and several feature slices have shipped: a live main window
+(toolbar, filter sidebar, sortable torrent table, detail tabs, status bar)
+driven by a background poller, plus a network-preferences pane, per-torrent and
+automation controls, connection profiles, native daemon views, and RSS
+auto-add. Verified against Homebrew's **rtorrent 0.16.17** on macOS, and
+**rtorrent 0.16.18** built in WSL on Windows. See [backlog.md](backlog.md) for
+the shipped-so-far list and what's next.
 
 See [plan.md](plan.md) for the architecture, [tasks.md](tasks.md) for the
 execution tracker, and [backlog.md](backlog.md) for what's being considered next.
@@ -46,19 +46,30 @@ drag & drop onto the window, ⌘V to add from the clipboard, and a watch folder.
 summary bar for bulk resume/pause/remove; a filter sidebar with status, label and
 tracker groups, plus saved smart filters that AND several dimensions together.
 
-<!-- TODO capture:
 ![Smart filters in the sidebar and the selection summary bar](docs/images/smart-filters.png)
--->
 
 **Detail tabs** — General (with a pieces bar showing which chunks have landed),
-Trackers (add/remove/enable/reannounce), Peers, Content, Speed, and Log.
+Trackers (type / announce timing / add / remove / enable / reannounce), Peers
+(with per-peer ban / snub / disconnect), Content (per-file priorities), Speed,
+and Log.
 
-<!-- TODO capture:
 ![The pieces bar on the General tab](docs/images/pieces-bar.png)
--->
 
-**Automation** — per-torrent speed limits via named throttle pools, and ratio
-groups / seed goals set globally or per label.
+**Network** — a Preferences pane for protocol encryption/PEX, an HTTP tracker
+proxy, and bind/listen addresses (bind to a VPN interface so traffic dies with
+the tunnel), plus global peer and connection-slot caps. A one-click **Tune for
+1 Gbps** menu action writes a managed block to `.rtorrent.rc` and applies it
+live.
+
+**Automation** — per-torrent speed limits via named throttle pools; ratio
+groups / seed goals (stop, or auto-remove) set globally or per label; a
+max-active-downloads queue; multiple watch folders and per-label default save
+paths; a run-on-complete command hook; and turtle mode (alternative limits on a
+manual toggle or a daily schedule).
+
+**Seedbox** — saved connection profiles to switch daemons, the daemon's own
+native views surfaced in the sidebar, a Daemon menu (save session / shut down),
+a daemon-health tab in Statistics, and RSS feeds with auto-download rules.
 
 ## Quick start
 
@@ -83,9 +94,7 @@ Install and configure a daemon per [docs/rtorrent-setup.md](docs/rtorrent-setup.
 then open **Preferences → Connection**, match the transport to your
 `.rtorrent.rc`, and hit **Test connection** — it reports the rtorrent version.
 
-<!-- TODO capture:
 ![Preferences → Connection](docs/images/preferences-connection.png)
--->
 
 ## Development
 
@@ -113,7 +122,8 @@ plan.md · tasks.md · backlog.md   # architecture, tracker, ideas
 design/                           # the "Dark Ops" design reference (authoritative)
 docs/rtorrent-setup.md            # connecting to a live rtorrent (macOS)
 docs/wsl-setup.md                 # connecting to rtorrent in WSL (Windows)
-docs/images/                      # README screenshots
+docs/images/                      # README screenshots (regenerated from the demo)
+demo.html · src/demo/             # browser demo: real UI over mocked IPC + fixtures
 src/                              # React frontend (ipc, store, components, theme)
 src-tauri/src/                    # Rust backend (rtorrent transports, poller, commands)
 src-tauri/src/wsl.rs              # Windows-only: path translation across the WSL boundary

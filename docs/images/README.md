@@ -1,25 +1,35 @@
 # README screenshots
 
-Four images, referenced from the top-level [README](../../README.md). Capture
-with **⌘⇧4 then Space**, then click the window — that grabs the window alone,
-with its shadow and no desktop behind it.
+Four images, referenced from the top-level [README](../../README.md).
 
-| File | What to have on screen |
+| File | Screen |
 |---|---|
-| `main-window.png` | Main view: a few torrents in mixed states, one selected, sidebar visible |
-| `pieces-bar.png` | A partially-downloaded torrent, General tab, pieces bar visible |
-| `smart-filters.png` | Sidebar showing a saved smart filter, plus the selection bar (select 2+ rows) |
-| `preferences-connection.png` | Preferences → Connection |
+| `main-window.png` | Main view, a torrent selected (`?screen=main`) |
+| `pieces-bar.png` | General tab with the pieces bar (`?screen=pieces`) |
+| `smart-filters.png` | A saved smart filter + a multi-select (`?screen=smart`) |
+| `preferences-connection.png` | Preferences → Connection (`?screen=prefs`) |
 
-**Shoot these in mock mode** (`RSTORRENT_MOCK=1 npm run tauri dev`) unless you
-have a reason not to. The ten fixtures cover more states than a real session
-usually does, and nothing real ends up in a committed image.
+## Regenerating them
 
-Two things that do leak if you shoot a live session: torrent names, and the
-endpoint in the Connection pane. The password field is safe — it renders as
-"•••••••• (saved)" and never holds the secret — but a real URL and username in
-`preferences-connection.png` are as public as this repo is. Use a stand-in like
-`https://seedbox.example.com/RPC2`.
+These are captured from the **browser demo** (`src/demo/`) — the real UI running
+against mocked IPC + the ten fixtures, so nothing real ends up in a committed
+image. No daemon, no desktop build.
 
-These are committed to git, so treat a replacement as permanent: the old image
-stays in history even after it's overwritten.
+```sh
+# 1. serve the demo (any free port; Tauri's 1420 may be taken)
+npx vite --port 5199 --host 127.0.0.1
+
+# 2. shoot each state with headless Chrome
+for s in main pieces smart prefs; do
+  chrome --headless=new --hide-scrollbars --window-size=1360,900 \
+    --virtual-time-budget=6000 --screenshot="$s.png" \
+    "http://127.0.0.1:5199/demo.html?screen=$s"
+done
+# then rename main→main-window, pieces→pieces-bar, smart→smart-filters,
+# prefs→preferences-connection.
+```
+
+The demo's fixtures live in [`src/demo/fixtures.ts`](../../src/demo/fixtures.ts);
+the Connection pane uses a `https://seedbox.example.com/RPC2` stand-in so no real
+endpoint leaks. These are committed to git, so a replacement is permanent — the
+old image stays in history.
