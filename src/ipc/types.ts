@@ -77,6 +77,12 @@ export interface GlobalStats {
   dhtNodes: number;
   /** Free bytes on the default save-path volume, or null if unknown/remote. */
   freeSpace: number | null;
+  /**
+   * Total bytes on that volume, or null if unknown/remote. Paired with
+   * `freeSpace` it lets the web disk card draw a used-fraction bar; the desktop
+   * status bar leaves it null and shows free space alone (WE0-S2).
+   */
+  diskSize: number | null;
   /** Whether turtle mode is currently in effect (manual or scheduled) (B14). */
   turtleActive: boolean;
 }

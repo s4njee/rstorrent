@@ -22,6 +22,7 @@ const EMPTY_GLOBALS: GlobalStats = {
   upRateLimit: 0,
   dhtNodes: 0,
   freeSpace: null,
+  diskSize: null,
   turtleActive: false,
 };
 

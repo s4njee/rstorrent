@@ -13,6 +13,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useUi } from "../../store/ui";
 import { useTorrents } from "../../store/torrents";
 import * as actions from "../../actions";
+import { capabilities } from "../../ipc/backend";
 import { setLabel, setLocation, setTorrentLimits } from "../../ipc/commands";
 import {
   PlayIcon,
@@ -80,11 +81,26 @@ export function ContextMenu() {
   };
 
   const chooseLocation = async () => {
-    const dir = await open({ directory: true });
-    if (typeof dir === "string") {
+    // Desktop opens a native folder picker; the browser has none, so it prompts
+    // for a path on the daemon host.
+    let dir: string | null = null;
+    if (capabilities().nativeDialogs) {
+      const picked = await open({ directory: true });
+      dir = typeof picked === "string" ? picked : null;
+    } else {
+      dir = window.prompt("New location (a path on the daemon host):");
+    }
+    if (dir) {
       for (const h of hashes) void setLocation(h, dir);
     }
     close();
+  };
+
+  /** Copy a torrent's on-disk path to the clipboard (the web stand-in for
+   *  "open destination", which a browser can't do). */
+  const copyPath = async (hash: string) => {
+    const path = torrents.find((t) => t.hash === hash)?.savePath ?? "";
+    if (path) await navigator.clipboard.writeText(path);
   };
 
   return (
@@ -256,15 +272,27 @@ export function ContextMenu() {
           </span>
           Copy magnet link
         </div>
-        <div
-          className={`${styles.item} ${single ? "" : styles.disabled}`}
-          onClick={() => single && run(() => actions.openDestination(single))}
-        >
-          <span className={styles.icon}>
-            <OpenIcon size={12} />
-          </span>
-          Open destination
-        </div>
+        {capabilities().localFs ? (
+          <div
+            className={`${styles.item} ${single ? "" : styles.disabled}`}
+            onClick={() => single && run(() => actions.openDestination(single))}
+          >
+            <span className={styles.icon}>
+              <OpenIcon size={12} />
+            </span>
+            Open destination
+          </div>
+        ) : (
+          <div
+            className={`${styles.item} ${single ? "" : styles.disabled}`}
+            onClick={() => single && run(() => void copyPath(single))}
+          >
+            <span className={styles.icon}>
+              <OpenIcon size={12} />
+            </span>
+            Copy path
+          </div>
+        )}
 
         <div className={styles.sep} />
 

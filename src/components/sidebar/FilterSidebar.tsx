@@ -8,7 +8,7 @@
  * name, so a query you'd otherwise retype is one click away.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTorrents } from "../../store/torrents";
 import { canSaveSmartFilter, useUi, type ActiveFilter } from "../../store/ui";
 import { sidebarCounts, smartFilterCounts } from "../../store/selectors";
@@ -27,7 +27,11 @@ const STATUS_ROWS: Array<{ key: string; label: string }> = [
   { key: "error", label: "error" },
 ];
 
-export function FilterSidebar() {
+/**
+ * @param footer Optional content pinned after the filter groups (the web shell
+ *   passes the disk card here; the desktop passes nothing).
+ */
+export function FilterSidebar({ footer }: { footer?: ReactNode } = {}) {
   const torrents = useTorrents((s) => s.torrents);
   const filter = useUi((s) => s.filter);
   const setFilter = useUi((s) => s.setFilter);
@@ -256,6 +260,8 @@ export function FilterSidebar() {
       {smartFilters.length === 0 && !naming && (
         <div className={styles.smartHint}>filter or search, then + to save</div>
       )}
+
+      {footer}
 
       {labelMenu && (
         <>

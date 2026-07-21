@@ -1,0 +1,43 @@
+[package]
+name = "rtorrent-core"
+version = "0.1.0"
+description = "Host-agnostic rtorrent client: SCGI/HTTP transports, XML-RPC, DTOs, mock"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "rtorrent_core"
+
+[dependencies]
+# --- Serialization (the shared DTO contract) ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# --- Async runtime for SCGI I/O ---
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+
+# --- rtorrent protocol plumbing ---
+quick-xml = "0.37"    # minimal hand-rolled XML-RPC encode/parse (handles <i8>)
+base64 = "0.22"       # load.raw payloads
+lava_torrent = "0.11" # .torrent metadata parsing for the Add dialog
+# XML-RPC over HTTP(S) for remote daemons (B9). native-tls binds the platform
+# trust store (Security.framework on macOS, SChannel on Windows) rather than
+# bundling a CA list that can go stale.
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+
+# --- Remote credentials in the OS credential store, never in plaintext (B9).
+# The backend feature is selected per-target below.
+keyring = "3"
+
+# --- Errors / async trait ---
+thiserror = "2"       # typed error enums across the rtorrent layer
+async-trait = "0.1"   # dyn-compatible async RtorrentApi trait (Rpc vs Mock)
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] } # Credential Manager
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "test-util"] }

@@ -1,0 +1,18 @@
+# Cargo workspace root.
+#
+# Members:
+#   * crates/rtorrent — `rtorrent-core`, the host-agnostic client layer (SCGI/HTTP,
+#                       XML-RPC, DTOs, status derivation, mock). No Tauri.
+#   * src-tauri       — the macOS/Windows desktop app (Tauri shell over the crate).
+#   * server          — (added in WE1) the `rstorrent-web` self-hosted server.
+[workspace]
+resolver = "2"
+members = ["crates/rtorrent", "server", "src-tauri"]
+
+# Profiles apply workspace-wide and must live at the root; a member's own
+# `[profile.*]` is ignored. Kept from the desktop app's packaging tuning.
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

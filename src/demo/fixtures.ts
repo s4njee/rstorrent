@@ -235,6 +235,8 @@ const globals: GlobalStats = {
   upRateLimit: Math.round(5 * MIB),
   dhtNodes: 387,
   freeSpace: 412 * GIB,
+  // 412 GiB free of ~1114 GiB → the ~63% used bar the web disk card shows.
+  diskSize: 1114 * GIB,
   turtleActive: false,
 };
 

@@ -6,7 +6,9 @@
   "description": "A native macOS desktop client for the rtorrent daemon (Tauri + Rust).",
   "scripts": {
     "dev": "vite",
+    "dev:web": "vite --config vite.web.config.ts",
     "build": "tsc && vite build",
+    "build:web": "tsc && vite build --config vite.web.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",

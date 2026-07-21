@@ -12,6 +12,18 @@ dist
 dist-ssr
 *.local
 
+# The web SPA build output. Keep the folder present (rust-embed reads it at
+# compile time) but ignore the generated bundle.
+/dist-web/*
+!/dist-web/.gitkeep
+
+# Cargo build output. The workspace target dir now lives at the repo root
+# (the workspace Cargo.toml is here), so ignore it here as well as in src-tauri.
+/target
+
+# Claude Code local state (agent worktrees are full repo copies — never commit).
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

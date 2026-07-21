@@ -2,7 +2,7 @@
 
 A native macOS desktop client for the `rtorrent` daemon, built with **Rust + Tauri 2**, implementing the **"Dark Ops" (1c)** high-fidelity design in `design/`.
 
-This document explains *what we're building and how*. The companion [tasks.md](tasks.md) breaks the work into epics and stories for execution. Read this document first; treat `design/README.md` as the authoritative visual spec.
+This document explains *what we're building and how*. The companion [tasks.md](tasks.md) breaks the work into epics and stories for execution. Read this document first; treat `design/README-desktop.md` as the authoritative visual spec.
 
 ---
 
@@ -31,7 +31,7 @@ This document explains *what we're building and how*. The companion [tasks.md](t
 
 | File | Role |
 |---|---|
-| `design/README.md` | **Authoritative spec**: design tokens, typography, per-screen layout, interactions, state model. |
+| `design/README-desktop.md` | **Authoritative spec**: design tokens, typography, per-screen layout, interactions, state model. |
 | `design/rTorrent Client 1c.dc.html` | Chosen hi-fi design, all 7 windows/modals in one canvas. Open in a browser to inspect. |
 | `design/rTorrent Client.dc.html` | Earlier 3-flavor exploration. Context only — do not implement 1a/1b. |
 
@@ -40,7 +40,7 @@ Key fidelity requirements (from the README, repeated here because they define th
 - **Everything is monospace**: `ui-monospace, SFMono-Regular, Menlo, monospace` — labels, body, numerals. No web fonts.
 - Base 11.5 px type; table cells 10.5 px; column headers 10 px uppercase with letter-spacing.
 - Table row height **23 px**, zebra `#14161a` / `#171a1f`, selected `#1d2b33`.
-- Full color-token table lives in `design/README.md` → implement as CSS custom properties, never hard-code hex in components.
+- Full color-token table lives in `design/README-desktop.md` → implement as CSS custom properties, never hard-code hex in components.
 - Status is **plain colored lowercase text**, not pills. Progress bar is an 8 px flat bar colored by status.
 - The design's fake traffic lights are replaced by **real macOS traffic lights** via Tauri's overlay title bar (see §7).
 - Emoji glyphs in menus/prefs (🏷 📁 🔗 ⚙ …) are placeholders — replace with hand-drawn inline SVG line icons (1.6 px stroke) matching the toolbar set.
@@ -318,5 +318,5 @@ Open questions parked for v2: multiple daemon profiles, HTTP(S)+auth transport, 
 
 1. Work through [tasks.md](tasks.md) epic by epic in milestone order (§9).
 2. Every story lists acceptance criteria and a **Verify** step — run it before marking the story done.
-3. When a visual question arises, `design/README.md` wins, then the 1c HTML, then this plan.
+3. When a visual question arises, `design/README-desktop.md` wins, then the 1c HTML, then this plan.
 4. Update tasks.md checkboxes as you go; append discovered work as new stories rather than silently expanding existing ones.

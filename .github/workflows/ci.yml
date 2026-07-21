@@ -1,16 +1,19 @@
 # CI for rstorrent (C21).
 #
-# Two jobs, split by what they actually need:
+# Three jobs, split by what they actually need:
 #
 #   frontend — pure Node, so it runs on Linux where runners are fastest.
-#   rust     — runs on macOS because that's the only platform rstorrent
-#              targets: the crate pulls in Tauri's macOS webview and the
-#              Keychain (`security-framework`, via `keyring`). Building it on
-#              Linux would test a configuration nobody ships.
+#   crate    — `rtorrent-core`, the shared client layer, is Tauri-free and
+#              builds anywhere, so it gets fmt/clippy/tests on Linux (cheap and
+#              fast). A PR touching only crates/rtorrent gets Linux-speed feedback.
+#   desktop  — the `rstorrent` Tauri app runs on macOS because that's where its
+#              webview and Keychain backend (`security-framework`, via `keyring`)
+#              are real; building it on Linux would test a config nobody ships.
 #
-# The Rust job deliberately does NOT build the frontend first. `cargo test`
-# only needs `tauri.conf.json`, not the `../dist` output it points at — checked
-# by removing dist/ and forcing the build script to re-run.
+# Formatting is checked once, workspace-wide, in the (cheaper) crate job.
+#
+# The desktop job deliberately does NOT build the frontend first. `cargo test`
+# only needs `tauri.conf.json`, not the `../dist` output it points at.
 name: CI
 
 on:
@@ -56,12 +59,9 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-  rust:
-    name: rust (fmt, clippy, tests)
-    runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: src-tauri
+  crate:
+    name: crate + server (Linux — fmt, clippy, tests)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -70,20 +70,49 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      # Caches ~/.cargo and target/. Keyed on the lockfile; a cold cache just
-      # means a slower run, never a wrong one.
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: "."
 
-      - name: Formatting
-        run: cargo fmt --check
+      # Formatting is platform-independent — check the whole workspace here so
+      # the macOS job doesn't have to.
+      - name: Formatting (workspace)
+        run: cargo fmt --check --all
+
+      # The shared crate and the web server are both Tauri-free, so they build,
+      # lint, and test on Linux.
+      - name: Clippy
+        run: cargo clippy -p rtorrent-core -p rstorrent-web --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test -p rtorrent-core -p rstorrent-web
+
+      # Build the web SPA the server embeds, so a broken web build fails here.
+      - name: Build web UI
+        run: npm ci && npm run build:web
+
+  desktop:
+    name: desktop app (macOS — clippy, tests)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Caches ~/.cargo and the workspace target/. Keyed on the lockfile; a cold
+      # cache just means a slower run, never a wrong one.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy -p rstorrent --all-targets -- -D warnings
 
       # Tests marked #[ignore] need a live rtorrent daemon or the macOS
       # Keychain, so they stay out of CI and are run by hand — see
       # docs/rtorrent-setup.md.
       - name: Tests
-        run: cargo test
+        run: cargo test -p rstorrent

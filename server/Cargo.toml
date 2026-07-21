@@ -1,0 +1,54 @@
+[package]
+name = "rstorrent-web"
+version = "0.1.0"
+description = "Self-hosted web UI server for the rtorrent daemon (axum over rtorrent-core)"
+edition = "2021"
+
+[[bin]]
+name = "rstorrent-web"
+path = "src/main.rs"
+
+[dependencies]
+# The shared, Tauri-free rtorrent client layer (SCGI/HTTP, XML-RPC, DTOs, mock,
+# snapshot assembly, .torrent parsing).
+rtorrent-core = { path = "../crates/rtorrent" }
+
+# --- HTTP server ---
+axum = { version = "0.8", features = ["multipart"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "compression-gzip", "set-header", "trace"] }
+
+# --- Async runtime ---
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal"] }
+
+# --- Serialization / config ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# --- Auth (password hashing; sessions land in WE5) ---
+# `std` pulls in getrandom so `OsRng` is available for per-hash salts.
+argon2 = { version = "0.5", features = ["std"] }
+
+# --- Embedded SPA assets ---
+rust-embed = "8"
+mime_guess = "2"
+
+# --- Delete-data moves files to the trash (co-located daemons only), never rm ---
+trash = "5"
+
+# --- CLI + logging + errors ---
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+
+# `statvfs` for the disk card. Unix-only; the disk readout is None on other hosts.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "test-util"] }
+# Drives the router in-process for handler tests without binding a socket.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

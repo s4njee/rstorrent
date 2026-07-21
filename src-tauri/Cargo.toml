@@ -17,6 +17,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# --- The host-agnostic rtorrent client layer (SCGI/HTTP, XML-RPC, DTOs, mock,
+# .torrent parsing, keychain). Shared with the `rstorrent-web` server. ---
+rtorrent-core = { path = "../crates/rtorrent" }
+
 # --- Tauri shell + plugins ---
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"            # open paths / URLs
@@ -28,28 +32,17 @@ tauri-plugin-window-state = "2"      # remember window size/position (E13-S3)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# --- Async runtime for SCGI I/O and the polling loop ---
+# --- Async runtime for the polling loop and app tasks ---
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
 
-# --- rtorrent protocol plumbing ---
-quick-xml = "0.37"    # minimal hand-rolled XML-RPC encode/parse (handles <i8>)
-base64 = "0.22"       # load.raw payloads
-lava_torrent = "0.11" # .torrent metadata parsing for the Add dialog
-# XML-RPC over HTTP(S) for remote daemons (B9). Already in the tree via Tauri,
-# but without TLS; native-tls binds the platform trust store (Security.framework
-# on macOS, SChannel on Windows) rather than bundling a CA list that can go stale.
+# --- RSS feed fetch + parse (B11). The rtorrent protocol plumbing that used to
+# pull these in now lives in rtorrent-core; rss.rs still needs them directly. ---
+quick-xml = "0.37"
 reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
-# Remote credentials belong in the OS credential store, never in settings.json
-# (B9). The backend feature is selected per-target below.
-keyring = "3"
 
 # --- Filesystem side-effects ---
 trash = "5"           # "delete data" moves files to Trash/Recycle Bin, never rm
 notify = "7"          # watched-folder auto-add (E11-S5)
-
-# --- Errors ---
-thiserror = "2"       # typed error enums across the rtorrent layer
-async-trait = "0.1"   # dyn-compatible async RtorrentApi trait (Scgi vs Mock)
 
 # --- Time ---
 # Local wall-clock (weekday + time-of-day) for the turtle-mode schedule (B14).
@@ -57,7 +50,6 @@ async-trait = "0.1"   # dyn-compatible async RtorrentApi trait (Scgi vs Mock)
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
 tauri-plugin-deep-link = "2"         # magnet: scheme handling through LaunchServices
 # Native notifications with a click response. The official Tauri notification
 # plugin only exposes notification actions on mobile, so it cannot implement
@@ -65,7 +57,6 @@ tauri-plugin-deep-link = "2"         # magnet: scheme handling through LaunchSer
 mac-notification-sys = "=0.6.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-keyring = { version = "3", features = ["windows-native"] } # Credential Manager
 tauri-plugin-deep-link = "2"         # magnet: scheme, registered by the NSIS installer
 # Windows delivers file/magnet opens as argv to a *second* process instance, so
 # the deep-link plugin needs single-instance to forward them to the live window.
@@ -78,9 +69,5 @@ tauri-winrt-notification = "0.7"
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "test-util"] }
 
-[profile.release]
-# Smaller, faster release binaries for the packaged .app.
-codegen-units = 1
-lto = true
-opt-level = "s"
-strip = true
+# NOTE: `[profile.release]` lives in the workspace-root Cargo.toml — a member
+# crate's own profile section is ignored in a workspace.

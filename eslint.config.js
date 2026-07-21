@@ -6,7 +6,19 @@ import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
-  { ignores: ["dist", "src-tauri/target", "node_modules", ".claude"] },
+  // `target` is the workspace build dir (now at the repo root); it holds
+  // Tauri-generated JS that must not be linted. `src-tauri/target` is kept for
+  // any stale pre-workspace build dir.
+  {
+    ignores: [
+      "dist",
+      "dist-web",
+      "target",
+      "src-tauri/target",
+      "node_modules",
+      ".claude",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

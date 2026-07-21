@@ -96,11 +96,34 @@ then open **Preferences → Connection**, match the transport to your
 
 ![Preferences → Connection](docs/images/preferences-connection.png)
 
+## Web UI
+
+The same UI runs in a browser, served by a small self-hosted server
+(`rstorrent-web`) that sits next to the daemon and proxies its XML-RPC/SCGI
+interface as JSON. The React frontend is shared with the desktop app — the only
+difference is the host backend (HTTP polling instead of Tauri IPC) and the shell
+chrome (an app bar instead of the native title bar). Single-password login,
+session cookie, delete-with-data gated to co-located daemons.
+
+```sh
+# Develop against the fixtures with no daemon:
+RSTORRENT_MOCK=1 cargo run -p rstorrent-web     # server + embedded UI at :9080
+npm run dev:web                                  # or Vite on :1421, proxying /api → :9080
+
+# Ship it:
+npm run build:web && cargo build --release -p rstorrent-web
+```
+
+See [docs/web-setup.md](docs/web-setup.md) for configuration, Docker, systemd,
+and reverse-proxy (TLS) setup.
+
 ## Development
 
 | Command | What it does |
 |---|---|
-| `npm run tauri dev` | Run the app (add `RSTORRENT_MOCK=1` for mock mode) |
+| `npm run tauri dev` | Run the desktop app (add `RSTORRENT_MOCK=1` for mock mode) |
+| `RSTORRENT_MOCK=1 cargo run -p rstorrent-web` | Run the web server against fixtures |
+| `npm run build:web` | Build the browser SPA the server embeds |
 | `npm test` | Frontend unit tests (Vitest) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint + Prettier check |
@@ -117,15 +140,23 @@ deliberately — see [docs/rtorrent-setup.md](docs/rtorrent-setup.md).
 
 ## Layout
 
+This is a Cargo workspace: the rtorrent client layer is a Tauri-free crate that
+both the desktop app and the web server share.
+
 ```
 plan.md · tasks.md · backlog.md   # architecture, tracker, ideas
+Cargo.toml                        # workspace: crates/rtorrent · server · src-tauri
 design/                           # the "Dark Ops" design reference (authoritative)
 docs/rtorrent-setup.md            # connecting to a live rtorrent (macOS)
 docs/wsl-setup.md                 # connecting to rtorrent in WSL (Windows)
+docs/web-setup.md                 # self-hosting the web UI (server + reverse proxy)
 docs/images/                      # README screenshots (regenerated from the demo)
 demo.html · src/demo/             # browser demo: real UI over mocked IPC + fixtures
-src/                              # React frontend (ipc, store, components, theme)
-src-tauri/src/                    # Rust backend (rtorrent transports, poller, commands)
+crates/rtorrent/                  # rtorrent-core: SCGI/HTTP transports, XML-RPC, DTOs, mock
+src/                              # React frontend (ipc backends, store, components, theme)
+src/web/ · web.html               # the browser web UI shell (WE) over an HTTP backend
+server/src/                       # rstorrent-web: axum server proxying the daemon as JSON
+src-tauri/src/                    # Tauri desktop shell over the shared crate (poller, commands)
 src-tauri/src/wsl.rs              # Windows-only: path translation across the WSL boundary
 tools/scgi-http-bridge.py         # dev-only HTTP→SCGI bridge, stands in for nginx
 tools/wsl-setup-rtorrent.sh       # builds rtorrent inside WSL and starts it under systemd

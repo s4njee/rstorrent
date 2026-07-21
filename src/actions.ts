@@ -9,7 +9,18 @@
 
 import * as cmd from "./ipc/commands";
 import { useUi } from "./store/ui";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { capabilities } from "./ipc/backend";
+
+/** Write to the clipboard through whichever host provides it. */
+async function writeClipboard(text: string): Promise<void> {
+  if (capabilities().nativeDialogs) {
+    // Desktop: the Tauri clipboard plugin (loaded only in that shell).
+    const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+    await writeText(text);
+  } else {
+    await navigator.clipboard.writeText(text);
+  }
+}
 
 /** Current selection as an array. */
 export function selectedHashes(): string[] {
@@ -46,7 +57,7 @@ export function queueDown(hashes = selectedHashes()) {
 /** Copy a torrent's magnet link to the clipboard. */
 export async function copyMagnet(hash: string) {
   const uri = await cmd.copyMagnet(hash);
-  await writeText(uri);
+  await writeClipboard(uri);
 }
 
 export function openDestination(hash: string) {
