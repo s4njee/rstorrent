@@ -93,7 +93,8 @@ export type DialogKind =
   | "remove"
   | "rate-limit"
   | "tune-network"
-  | "shutdown";
+  | "shutdown"
+  | "xmlrpc";
 
 export interface ExternalAddRequest {
   id: number;
@@ -120,6 +121,12 @@ interface UiState {
   contextMenu: { x: number; y: number } | null;
   /** Cursor position for the header column menu, or null when closed. */
   columnMenu: { x: number; y: number } | null;
+  /**
+   * Whether the XML-RPC console (D15) may send state-changing methods. Armed
+   * per app session and deliberately *not* persisted, so it resets to off on
+   * every launch.
+   */
+  allowXmlrpcMutations: boolean;
 
   // --- selection ---
   select: (hash: string) => void;
@@ -150,6 +157,8 @@ interface UiState {
   openDialog: (d: DialogKind) => void;
   openExternalAdd: (source: AddSource, onComplete: () => void) => void;
   closeDialog: () => void;
+  /** Arm/disarm the XML-RPC console's mutation gate for this session. */
+  setAllowXmlrpcMutations: (allow: boolean) => void;
   openContextMenu: (x: number, y: number) => void;
   closeContextMenu: () => void;
   openColumnMenu: (x: number, y: number) => void;
@@ -249,6 +258,7 @@ export const useUi = create<UiState>((set, get) => {
     externalAddComplete: null,
     contextMenu: null,
     columnMenu: null,
+    allowXmlrpcMutations: false,
 
     select: (hash) => set({ selection: new Set([hash]), anchor: hash }),
 
@@ -376,6 +386,7 @@ export const useUi = create<UiState>((set, get) => {
       });
       complete?.();
     },
+    setAllowXmlrpcMutations: (allow) => set({ allowXmlrpcMutations: allow }),
     openContextMenu: (x, y) => set({ contextMenu: { x, y }, columnMenu: null }),
     closeContextMenu: () => set({ contextMenu: null }),
     openColumnMenu: (x, y) => set({ columnMenu: { x, y }, contextMenu: null }),

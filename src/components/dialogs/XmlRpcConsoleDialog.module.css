@@ -1,0 +1,82 @@
+/* Raw XML-RPC console (D15): a method field, a JSON-args box, the mutation arm,
+   and a scrollable pretty-printed result. Monospace throughout — it's a
+   developer power tool, not a settings pane. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: var(--fs-cell);
+  margin-bottom: 4px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* The session-mutation arm. Reads calm when off, warns in amber when armed so
+   the enabled write path is never invisible. */
+.arm {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  cursor: default;
+  font-size: var(--fs-cell);
+  user-select: none;
+}
+.arm.on {
+  color: var(--accent-amber);
+}
+
+.result {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 9px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-field);
+  color: var(--accent-cyan-bright);
+  font-family: var(--font-mono);
+  font-size: var(--fs-cell);
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
+.result.error {
+  color: var(--accent-red);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.result.empty {
+  color: var(--text-dim);
+  white-space: normal;
+}
+
+/* Status line above the result: elapsed time or "running…". */
+.status {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: var(--fs-cell);
+  color: var(--text-dim);
+}
+.status .ok {
+  color: var(--accent-green-soft);
+}
+
+.hint {
+  color: var(--text-dim);
+  font-size: var(--fs-cell);
+  line-height: 1.5;
+  margin-top: 5px;
+}
+.hint code {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}

@@ -35,6 +35,7 @@ mod throttles;
 mod torrent_file;
 mod turtle;
 mod watcher;
+mod xmlrpc_console;
 #[cfg(target_os = "windows")]
 mod wsl;
 
@@ -144,6 +145,7 @@ pub fn run() {
             commands::shutdown_daemon,
             commands::rss_fetch,
             commands::rss_download,
+            commands::xmlrpc_call,
         ])
         .build(tauri::generate_context!())
         .expect("error while building rstorrent");
