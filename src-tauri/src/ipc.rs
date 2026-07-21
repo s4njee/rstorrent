@@ -424,6 +424,17 @@ pub struct Settings {
     #[serde(default)]
     pub connection_profiles: Vec<ConnectionProfile>,
 
+    // --- RSS (v2.0 / B11) ---
+    /// RSS/Atom feeds to poll.
+    #[serde(default)]
+    pub rss_feeds: Vec<RssFeed>,
+    /// Auto-download rules matched against feed items.
+    #[serde(default)]
+    pub rss_rules: Vec<RssRule>,
+    /// How often to poll feeds, minutes; 0 disables background polling.
+    #[serde(default = "default_rss_poll_minutes")]
+    pub rss_poll_minutes: i64,
+
     pub mock: bool,
 }
 
@@ -515,6 +526,61 @@ pub struct TurtleSchedule {
     pub end_min: i64,
     /// Active weekdays, `0 = Sunday .. 6 = Saturday`. Empty = every day.
     pub days: Vec<u8>,
+}
+
+/// An RSS/Atom feed polled for auto-add (B11).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RssFeed {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+/// An auto-download rule: items whose title matches are added (B11).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RssRule {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Feed id this rule applies to; empty = every feed.
+    #[serde(default)]
+    pub feed_id: String,
+    /// Whitespace-separated tokens that must *all* appear in the title
+    /// (case-insensitive). Empty matches everything.
+    #[serde(default)]
+    pub must_contain: String,
+    /// Whitespace-separated tokens; if *any* appears, the item is skipped.
+    #[serde(default)]
+    pub must_not_contain: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub save_path: String,
+}
+
+/// One parsed feed entry (B11), shown in the RSS preview and matched by rules.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedItem {
+    pub title: String,
+    /// The download URL: a magnet link or a `.torrent` URL (enclosure preferred).
+    pub link: String,
+    /// Stable identity for dedup (`guid`/`id`, or the link as a fallback).
+    pub guid: String,
+    pub pub_date: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_rss_poll_minutes() -> i64 {
+    15
 }
 
 fn default_port_range() -> String {

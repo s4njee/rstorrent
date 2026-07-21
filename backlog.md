@@ -33,10 +33,10 @@ Sizes: S ≤ 2 h, M ≤ half day, L ≈ day, XL = needs breaking down.
   hook · C14 seed-goal action (stop/remove/remove-with-data) · B14 turtle mode
   (alt limits, manual toggle + daily schedule). The poller now owns global
   rate-limit application (turtle-aware, restart-surviving).
-- **v2.0 "seedbox" (core)** — B10 connection profiles · D12 native daemon views
-  in the sidebar · D13 session controls (Daemon menu: save / shut down) · D16
-  daemon health tab in Statistics. **Deferred to follow-up passes:** B11 (RSS +
-  auto-add, XL) and C22 (delta snapshots).
+- **v2.0 "seedbox"** — B10 connection profiles · D12 native daemon views in the
+  sidebar · D13 session controls (Daemon menu: save / shut down) · D16 daemon
+  health tab in Statistics · B11 RSS feeds + auto-download rules (new RSS pane +
+  background engine). **Deferred:** C22 (delta snapshots).
 
 Still open from v1 close-out (tasks.md): `E13-S2` virtualization, `E13-S4`
 accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
@@ -51,7 +51,15 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
   daemons from the list (Apply reconnects). Stored as `connection_profiles`;
   the active one is mirrored in `transport`. HTTP passwords stay per-endpoint in
   the Keychain. Shipped v2.0.
-- [ ] **B11 · RSS + auto-add rules** (XL) — fills the disabled prefs nav.
+- [x] **B11 · RSS + auto-add rules** (XL) — the RSS Preferences pane (nav
+  un-disabled): feeds, auto-download rules, poll interval, and a live per-feed
+  preview with manual Download. A background engine (`rss.rs`) polls enabled
+  feeds every `rss_poll_minutes`, matches enabled rules (space-separated
+  must-contain-all / exclude-any, case-insensitive), and auto-adds via
+  `load.normal` (handles both magnet links and `.torrent` URLs), deduped
+  against a capped, persisted seen-set (`rss_seen.json`). RSS 2.0 + Atom parsing
+  (quick-xml) prefers a torrent `<enclosure>` over a plain `<link>`. Shipped
+  v2.0.
 - [ ] **B12 · Move data on Set location** (L) — build with C10.
 - [ ] **B13 · Torrent creation** (L).
 - [x] **B14 · Scheduler / turtle limits** (M) — turtle mode: alternative
@@ -237,7 +245,7 @@ confirmed present; each is a labeled control with the daemon default shown.
 - **v1.5 — "control"**: D1, D2, D17, D4, C5 (+ C18/D18 as the Trackers pass)
 - **v1.6 — "network"**: D7, D8, D9, D11, B16+C16 as one Peers pass — ✅ shipped
 - **v1.7 — "automation"**: C9, C11, C12, C13, C14, B14 — ✅ shipped
-- **v2.0 — "seedbox"**: B10, D12, D13, D16 ✅ shipped (core) · B11, C22 deferred
+- **v2.0 — "seedbox"**: B10, D12, D13, D16, B11 ✅ shipped · C22 deferred
 - Anytime: D3, D5, D6, D10, D15, C17, C19, C23, C24, C25
 - Icebox: D14, B18–B22
 

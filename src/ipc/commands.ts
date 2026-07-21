@@ -12,6 +12,7 @@ import type {
   AddOptions,
   DaemonHealth,
   DetailTab,
+  FeedItem,
   LogEntry,
   Settings,
   Statistics,
@@ -215,6 +216,20 @@ export function saveSession(): Promise<void> {
 /** Ask the daemon to shut down cleanly (D13). */
 export function shutdownDaemon(): Promise<void> {
   return invoke("shutdown_daemon");
+}
+
+/** Fetch and parse an RSS/Atom feed for the preview (B11). */
+export function rssFetch(url: string): Promise<FeedItem[]> {
+  return invoke("rss_fetch", { url });
+}
+
+/** Manually add one feed item to rtorrent (B11). */
+export function rssDownload(
+  link: string,
+  label: string,
+  savePath: string,
+): Promise<void> {
+  return invoke("rss_download", { link, label, savePath });
 }
 
 /** Hydrate the Log tab with the current ring-buffer contents. */

@@ -3,9 +3,9 @@
  *
  * Left nav selects a section; the right panel edits a working copy of settings.
  * Apply persists via the `apply_settings` command and refreshes the settings
- * store (which also live-reconnects the poller if the transport changed). RSS and
- * Web UI are shown disabled (v2). Some controls are intentionally disabled where
- * the backend doesn't support them yet (see plan.md §10) with an explanatory tip.
+ * store (which also live-reconnects the poller if the transport changed). Web UI
+ * is shown disabled (v2). Some controls are intentionally disabled where the
+ * backend doesn't support them yet (see plan.md §10) with an explanatory tip.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -21,13 +21,18 @@ import {
   applySettings,
   clearHttpPassword,
   hasHttpPassword,
+  rssDownload,
+  rssFetch,
   setHttpPassword,
   testConnection,
 } from "../../ipc/commands";
 import type {
   ConnectionProfile,
   EncryptionMode,
+  FeedItem,
   LabelDefault,
+  RssFeed,
+  RssRule,
   Settings,
   Transport,
   TurtleSchedule,
@@ -62,7 +67,7 @@ const NAV: Array<{
   { id: "speed", label: "Speed", icon: "⏱" },
   { id: "bittorrent", label: "BitTorrent", icon: "⦿" },
   { id: "network", label: "Network", icon: "⇅" },
-  { id: "rss", label: "RSS", icon: "⤳", disabled: true },
+  { id: "rss", label: "RSS", icon: "⤳" },
   { id: "webui", label: "Web UI", icon: "⧉", disabled: true },
   { id: "advanced", label: "Advanced", icon: "⚑" },
 ];
@@ -561,8 +566,12 @@ export function PreferencesDialog() {
             </>
           )}
 
-          {(section === "rss" || section === "webui") && (
-            <Group title={section === "rss" ? "RSS" : "Web UI"}>
+          {section === "rss" && (
+            <RssSection draft={draft} patch={patch} labels={labels} />
+          )}
+
+          {section === "webui" && (
+            <Group title="Web UI">
               <span className={forms.meta}>Planned for a future version.</span>
             </Group>
           )}
@@ -1101,6 +1110,326 @@ function TurtleGroup({
         </>
       )}
     </Group>
+  );
+}
+
+let rssIdCounter = 0;
+/** Unique-enough id for a new feed/rule (only needs to be stable in this list). */
+function rssId(prefix: string): string {
+  rssIdCounter += 1;
+  return `${prefix}_${Date.now().toString(36)}_${rssIdCounter}`;
+}
+
+/** RSS pane (B11): poll interval, feeds (with live preview), auto-download rules. */
+function RssSection({
+  draft,
+  patch,
+  labels,
+}: {
+  draft: Settings;
+  patch: (p: Partial<Settings>) => void;
+  labels: string[];
+}) {
+  const [preview, setPreview] = useState<{
+    feedId: string;
+    items: FeedItem[];
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+
+  const setFeed = (i: number, next: Partial<RssFeed>) =>
+    patch({
+      rssFeeds: draft.rssFeeds.map((f, idx) =>
+        idx === i ? { ...f, ...next } : f,
+      ),
+    });
+  const setRule = (i: number, next: Partial<RssRule>) =>
+    patch({
+      rssRules: draft.rssRules.map((r, idx) =>
+        idx === i ? { ...r, ...next } : r,
+      ),
+    });
+
+  const previewFeed = async (feed: RssFeed) => {
+    setPreview({ feedId: feed.id, items: [], loading: true, error: null });
+    try {
+      const items = await rssFetch(feed.url);
+      setPreview({ feedId: feed.id, items, loading: false, error: null });
+    } catch (e) {
+      setPreview({
+        feedId: feed.id,
+        items: [],
+        loading: false,
+        error: String(e),
+      });
+    }
+  };
+
+  return (
+    <>
+      <Group title="RSS">
+        <NumberRow
+          label="Poll interval (minutes)"
+          value={draft.rssPollMinutes}
+          onChange={(rssPollMinutes) => patch({ rssPollMinutes })}
+        />
+        <span className={forms.meta}>
+          How often to check feeds and auto-add rule matches. 0 disables
+          background polling (Preview and Download still work).
+        </span>
+      </Group>
+
+      <Group title="Feeds">
+        {draft.rssFeeds.length === 0 && (
+          <span className={forms.meta}>No feeds.</span>
+        )}
+        {draft.rssFeeds.map((f, i) => (
+          <div key={f.id} style={rowCard}>
+            <div className={forms.field}>
+              <input
+                type="checkbox"
+                checked={f.enabled}
+                aria-label="Feed enabled"
+                onChange={(e) =>
+                  setFeed(i, { enabled: e.currentTarget.checked })
+                }
+              />
+              <input
+                className={forms.input}
+                style={{ maxWidth: 150 }}
+                value={f.name}
+                onChange={(e) => setFeed(i, { name: e.currentTarget.value })}
+                placeholder="name"
+                spellCheck={false}
+              />
+              <input
+                className={forms.input}
+                value={f.url}
+                onChange={(e) => setFeed(i, { url: e.currentTarget.value })}
+                placeholder="https://…/rss"
+                spellCheck={false}
+              />
+              <button
+                className={forms.browse}
+                disabled={!f.url}
+                onClick={() => void previewFeed(f)}
+              >
+                Preview
+              </button>
+              <button
+                className={styles.removeOverride}
+                aria-label="Remove feed"
+                onClick={() =>
+                  patch({
+                    rssFeeds: draft.rssFeeds.filter((_, idx) => idx !== i),
+                  })
+                }
+              >
+                ×
+              </button>
+            </div>
+            {preview?.feedId === f.id && (
+              <div style={{ marginTop: 2 }}>
+                {preview.loading && (
+                  <span className={forms.meta}>loading…</span>
+                )}
+                {preview.error && (
+                  <span
+                    className={forms.meta}
+                    style={{ color: "var(--accent-red-soft, #ea6962)" }}
+                  >
+                    {preview.error}
+                  </span>
+                )}
+                {!preview.loading &&
+                  !preview.error &&
+                  preview.items.length === 0 && (
+                    <span className={forms.meta}>no items</span>
+                  )}
+                {preview.items.slice(0, 30).map((it) => (
+                  <div className={forms.field} key={it.guid} style={{ gap: 8 }}>
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={it.title}
+                    >
+                      {it.title}
+                    </span>
+                    <button
+                      className={forms.browse}
+                      onClick={() => void rssDownload(it.link, "", "")}
+                    >
+                      Download
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        <button
+          className={styles.addOverride}
+          onClick={() =>
+            patch({
+              rssFeeds: [
+                ...draft.rssFeeds,
+                { id: rssId("feed"), name: "", url: "", enabled: true },
+              ],
+            })
+          }
+        >
+          + Add feed
+        </button>
+      </Group>
+
+      <Group title="Auto-download Rules">
+        {draft.rssRules.length === 0 && (
+          <span className={forms.meta}>
+            No rules. A feed with no matching rule is only fetched when you
+            press Preview.
+          </span>
+        )}
+        {draft.rssRules.map((r, i) => (
+          <div key={r.id} style={rowCard}>
+            <div className={forms.field}>
+              <input
+                type="checkbox"
+                checked={r.enabled}
+                aria-label="Rule enabled"
+                onChange={(e) =>
+                  setRule(i, { enabled: e.currentTarget.checked })
+                }
+              />
+              <input
+                className={forms.input}
+                value={r.name}
+                onChange={(e) => setRule(i, { name: e.currentTarget.value })}
+                placeholder="rule name"
+                spellCheck={false}
+              />
+              <button
+                className={styles.removeOverride}
+                aria-label="Remove rule"
+                onClick={() =>
+                  patch({
+                    rssRules: draft.rssRules.filter((_, idx) => idx !== i),
+                  })
+                }
+              >
+                ×
+              </button>
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Feed
+              </span>
+              <select
+                className={forms.input}
+                value={r.feedId}
+                aria-label="Rule feed"
+                onChange={(e) => setRule(i, { feedId: e.currentTarget.value })}
+              >
+                <option value="">All feeds</option>
+                {draft.rssFeeds.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name || f.url}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Must contain
+              </span>
+              <input
+                className={forms.input}
+                value={r.mustContain}
+                onChange={(e) =>
+                  setRule(i, { mustContain: e.currentTarget.value })
+                }
+                placeholder="e.g.  1080p x265"
+                spellCheck={false}
+              />
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Exclude
+              </span>
+              <input
+                className={forms.input}
+                value={r.mustNotContain}
+                onChange={(e) =>
+                  setRule(i, { mustNotContain: e.currentTarget.value })
+                }
+                placeholder="e.g.  cam hdcam"
+                spellCheck={false}
+              />
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Label
+              </span>
+              <input
+                className={forms.input}
+                style={{ maxWidth: 150 }}
+                value={r.label}
+                list="rss-known-labels"
+                onChange={(e) => setRule(i, { label: e.currentTarget.value })}
+                placeholder="(none)"
+                spellCheck={false}
+              />
+              <span className={forms.fieldLabel} style={{ width: 56 }}>
+                Save to
+              </span>
+              <input
+                className={forms.input}
+                value={r.savePath}
+                onChange={(e) =>
+                  setRule(i, { savePath: e.currentTarget.value })
+                }
+                placeholder="(label / global default)"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+        ))}
+        <datalist id="rss-known-labels">
+          {labels.map((l) => (
+            <option key={l} value={l} />
+          ))}
+        </datalist>
+        <button
+          className={styles.addOverride}
+          onClick={() =>
+            patch({
+              rssRules: [
+                ...draft.rssRules,
+                {
+                  id: rssId("rule"),
+                  name: "",
+                  enabled: true,
+                  feedId: "",
+                  mustContain: "",
+                  mustNotContain: "",
+                  label: "",
+                  savePath: "",
+                },
+              ],
+            })
+          }
+        >
+          + Add rule
+        </button>
+        <span className={forms.meta}>
+          Tokens are space-separated: “must contain” needs all of them,
+          “exclude” rejects if any appears. Case-insensitive.
+        </span>
+      </Group>
+    </>
   );
 }
 

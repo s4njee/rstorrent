@@ -13,8 +13,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use crate::ipc::{
-    AddOptions, AddSource, DaemonHealth, DetailTab, LogLevel, Settings, Statistics, TorrentMeta,
-    Transport,
+    AddOptions, AddSource, DaemonHealth, DetailTab, FeedItem, LogLevel, Settings, Statistics,
+    TorrentMeta, Transport,
 };
 use crate::open_requests::OpenRequestState;
 use crate::rtorrent::{client::RpcClient, LoadOptions, RtorrentApi, RtorrentError};
@@ -870,6 +870,41 @@ pub async fn save_session(app: AppHandle, state: St<'_>) -> Result<(), String> {
 pub async fn shutdown_daemon(app: AppHandle, state: St<'_>) -> Result<(), String> {
     state.backend().shutdown().await.map_err(e)?;
     state.log(&app, LogLevel::Warn, "daemon shutdown requested", None);
+    Ok(())
+}
+
+/// Fetch and parse an RSS/Atom feed for the RSS preview (B11).
+#[tauri::command]
+pub async fn rss_fetch(url: String) -> Result<Vec<FeedItem>, String> {
+    crate::rss::fetch(&url).await
+}
+
+/// Manually add one feed item (the RSS preview's Download button) (B11).
+#[tauri::command]
+pub async fn rss_download(
+    app: AppHandle,
+    state: St<'_>,
+    link: String,
+    label: String,
+    save_path: String,
+) -> Result<(), String> {
+    let settings = state.settings();
+    let resolved = if save_path.is_empty() {
+        settings::save_path_for_label(&settings, &label)
+    } else {
+        save_path
+    };
+    let directory = crate::localfs::to_daemon_path(&resolved).unwrap_or(resolved);
+    let opts = LoadOptions {
+        directory,
+        label,
+        start: true,
+        top_of_queue: false,
+        unselected_indexes: vec![],
+    };
+    state.backend().load_magnet(&link, opts).await.map_err(e)?;
+    state.log(&app, LogLevel::Info, "added from RSS", None);
+    state.repoll.notify_one();
     Ok(())
 }
 

@@ -24,6 +24,7 @@ mod network_prefs;
 mod notifications;
 mod open_requests;
 mod poller;
+mod rss;
 mod rtorrent;
 mod rtorrent_rc;
 mod secrets;
@@ -97,6 +98,8 @@ pub fn run() {
 
             // Kick off the polling loops that keep the UI live.
             poller::spawn(app.handle().clone(), app_state.clone());
+            // Start the RSS auto-add poller (idles cheaply if unconfigured).
+            rss::spawn(app.handle().clone(), app_state.clone());
             // Start the watched-folder auto-add (no-op if unconfigured).
             watcher::spawn(app.handle().clone(), app_state);
             Ok(())
@@ -139,6 +142,8 @@ pub fn run() {
             commands::daemon_health,
             commands::save_session,
             commands::shutdown_daemon,
+            commands::rss_fetch,
+            commands::rss_download,
         ])
         .build(tauri::generate_context!())
         .expect("error while building rstorrent");

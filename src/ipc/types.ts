@@ -316,6 +316,12 @@ export interface Settings {
   turtleSchedule: TurtleSchedule;
   /** Saved daemon connections (B10); the active one is mirrored in transport. */
   connectionProfiles: ConnectionProfile[];
+  /** RSS/Atom feeds to poll (B11). */
+  rssFeeds: RssFeed[];
+  /** Auto-download rules matched against feed items (B11). */
+  rssRules: RssRule[];
+  /** Feed poll interval in minutes; 0 disables background polling (B11). */
+  rssPollMinutes: number;
 
   mock: boolean;
 }
@@ -357,6 +363,37 @@ export interface TuningResult {
 export interface ConnectionProfile {
   name: string;
   transport: Transport;
+}
+
+/** An RSS/Atom feed polled for auto-add (B11). */
+export interface RssFeed {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+}
+
+/** An auto-download rule matched against feed item titles (B11). */
+export interface RssRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** Feed id this rule applies to; empty = every feed. */
+  feedId: string;
+  /** Whitespace tokens that must all appear in the title (case-insensitive). */
+  mustContain: string;
+  /** Whitespace tokens of which none may appear. */
+  mustNotContain: string;
+  label: string;
+  savePath: string;
+}
+
+/** One parsed feed entry (B11), shown in the RSS preview. */
+export interface FeedItem {
+  title: string;
+  link: string;
+  guid: string;
+  pubDate: string;
 }
 
 /** What the daemon reports about itself, for the Daemon tab (D16). */

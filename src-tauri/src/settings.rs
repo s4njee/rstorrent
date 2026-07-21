@@ -47,6 +47,9 @@ impl Default for Settings {
             turtle_enabled: false,
             turtle_schedule: Default::default(),
             connection_profiles: Vec::new(),
+            rss_feeds: Vec::new(),
+            rss_rules: Vec::new(),
+            rss_poll_minutes: 15,
             // Honour the env var so `RSTORRENT_MOCK=1` flips the default on.
             mock: std::env::var("RSTORRENT_MOCK").is_ok(),
         }
