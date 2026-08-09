@@ -797,8 +797,11 @@ impl RtorrentApi for RpcClient {
     }
 
     async fn set_port_range(&self, range: &str) -> Result<()> {
+        // rtorrent 0.16.20 renamed this to network.listen.port.range.set; the
+        // old name only exists behind the `-D` legacy-flag and is absent from
+        // stock builds, so a config line that used it now fails at startup.
         self.call(
-            "network.port_range.set",
+            "network.listen.port.range.set",
             &[Value::Str(String::new()), Value::Str(range.into())],
         )
         .await
@@ -1290,7 +1293,10 @@ mod live {
             return;
         };
         c.set_port_range("6990-6999").await.expect("set_port_range");
-        let back = c.call("network.port_range", &[]).await.expect("read back");
+        let back = c
+            .call("network.listen.port.range", &[])
+            .await
+            .expect("read back");
         println!("port_range = {back:?}");
         assert_eq!(back.as_str(), Some("6990-6999"));
     }

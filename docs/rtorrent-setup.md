@@ -34,7 +34,8 @@ session.path.set = /Users/you/.rtorrent/session
 # --- SCGI: the socket rstorrent connects to ---
 network.scgi.open_local = /Users/you/.rtorrent/rpc.socket
 
-network.port_range.set = 6881-6899
+# 0.16.20+ name; older releases used `network.port_range.set`
+network.listen.port.range.set = 6881-6899
 ```
 
 Create the session dir and start the daemon. rtorrent is an ncurses TUI, so run
