@@ -74,9 +74,9 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 - [ ] **B17 · Menu-bar item + dock menu** (M).
 - [~] **B19 · Web UI** (L) — **in progress.** A self-hosted `rstorrent-web` axum
   server (in the workspace) serves the shared React UI over an HTTP backend:
-  live table, filters, detail tabs, mutations, upload/magnet adds, single-password
-  auth. Read/write verified against the mock end-to-end; live-daemon QA, pixel
-  parity, browser add-dialog wiring, and a Playwright suite remain. See
+  live table, filters, detail tabs, mutations, upload/magnet adds (WE4),
+  single-password auth. Remaining: live-daemon QA (WE3-S6), visual parity
+  (WE2-S8), Playwright suite (WE6-S1), seedbox perf (WE6-S3). See
   `design/tasks.md` (epics WE0–WE6) and [docs/web-setup.md](docs/web-setup.md).
 - [ ] **B18 · Windows/Linux** (XL) · **B20 · l10n** (M) · **B21 · Import from
   other clients** (M) · **B22 · Light theme** (S) — icebox.

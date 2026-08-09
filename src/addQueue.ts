@@ -31,8 +31,17 @@ async function handleSource(source: AddSource): Promise<void> {
     await new Promise<void>((resolve) =>
       useUi.getState().openExternalAdd(source, resolve),
     );
+    return;
+  }
+
+  // Instant-add (showAddDialog off): magnets and desktop paths go through the
+  // shared command; browser File uploads hit the multipart endpoint.
+  const opts = defaultAddOptions(settings);
+  if (source.kind === "upload") {
+    const { webUploadTorrent } = await import("./ipc/web");
+    await webUploadTorrent(source.file, opts);
   } else {
-    await addTorrent(source, defaultAddOptions(settings));
+    await addTorrent(source, opts);
   }
 }
 

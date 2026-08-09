@@ -22,9 +22,17 @@ import type {
   TuningResult,
 } from "./types";
 
-/** Source for an add request: a local .torrent file or a magnet/URL string. */
+/**
+ * Source for an add request.
+ *
+ * - `file` — desktop path (Tauri picker / Finder open / native drop).
+ * - `upload` — browser `File` (web picker / DOM drop); never serialized over IPC.
+ * - `magnet` — magnet URI or http(s) `.torrent` URL.
+ */
 export type AddSource =
-  { kind: "file"; path: string } | { kind: "magnet"; uri: string };
+  | { kind: "file"; path: string }
+  | { kind: "upload"; file: File }
+  | { kind: "magnet"; uri: string };
 
 /** Parse a .torrent file's metadata to populate the Add dialog. */
 export function readTorrentMetadata(path: string): Promise<TorrentMeta> {

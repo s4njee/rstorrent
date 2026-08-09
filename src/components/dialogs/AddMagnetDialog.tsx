@@ -4,13 +4,15 @@
  * Accepts a `magnet:` URI or a plain `.torrent` URL. Magnets are lightly
  * validated (must contain a btih xt) and their display name is pulled from `dn=`
  * for the title. On Add, the request goes to the backend `load.start`/`load`
- * path. If the clipboard holds a magnet when the dialog opens, it's prefilled.
+ * path. If the clipboard holds a magnet when the dialog opens, it's prefilled
+ * (desktop: Tauri clipboard plugin; web: `navigator.clipboard`, silently
+ * skipped when permission is denied — WE4-S4).
  */
 
 import { useEffect, useState } from "react";
-import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { useUi } from "../../store/ui";
 import { useSettings } from "../../store/settings";
+import { capabilities } from "../../ipc/backend";
 import { addTorrent } from "../../ipc/commands";
 import { ModalBase, Button } from "./ModalBase";
 import { Checkbox } from "./Checkbox";
@@ -21,6 +23,20 @@ function isValidSource(text: string): boolean {
   const t = text.trim();
   if (/^magnet:\?.*xt=urn:btih:[0-9a-z]+/i.test(t)) return true;
   return /^https?:\/\/.+/i.test(t);
+}
+
+/** Read clipboard text through the host-appropriate API; null on denial. */
+async function readClipboardText(): Promise<string | null> {
+  try {
+    if (capabilities().nativeDialogs) {
+      const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+      return await readText();
+    }
+    return await navigator.clipboard.readText();
+  } catch {
+    // Empty clipboard, missing permission, or insecure context — ignore.
+    return null;
+  }
 }
 
 export function AddMagnetDialog() {
@@ -46,13 +62,9 @@ export function AddMagnetDialog() {
   // External links win over the clipboard fallback used by the toolbar flow.
   useEffect(() => {
     if (externalUri) return;
-    void readText()
-      .then((clip) => {
-        if (clip && isValidSource(clip)) setUri(clip.trim());
-      })
-      .catch(() => {
-        // clipboard may be empty/unavailable; ignore
-      });
+    void readClipboardText().then((clip) => {
+      if (clip && isValidSource(clip)) setUri(clip.trim());
+    });
   }, [externalUri]);
 
   const valid = isValidSource(uri);

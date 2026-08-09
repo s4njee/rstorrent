@@ -105,6 +105,26 @@ pub fn set_dock_badge(app: &AppHandle, count: i64) {
     }
 }
 
+/// Register this process as the notification sender with Launch Services.
+///
+/// `mac-notification-sys` must know a real bundle id before the first
+/// `Notification::send`. If we skip this, its default path runs AppleScript
+/// `get id of application "use_default"`, which fails and macOS pops a
+/// "Choose Application" / locate-app dialog — exactly when a torrent completes
+/// and we fire the first completion toast. Call once during app setup; the
+/// crate only accepts the first `set_application` call.
+#[cfg(target_os = "macos")]
+pub fn init(bundle_identifier: &str) {
+    // Prefer the real id so banners show as rstorrent. If Launch Services has
+    // never seen a matching .app (e.g. a bare `cargo run` binary with no prior
+    // `tauri build`), this returns Err and the crate falls back to Terminal's
+    // identity — still no AppleScript dialog.
+    let _ = mac_notification_sys::set_application(bundle_identifier);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn init(_bundle_identifier: &str) {}
+
 /// Post a completion notification and wait for a direct click off the poller
 /// thread. On click, focus the window and tell React which row to reveal.
 #[cfg(target_os = "macos")]

@@ -66,7 +66,18 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         // Persist and restore the window's size/position across launches.
-        .plugin(tauri_plugin_window_state::Builder::default().build());
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Manage open-request state at plugin-init time (before Ready). On
+        // macOS, LaunchServices can deliver RunEvent::Opened for a cold
+        // double-clicked .torrent before user setup runs — see open_requests.
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("open-requests")
+                .setup(|app, _api| {
+                    open_requests::install(app);
+                    Ok(())
+                })
+                .build(),
+        );
 
     // LaunchServices (macOS) and the NSIS installer's registry keys (Windows)
     // both route registered schemes and document types through this plugin.
@@ -75,8 +86,6 @@ pub fn run() {
 
     let app = builder
         .setup(|app| {
-            app.manage(open_requests::OpenRequestState::default());
-
             // A cold launch from a double-clicked .torrent puts the document in
             // our own argv; macOS instead replays it as `RunEvent::Opened`, so
             // only Windows has to read it here.
@@ -85,6 +94,9 @@ pub fn run() {
                 let argv: Vec<String> = std::env::args().collect();
                 open_requests::receive(app.handle(), open_requests::from_argv(&argv));
             }
+
+            // Must run before any completion toast: see notifications::init.
+            notifications::init(&app.config().identifier);
 
             // Settings live in the app's config dir; fall back to a temp path if
             // that can't be resolved (keeps the app usable regardless).

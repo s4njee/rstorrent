@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   defaultAddOptions,
   OpenRequestQueue,
+  parseDroppedFiles,
   parseDroppedPaths,
   parseOpenRequests,
   parsePastedText,
@@ -58,6 +59,18 @@ describe("parseOpenRequests", () => {
   });
 });
 
+describe("parseDroppedFiles", () => {
+  it("keeps only .torrent Files as upload sources", () => {
+    const torrent = new File(["d4:infoe"], "movie.torrent", {
+      type: "application/x-bittorrent",
+    });
+    const noise = new File(["x"], "readme.txt", { type: "text/plain" });
+    expect(parseDroppedFiles([noise, torrent])).toEqual([
+      { kind: "upload", file: torrent },
+    ]);
+  });
+});
+
 describe("OpenRequestQueue", () => {
   it("waits for each request before starting the next", async () => {
     const releases: Array<() => void> = [];
@@ -65,7 +78,13 @@ describe("OpenRequestQueue", () => {
     const queue = new OpenRequestQueue(
       (source) =>
         new Promise<void>((resolve) => {
-          started.push(source.kind === "file" ? source.path : source.uri);
+          started.push(
+            source.kind === "file"
+              ? source.path
+              : source.kind === "magnet"
+                ? source.uri
+                : source.file.name,
+          );
           releases.push(resolve);
         }),
     );
@@ -87,7 +106,12 @@ describe("OpenRequestQueue", () => {
     const handled: string[] = [];
     const onError = vi.fn();
     const queue = new OpenRequestQueue(async (source) => {
-      const path = source.kind === "file" ? source.path : source.uri;
+      const path =
+        source.kind === "file"
+          ? source.path
+          : source.kind === "magnet"
+            ? source.uri
+            : source.file.name;
       handled.push(path);
       if (path.includes("bad")) throw new Error("bad request");
     }, onError);

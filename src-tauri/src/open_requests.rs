@@ -5,13 +5,19 @@
 //! with the file or magnet in `argv`, which the single-instance plugin forwards
 //! to the live one. Both funnel into [`receive`].
 //!
-//! Either delivery may arrive before the webview has loaded. Requests are
-//! therefore retained until the frontend subscribes and invokes
-//! `take_open_requests`; later requests are emitted immediately.
+//! **Cold-start race (macOS):** LaunchServices delivers `RunEvent::Opened` for a
+//! double-clicked `.torrent` *before* Tauri's `Ready` event — and user `setup`
+//! only runs on `Ready`. The open-request state must therefore be managed at
+//! plugin-init / build time (see [`install`]), not inside `setup`. Otherwise
+//! `app.state()` panics and the process aborts: "opens then immediately quits".
+//!
+//! Either delivery may also arrive before the webview has loaded. Requests are
+//! retained until the frontend subscribes and invokes `take_open_requests`;
+//! later requests are emitted immediately.
 
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 pub const OPEN_REQUEST_EVENT: &str = "app://open-requests";
 
@@ -48,6 +54,13 @@ impl OpenRequestState {
     }
 }
 
+/// Register open-request state during plugin init (before `Ready` / user setup).
+///
+/// Must run before any `RunEvent::Opened` can arrive — i.e. not in `Builder::setup`.
+pub fn install<R: Runtime>(app: &impl Manager<R>) {
+    app.manage(OpenRequestState::default());
+}
+
 /// Pick the openable arguments out of a command line.
 ///
 /// Windows hands the app its document or URL as an ordinary argument, mixed in
@@ -68,16 +81,26 @@ pub fn from_argv(argv: &[String]) -> Vec<String> {
 
 /// Accept open requests from either platform's delivery mechanism.
 pub fn receive(app: &AppHandle, urls: Vec<String>) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-
-    let state = app.state::<OpenRequestState>();
+    // Queue first — never panic if state is missing (defense in depth).
+    let Some(state) = app.try_state::<OpenRequestState>() else {
+        eprintln!("rstorrent: open request before OpenRequestState was installed; dropping {urls:?}");
+        return;
+    };
     if let Some(urls) = state.receive(urls) {
         let _ = app.emit(OPEN_REQUEST_EVENT, urls);
     }
+
+    // Focus after the Apple Event / open-URL stack unwinds. Calling show/focus
+    // re-entrantly from inside AppKit's `_openURLs:` has been a source of
+    // fragile startup behavior when combined with window-state restoration.
+    let app = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    });
 }
 
 #[cfg(test)]

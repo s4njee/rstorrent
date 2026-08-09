@@ -109,6 +109,16 @@ export function parseDroppedPaths(paths: string[]): AddSource[] {
 }
 
 /**
+ * Convert browser `File` objects from a DOM drop into upload sources (WE4-S3).
+ * Non-torrent files in the same drop are ignored.
+ */
+export function parseDroppedFiles(files: Iterable<File>): AddSource[] {
+  return [...files]
+    .filter((file) => isTorrentPath(file.name))
+    .map((file) => ({ kind: "upload" as const, file }));
+}
+
+/**
  * Convert pasted (or text-dropped) clipboard content into add sources. Split on
  * newlines rather than all whitespace so a pasted path containing spaces stays
  * intact; magnets and URLs never contain raw spaces.

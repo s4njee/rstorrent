@@ -346,17 +346,17 @@ Deps: WE3-S1, WE2.
   **AC:** oversize/malformed uploads → clean 4xx with `AppError`; add lands in mock and live.
   **Verify:** multipart handler tests + a live add.
 
-- [ ] **WE4-S2 · AddTorrentDialog web path** (M)
+- [x] **WE4-S2 · AddTorrentDialog web path** (M)
   Replace the native picker under `capabilities.nativeDialogs`: `<input type="file" accept=".torrent">`, hold the `File`, `inspect` → the existing tri-state file tree, upload on confirm. Save-path/label/start/priority options unchanged.
   **AC:** the dialog is visually identical to desktop (design authority: desktop 1c); full flow works in mock.
   **Verify:** browser smoke; desktop dialog untouched.
 
-- [ ] **WE4-S3 · Drag & drop + paste-to-add** (M)
+- [x] **WE4-S3 · Drag & drop + paste-to-add** (M)
   DOM `dragover`/`drop` on the window: `.torrent` files → the WE4-S2 flow (pre-filled dialog); dropped/pasted magnet text → the magnet dialog. `usePasteToAdd` verified in-browser.
   **AC:** dropping a file and pasting a magnet each open the right pre-filled dialog.
   **Verify:** manual in Chromium + Firefox.
 
-- [ ] **WE4-S4 · AddMagnetDialog** (S)
+- [x] **WE4-S4 · AddMagnetDialog** (S)
   Clipboard prefill via `navigator.clipboard.readText`, silently skipped when permission is denied; submit via `/api/cmd/add_torrent`. **The W4 demo.**
   **AC:** works with clipboard permission granted and denied.
   **Verify:** browser smoke both states.

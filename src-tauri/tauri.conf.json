@@ -43,8 +43,8 @@
         "ext": ["torrent"],
         "mimeType": "application/x-bittorrent",
         "name": "BitTorrent metainfo",
-        "role": "Viewer",
-        "rank": "Default"
+        "role": "Editor",
+        "rank": "Owner"
       }
     ],
     "windows": {

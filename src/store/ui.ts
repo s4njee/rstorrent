@@ -361,7 +361,8 @@ export const useUi = create<UiState>((set, get) => {
     },
     openExternalAdd: (source, onComplete) =>
       set({
-        dialog: source.kind === "file" ? "add-file" : "add-magnet",
+        // file + upload both open the torrent dialog; magnet opens the other.
+        dialog: source.kind === "magnet" ? "add-magnet" : "add-file",
         externalAddRequest: { id: nextExternalRequestId++, source },
         externalAddComplete: onComplete,
         contextMenu: null,

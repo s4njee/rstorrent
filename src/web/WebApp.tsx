@@ -1,11 +1,11 @@
 /**
- * The web shell (WE2).
+ * The web shell (WE2 + WE4).
  *
  * Composes the web chrome — AppBar, ActionStrip, Footer, and the sidebar disk
  * card — around the *shared* components (FilterSidebar, TorrentTable, DetailTabs,
  * ContextMenu, DialogHost). The live-data wiring mirrors the desktop App, minus
- * the desktop-only channels (native menus, deep links, notifications) and the
- * Tauri drag-drop hook; browser add flows land in WE4.
+ * the desktop-only channels (native menus, deep links, notifications). Browser
+ * add flows (file picker, magnet clipboard, drag/drop, paste) land in WE4.
  */
 
 import { useEffect, useState } from "react";
@@ -17,6 +17,8 @@ import { useDetail } from "../store/detail";
 import { useLog } from "../store/log";
 import { useRateHistory } from "../store/rateHistory";
 import { useKeyboardShortcuts } from "../hooks/useKeyboard";
+import { usePasteToAdd } from "../hooks/usePasteToAdd";
+import { useWebDragDrop } from "../hooks/useWebDragDrop";
 import { FilterSidebar } from "../components/sidebar/FilterSidebar";
 import { TorrentTable } from "../components/table/TorrentTable";
 import { DetailTabs } from "../components/details/DetailTabs";
@@ -37,6 +39,9 @@ export function WebApp({ onSignOut }: { onSignOut: () => void }) {
   // Space pause/resume, Delete → remove confirm, arrows + modifiers for
   // selection, ⌘/Ctrl-A select-all (`/` focus-search is handled in AppBar).
   useKeyboardShortcuts();
+  // WE4-S3: paste magnet/URL; DOM drag-drop of .torrent files / magnet text.
+  usePasteToAdd();
+  const dragOver = useWebDragDrop();
 
   // Live data channels (see App.tsx for the desktop counterpart).
   useEffect(() => {
@@ -138,6 +143,11 @@ export function WebApp({ onSignOut }: { onSignOut: () => void }) {
           onSignOut={onSignOut}
         />
       )}
+      {dragOver && (
+        <div style={S.dropOverlay}>
+          <div style={S.dropCard}>drop .torrent files to add</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -152,6 +162,26 @@ const S = {
     color: "var(--text-body)",
     fontFamily: "var(--font-mono)",
     fontSize: "var(--fs-base)",
+    position: "relative",
+  } as const,
+  dropOverlay: {
+    position: "absolute",
+    inset: 0,
+    zIndex: 50,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "color-mix(in srgb, var(--bg-app) 70%, transparent)",
+    pointerEvents: "none",
+  } as const,
+  dropCard: {
+    padding: "14px 22px",
+    borderRadius: 8,
+    border: "1px dashed var(--accent-cyan)",
+    background: "var(--bg-panel)",
+    color: "var(--text-body)",
+    fontSize: "var(--fs-base)",
+    fontWeight: 600,
   } as const,
   body: { display: "flex", flex: 1, minHeight: 0 } as const,
   main: {

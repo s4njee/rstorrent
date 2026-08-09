@@ -1,19 +1,25 @@
 /**
  * Add-torrent dialog (design screen 02).
  *
- * On open it prompts for a `.torrent` file (native picker), parses its metadata
- * in Rust, and shows: the torrent name/size, a save-path (with Browse), a label,
- * download options, and a Contents file tree with tri-state checkboxes. Files
- * left unchecked are passed as `unselectedIndexes` (loaded at priority 0).
+ * On open it prompts for a `.torrent` file, parses metadata, and shows: the
+ * torrent name/size, a save-path (with Browse on desktop), a label, download
+ * options, and a Contents file tree with tri-state checkboxes. Files left
+ * unchecked are passed as `unselectedIndexes` (loaded at priority 0).
+ *
+ * Host branch (WE4-S2):
+ *  - **Desktop** (`capabilities.nativeDialogs`): Tauri picker → path → Rust
+ *    `read_torrent_metadata` / `add_torrent`.
+ *  - **Web**: `<input type="file">` → `File` → `POST /api/torrents/inspect` /
+ *    `POST /api/torrents/file`.
  *
  * "Rename torrent" and "Sequential download" are shown disabled — neither is
  * supported by the current backend path; see plan.md non-goals.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useUi } from "../../store/ui";
 import { useSettings } from "../../store/settings";
+import { capabilities } from "../../ipc/backend";
 import { addTorrent, readTorrentMetadata } from "../../ipc/commands";
 import type { TorrentMeta } from "../../ipc/types";
 import { formatBytes } from "../../utils/format";
@@ -33,10 +39,10 @@ export function AddTorrentDialog() {
   const closeDialog = useUi((s) => s.closeDialog);
   const external = useUi((s) => s.externalAddRequest);
   const settings = useSettings((s) => s.settings);
-  const externalPath =
-    external?.source.kind === "file" ? external.source.path : null;
+  const canNative = capabilities().nativeDialogs;
 
   const [path, setPath] = useState<string | null>(null);
+  const [upload, setUpload] = useState<File | null>(null);
   const [meta, setMeta] = useState<TorrentMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savePath, setSavePath] = useState("");
@@ -48,51 +54,130 @@ export function AddTorrentDialog() {
   // Selected file indexes (all selected initially).
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  /** True once a pick has been attempted (cancelling closes the dialog). */
+  const picking = useRef(false);
 
   // Apply the configured destination even if settings finish loading after us.
   useEffect(() => {
     if (settings) setSavePath(settings.defaultSavePath);
   }, [settings]);
 
-  // Finder-provided files skip the picker and go straight to metadata parsing.
+  /** Apply parsed metadata to the form (shared by path and File paths). */
+  const applyMeta = (m: TorrentMeta) => {
+    setMeta(m);
+    setLabel("");
+    setSelected(new Set(m.files.map((_, i) => i)));
+    // Expand top-level folders by default.
+    setExpanded(
+      new Set(
+        buildTree(m.files)
+          .filter((n) => n.isDir)
+          .map((n) => n.name),
+      ),
+    );
+  };
+
+  const loadFromPath = async (chosen: string) => {
+    setPath(chosen);
+    try {
+      applyMeta(await readTorrentMetadata(chosen));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const loadFromFile = async (file: File) => {
+    setUpload(file);
+    try {
+      // Dynamic so the desktop bundle never pulls the web fetch helpers.
+      const { webInspectTorrent } = await import("../../ipc/web");
+      applyMeta(await webInspectTorrent(file));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  // External sources skip the picker; otherwise open the host-appropriate one.
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     void (async () => {
-      const chosen =
-        externalPath ??
-        (await open({
-          multiple: false,
-          filters: [{ name: "Torrent", extensions: ["torrent"] }],
-        }));
-      if (typeof chosen !== "string") {
-        closeDialog();
+      const source = external?.source;
+      if (source?.kind === "file") {
+        await loadFromPath(source.path);
         return;
       }
-      setPath(chosen);
-      try {
-        const m = await readTorrentMetadata(chosen);
-        setMeta(m);
-        setLabel("");
-        setSelected(new Set(m.files.map((_, i) => i)));
-        // Expand top-level folders by default.
-        setExpanded(
-          new Set(
-            buildTree(m.files)
-              .filter((n) => n.isDir)
-              .map((n) => n.name),
-          ),
-        );
-      } catch (e) {
-        setError(String(e));
+      if (source?.kind === "upload") {
+        await loadFromFile(source.file);
+        return;
       }
+
+      if (canNative) {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const chosen = await open({
+          multiple: false,
+          filters: [{ name: "Torrent", extensions: ["torrent"] }],
+        });
+        if (typeof chosen !== "string") {
+          closeDialog();
+          return;
+        }
+        await loadFromPath(chosen);
+        return;
+      }
+
+      // Web: open the hidden file input. Cancel is detected via focus return
+      // (the change event never fires when the user dismisses the picker).
+      picking.current = true;
+      fileInputRef.current?.click();
     })();
-  }, [closeDialog, externalPath]);
+    // Mount-only: the dialog is keyed per open, so a re-run would re-prompt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional once-per-open
+  }, [closeDialog, external, canNative]);
+
+  // If the browser file picker was cancelled, close the dialog. We only act
+  // after a blur→focus cycle (picker was actually shown and dismissed); a bare
+  // focus on mount must not kill the dialog before the user chooses.
+  useEffect(() => {
+    if (canNative) return;
+    let sawBlur = false;
+    const onBlur = () => {
+      if (picking.current) sawBlur = true;
+    };
+    const onFocus = () => {
+      if (!picking.current || !sawBlur) return;
+      window.setTimeout(() => {
+        if (picking.current && !upload && !meta && !error) {
+          picking.current = false;
+          closeDialog();
+        }
+      }, 300);
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [canNative, upload, meta, error, closeDialog]);
+
+  const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    picking.current = false;
+    const file = e.target.files?.[0];
+    if (!file) {
+      closeDialog();
+      return;
+    }
+    void loadFromFile(file);
+  };
 
   const tree = useMemo(() => (meta ? buildTree(meta.files) : []), [meta]);
 
   const browse = async () => {
+    if (!canNative) return;
+    const { open } = await import("@tauri-apps/plugin-dialog");
     const dir = await open({ directory: true });
     if (typeof dir === "string") setSavePath(dir);
   };
@@ -122,25 +207,28 @@ export function AddTorrentDialog() {
   };
 
   const add = async () => {
-    if (adding || !path || !meta) return;
+    if (adding || !meta || (!path && !upload)) return;
     const unselectedIndexes = meta.files
       .map((_, i) => i)
       .filter((i) => !selected.has(i));
+    const opts = {
+      savePath,
+      label,
+      start,
+      topOfQueue,
+      sequential: false,
+      skipHashCheck: skipHash,
+      unselectedIndexes,
+    };
     setAdding(true);
     setError(null);
     try {
-      await addTorrent(
-        { kind: "file", path },
-        {
-          savePath,
-          label,
-          start,
-          topOfQueue,
-          sequential: false,
-          skipHashCheck: skipHash,
-          unselectedIndexes,
-        },
-      );
+      if (upload) {
+        const { webUploadTorrent } = await import("../../ipc/web");
+        await webUploadTorrent(upload, opts);
+      } else if (path) {
+        await addTorrent({ kind: "file", path }, opts);
+      }
       closeDialog();
     } catch (e) {
       setError(String(e));
@@ -174,6 +262,17 @@ export function AddTorrentDialog() {
         </>
       }
     >
+      {/* Hidden picker for the web path (WE4-S2); desktop never mounts it. */}
+      {!canNative && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".torrent,application/x-bittorrent"
+          style={{ display: "none" }}
+          onChange={onFileInputChange}
+        />
+      )}
+
       {error && <div className={forms.error}>{error}</div>}
       {!meta && !error && <div className={forms.meta}>reading torrent…</div>}
 
@@ -198,9 +297,11 @@ export function AddTorrentDialog() {
               onChange={(e) => setSavePath(e.currentTarget.value)}
               spellCheck={false}
             />
-            <button className={forms.browse} onClick={browse}>
-              Browse…
-            </button>
+            {canNative && (
+              <button className={forms.browse} onClick={() => void browse()}>
+                Browse…
+              </button>
+            )}
           </div>
 
           <div className={forms.field}>
