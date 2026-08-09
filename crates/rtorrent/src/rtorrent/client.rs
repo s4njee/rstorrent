@@ -636,9 +636,11 @@ impl RtorrentApi for RpcClient {
     }
 
     async fn pieces(&self, hash: &str) -> Result<PieceInfo> {
-        // One round-trip for all four fields. `d.bitfield` is the piece bitmap;
+        // One round-trip for all five fields. `d.bitfield` is the piece bitmap;
         // rtorrent returns an all-`F` string for a complete torrent and may
-        // return an empty string before any chunks exist.
+        // return an empty string before any chunks exist. `d.chunks_seen` is the
+        // per-chunk peer-availability buffer (one hex byte per chunk = count of
+        // connected peers holding it); it's an empty string on a closed torrent.
         let h = || vec![Value::Str(hash.to_string())];
         let r = self
             .multicall(&[
@@ -646,6 +648,7 @@ impl RtorrentApi for RpcClient {
                 ("d.completed_chunks", h()),
                 ("d.chunk_size", h()),
                 ("d.bitfield", h()),
+                ("d.chunks_seen", h()),
             ])
             .await?;
         let num = |i: usize| {
@@ -660,11 +663,22 @@ impl RtorrentApi for RpcClient {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        // `d.chunks_seen` comes back as a hex `<string>` (empty when closed).
+        // Forward it verbatim, dropping an empty or all-zero buffer to `None` so
+        // the availability bar stays hidden while there's no swarm coverage.
+        let availability = r
+            .get(4)
+            .and_then(|x| x.as_ref().ok()) // tolerate a per-call fault
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .filter(|s| !s.bytes().all(|b| b == b'0'))
+            .map(str::to_string);
         Ok(PieceInfo {
             size_chunks: num(0),
             completed_chunks: num(1),
             chunk_size: num(2),
             bitfield,
+            availability,
         })
     }
 

@@ -37,6 +37,7 @@
   --accent-green-soft: #7fd8a4; /* upload speed, good ratio */
   --accent-amber: #d5a04c; /* stalled status/bar */
   --accent-red: #e05d5d; /* error status/bar, destructive action */
+  --accent-violet: #9b8cf0; /* piece availability bar (swarm coverage) */
 
   /* --- Danger palette --- */
   --danger-bg: #3a1f1f; /* destructive button fill, warning icon bg */
@@ -56,6 +57,9 @@
   --status-stalled: var(--accent-amber);
   --status-error: var(--accent-red);
   --status-checking: var(--accent-cyan-bright);
+
+  /* Piece availability bar (distinct from any status colour). */
+  --avail: var(--accent-violet);
 
   /* --- Typography --- */
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;

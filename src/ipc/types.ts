@@ -161,12 +161,19 @@ export interface FileNode {
  * covers 8 pieces, most-significant bit first. It's forwarded verbatim (rather
  * than as a bool array) to keep the payload small for large torrents; use
  * `utils/bitfield.ts` to read it.
+ *
+ * `availability` is rtorrent's `d.chunks_seen`, a hex string with one byte
+ * (two hex chars) per chunk holding the count of connected peers that have it —
+ * the swarm coverage that drives the availability bar. Absent when the daemon
+ * reports no swarm data (a closed torrent, or an all-zero peerless swarm),
+ * which is when the bar hides itself. Decode with `availabilityToBytes`.
  */
 export interface PieceInfo {
   sizeChunks: number;
   completedChunks: number;
   chunkSize: number;
   bitfield: string;
+  availability?: string;
 }
 
 /** Payload of the `state://detail` event. */

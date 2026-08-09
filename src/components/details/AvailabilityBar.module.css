@@ -1,0 +1,35 @@
+/* Availability bar: a slim full-width canvas strip that sits just below the
+   pieces bar, sharing its caption styling but a shorter, dimmer profile so the
+   pieces bar stays the primary reading. */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: -4px; /* pull up under the pieces bar; they read as a pair */
+  margin-bottom: 10px;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border-mid);
+  border-radius: 1px;
+  /* The canvas is drawn at device resolution; don't let the browser smooth it. */
+  image-rendering: pixelated;
+}
+
+.caption {
+  display: flex;
+  gap: 18px;
+  font-size: var(--fs-cell);
+  color: var(--text-body);
+}
+.caption b {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.copies {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}

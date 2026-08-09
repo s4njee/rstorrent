@@ -40,6 +40,7 @@ import {
 } from "../../utils/format";
 import { SpeedChart } from "./SpeedChart";
 import { PieceBar } from "./PieceBar";
+import { AvailabilityBar } from "./AvailabilityBar";
 import { ProgressBar } from "../table/ProgressBar";
 import { PauseIcon, PlayIcon, RemoveIcon } from "../icons";
 import menuStyles from "../menu/ContextMenu.module.css";
@@ -579,6 +580,10 @@ function General({
       {/* Pieces bar arrives on the detail poll; absent for a moment on select. */}
       {pieces && pieces.sizeChunks > 0 && (
         <PieceBar pieces={pieces} status={t.status} />
+      )}
+      {/* Availability sits right under it; hidden until the swarm reports data. */}
+      {pieces && pieces.sizeChunks > 0 && pieces.availability && (
+        <AvailabilityBar pieces={pieces} />
       )}
       <div className={styles.general}>
         {pairs.map(([k, v]) => (

@@ -186,6 +186,12 @@ pub struct FileNode {
 /// than expanding to a bool array — a 100k-piece torrent would otherwise mean a
 /// 100k-element JSON array every poll; the frontend downsamples it to the bar's
 /// pixel width. An empty string means "nothing yet" (treated as all-zero).
+///
+/// `availability` is rtorrent's `d.chunks_seen`, forwarded verbatim as a hex
+/// string: one byte (two hex chars) per chunk holding the count of connected,
+/// accounted peers that have that chunk — the swarm's per-piece coverage that
+/// drives the availability bar. `None` when the daemon reports nothing (a
+/// closed torrent, or an all-zero peerless swarm), which hides the bar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PieceInfo {
@@ -193,6 +199,8 @@ pub struct PieceInfo {
     pub completed_chunks: i64,
     pub chunk_size: i64,
     pub bitfield: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<String>,
 }
 
 /// Payload of the `state://detail` event / `GET /api/detail` response.

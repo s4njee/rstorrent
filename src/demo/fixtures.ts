@@ -252,6 +252,25 @@ export const snapshot: Snapshot = {
   },
 };
 
+/** Per-chunk peer availability (`d.chunks_seen`), hex-encoded: a gentle swarm
+ *  wave of 2..6 peers with one scarce single-peer valley, mirroring the mock
+ *  backend so the demo availability bar looks like a real swarm. */
+function availability(chunks: number): string {
+  const bytes = new Uint8Array(chunks);
+  for (let i = 0; i < chunks; i++) {
+    const phase = i / chunks;
+    bytes[i] =
+      phase >= 0.42 && phase < 0.52
+        ? 1
+        : Math.round(Math.sin(phase * Math.PI * 3) * 2.5 + 3.5);
+  }
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
 /** A partial bitfield for the pieces bar (leading run + a scattered edge). */
 function bitfield(chunks: number, done: number): string {
   const bits: boolean[] = Array.from({ length: chunks }, (_, i) => {
@@ -282,6 +301,7 @@ export function piecesDetail(hash: string): DetailPayload {
       completedChunks: done,
       chunkSize: 512 * KIB,
       bitfield: bitfield(chunks, done),
+      availability: availability(chunks),
     },
   };
 }

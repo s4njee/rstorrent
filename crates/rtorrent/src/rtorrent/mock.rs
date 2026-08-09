@@ -346,11 +346,26 @@ impl RtorrentApi for MockClient {
             i += 1;
         }
 
+        // Synthesize per-chunk peer availability (`d.chunks_seen`): a gentle
+        // swarm "wave" of 2..6 peers with one scarce single-peer valley, so the
+        // mock availability bar reads like a real swarm rather than a flat block.
+        let seen: Vec<u8> = (0..size_chunks as usize)
+            .map(|i| {
+                let phase = i as f64 / size_chunks.max(1) as f64;
+                if (0.42..0.52).contains(&phase) {
+                    1 // a rare stretch: only a single peer has these chunks
+                } else {
+                    ((phase * std::f64::consts::PI * 3.0).sin() * 2.5 + 3.5).round() as u8
+                }
+            })
+            .collect();
+
         Ok(crate::types::PieceInfo {
             size_chunks,
             completed_chunks,
             chunk_size,
             bitfield: bits_to_hex(&bits),
+            availability: Some(bytes_to_hex(&seen)),
         })
     }
 
@@ -655,6 +670,16 @@ fn bits_to_hex(bits: &[bool]) -> String {
             }
         }
         out.push_str(&format!("{byte:02X}"));
+    }
+    out
+}
+
+/// Uppercase hex encoding of a byte buffer — mirrors how rtorrent's
+/// `d.chunks_seen` ships its per-chunk peer counts (one byte per chunk).
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push_str(&format!("{b:02X}"));
     }
     out
 }
