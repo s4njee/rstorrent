@@ -225,6 +225,11 @@ export function saveSession(): Promise<void> {
   return backend().invoke("save_session");
 }
 
+/** Start a local rtorrent daemon (C20). Rejects for a remote transport. */
+export function startDaemon(): Promise<string> {
+  return backend().invoke("start_daemon");
+}
+
 /** Ask the daemon to shut down cleanly (D13). */
 export function shutdownDaemon(): Promise<void> {
   return backend().invoke("shutdown_daemon");

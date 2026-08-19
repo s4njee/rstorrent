@@ -180,7 +180,12 @@ impl RpcClient {
 
 /// Build the command list a load call applies to the new download.
 fn load_commands(opts: &LoadOptions) -> Vec<String> {
-    let mut cmds = vec![format!("d.directory.set={}", opts.directory)];
+    // An empty directory must not emit `d.directory.set=` — rtorrent treats
+    // that as a real path (cwd / relative ""), not "keep the daemon default".
+    let mut cmds = Vec::new();
+    if !opts.directory.is_empty() {
+        cmds.push(format!("d.directory.set={}", opts.directory));
+    }
     if !opts.label.is_empty() {
         cmds.push(format!("d.custom1.set={}", opts.label));
     }
@@ -1124,6 +1129,19 @@ mod tests {
         assert_eq!(cmds[0], "d.directory.set=/srv/dl");
         assert!(cmds.contains(&"d.custom1.set=iso".to_string()));
         assert!(cmds.contains(&"d.priority.set=3".to_string()));
+    }
+
+    #[test]
+    fn load_commands_omit_empty_directory() {
+        let opts = LoadOptions {
+            directory: String::new(),
+            label: String::new(),
+            start: true,
+            top_of_queue: false,
+            unselected_indexes: vec![],
+        };
+        let cmds = load_commands(&opts);
+        assert!(cmds.iter().all(|c| !c.starts_with("d.directory.set")), "{cmds:?}");
     }
 
     #[test]

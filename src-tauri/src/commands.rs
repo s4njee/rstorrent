@@ -864,6 +864,23 @@ pub async fn save_session(app: AppHandle, state: St<'_>) -> Result<(), String> {
     Ok(())
 }
 
+/// Start a local rtorrent daemon (C20). Only meaningful when the transport is
+/// local — for a remote HTTP daemon the user manages it out-of-band.
+#[tauri::command]
+pub async fn start_daemon(app: AppHandle, state: St<'_>) -> Result<String, String> {
+    if !settings::is_localhost(&state.settings().transport) {
+        return Err("start is only available for a local daemon".into());
+    }
+    let transport = state.settings().transport.clone();
+    let msg = tokio::task::spawn_blocking(move || crate::daemon_start::start(transport))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e)?;
+    state.log(&app, LogLevel::Info, msg.clone(), None);
+    state.repoll.notify_one();
+    Ok(msg)
+}
+
 /// Ask the daemon to shut down cleanly (D13). The connection will then drop and
 /// the poller reports disconnected until a daemon is running again.
 #[tauri::command]

@@ -27,11 +27,15 @@ pub fn setup(app: &App) -> tauri::Result<()> {
     let stats = MenuItemBuilder::with_id("menu:stats", "Statistics").build(app)?;
     let tune = MenuItemBuilder::with_id("menu:tune-network", "Tune for 1 Gbps…").build(app)?;
 
+    let start_daemon =
+        MenuItemBuilder::with_id("menu:start-daemon", "Start Daemon").build(app)?;
     // Daemon lifecycle (D13): write the session, or shut the daemon down.
     let save_session = MenuItemBuilder::with_id("menu:save-session", "Save Session").build(app)?;
     let shutdown =
         MenuItemBuilder::with_id("menu:shutdown-daemon", "Shut Down Daemon…").build(app)?;
     let daemon_menu = SubmenuBuilder::new(app, "Daemon")
+        .item(&start_daemon)
+        .separator()
         .item(&save_session)
         .separator()
         .item(&shutdown)

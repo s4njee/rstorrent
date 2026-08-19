@@ -21,6 +21,7 @@ import {
   retryConnection,
   takeOpenRequests,
   saveSession,
+  startDaemon,
 } from "./ipc/commands";
 import { parseOpenRequests } from "./externalOpen";
 import { enqueueAddSources } from "./addQueue";
@@ -83,6 +84,10 @@ export default function App() {
       onMenuAction((action) => {
         if (action === "save-session") {
           void saveSession();
+          return;
+        }
+        if (action === "start-daemon") {
+          void startDaemon().catch(() => {});
           return;
         }
         useUi
@@ -183,6 +188,15 @@ export default function App() {
             {connection.phase === "disconnected" && (
               <>
                 <div className={styles.actions}>
+                  <button
+                    onClick={() =>
+                      void startDaemon()
+                        .then(() => void retryConnection())
+                        .catch(() => {})
+                    }
+                  >
+                    Start rtorrent
+                  </button>
                   <button onClick={() => void retryConnection()}>
                     Retry now
                   </button>

@@ -23,6 +23,7 @@ pub mod ipc;
 pub use rtorrent_core::{rtorrent, secrets, torrent_file};
 
 mod commands;
+mod daemon_start;
 mod hooks;
 mod localfs;
 mod log;
@@ -157,6 +158,7 @@ pub fn run() {
             commands::get_statistics,
             commands::daemon_health,
             commands::save_session,
+            commands::start_daemon,
             commands::shutdown_daemon,
             commands::rss_fetch,
             commands::rss_download,
