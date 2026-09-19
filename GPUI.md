@@ -11,6 +11,29 @@ and [backlog-v2.md](backlog-v2.md) the feature roadmaps. This file owns the port
 
 ---
 
+## Backlog
+
+### Top priority: parity gaps left by the Tauri removal
+
+The Tauri shell was removed on 2026-09-19 (`3323c6d`) before these were
+ported, so for now the app simply lacks them. They come first, in the order they
+matter (§4). Each is a G7 story (§11). The Tauri implementation is the
+behavioural reference, and it's still in history at `44e6680`, the last commit
+before the removal. Read it with `git show 44e6680:<path>`.
+
+| # | Gap | Size | Tauri reference (`git show 44e6680:…`) | Notes |
+|---|---|---|---|---|
+| 1 | **Tray / menu-bar item**: rates; Show/Hide; Add; Resume/Pause All; turtle toggle; Preferences; Quit | L | `src-tauri/src/tray.rs`, tray setup in `src-tauri/src/lib.rs` | G7-S1. On Windows this is the notification-area icon. |
+| 2 | **Drag & drop `.torrent` onto the window** → add dialog | M | `src/hooks/useDragDrop.ts`, `src/addQueue.ts` | G7-S2. Drops and pastes fed one add queue. |
+| 3 | **Paste-to-add**: ⌘V/Ctrl+V on the main window with a magnet or torrent URL on the clipboard opens the add flow | S | `src/hooks/usePasteToAdd.ts`, `src/externalOpen.ts` (`parsePastedText`) | G7-S3. Only the add dialog's clipboard prefill exists today (`add_dialogs.rs`). Pastes into text fields and non-link text must be ignored. |
+| 4 | **Watch-folder runner**: `notify`-based auto-add with a stability delay, `.loaded` rename and an error inbox | L | `src-tauri/src/watcher.rs` | G7-S4. Preferences already edits `watch_folders`; nothing acts on them. On Windows, a `/mnt/c/…` folder must be watched from the Windows side. |
+| 5 | **`.torrent` / `magnet:` association**: claim the file type and URL scheme, and route argv and deep links (plus a second launch, via single-instance forwarding) into the add dialogs | M | `src-tauri/src/open_requests.rs`, `src-tauri/src/lib.rs` (single-instance + deep-link plugins), `src-tauri/tauri.conf.json` (`fileAssociations`, `deep-link` schemes) | G7-S5. On macOS: `CFBundleDocumentTypes` + `CFBundleURLTypes` in `tools/bundle-gpui-macos.sh`'s Info.plist, and an open-URLs handler. On Windows: registry entries from an installer (windows.md §5). |
+
+Once these land, the §4 "not yet ported" list is empty and V3-01's accept
+criterion (§11) is reachable.
+
+---
+
 ## 1. Why, and what it changes
 
 | Area | Tauri 2 + React today | GPUI |
