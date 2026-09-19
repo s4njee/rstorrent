@@ -20,11 +20,12 @@ function visibleHashes(): string[] {
   const u = useUi.getState();
   return selectVisible(
     t.torrents,
-    u.filter,
+    u.facets,
     u.search,
     u.sortColumn,
     u.sortDir,
     u.smartFilters,
+    u.fileMatches,
   ).map((row) => row.hash);
 }
 
@@ -34,8 +35,14 @@ export function useKeyboardShortcuts() {
       const ui = useUi.getState();
       const mod = e.metaKey || e.ctrlKey;
 
-      // ⌘F — focus the filter box.
+      // ⌘F — focus the filter box. `/` does the same without a modifier, the
+      // design's shortcut, but only when not already typing.
       if (mod && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        document.getElementById("filter-input")?.focus();
+        return;
+      }
+      if (e.key === "/" && !mod && !e.altKey && !typingInField()) {
         e.preventDefault();
         document.getElementById("filter-input")?.focus();
         return;
@@ -46,15 +53,75 @@ export function useKeyboardShortcuts() {
         ui.selectAll(visibleHashes());
         return;
       }
+      // ⌘N — create torrent (also handled by native menu on desktop).
+      if (mod && e.key.toLowerCase() === "n" && !typingInField()) {
+        e.preventDefault();
+        ui.openDialog("create-torrent");
+        return;
+      }
+      // ⌥⌘R — force a hash recheck on the current selection.
+      if (mod && e.altKey && e.key.toLowerCase() === "r" && ui.selection.size) {
+        e.preventDefault();
+        actions.recheck();
+        return;
+      }
       // Note: ⌘O / ⌘⇧O (add file/magnet) and ⌘, (Preferences) are owned by the
       // native menu, which intercepts them before the webview — see menu.rs.
 
       // The rest are single-key and must not fire while typing.
       if (typingInField()) return;
 
+      // Arrow navigation — moves selection without breaking sticky header or
+      // variable columns (FND-01). Virtualized table listens for the scroll
+      // event and keeps the new row in view.
+      if (
+        (e.key === "ArrowDown" || e.key === "ArrowUp") &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
+        const hashes = visibleHashes();
+        if (hashes.length === 0) return;
+        e.preventDefault();
+        const anchor =
+          ui.anchor ??
+          (ui.selection.size ? [...ui.selection][0] : null) ??
+          hashes[0];
+        const idx = hashes.indexOf(anchor);
+        const baseIdx = idx === -1 ? 0 : idx;
+        let nextIdx: number;
+        if (e.key === "ArrowDown")
+          nextIdx = Math.min(hashes.length - 1, baseIdx + 1);
+        else nextIdx = Math.max(0, baseIdx - 1);
+        const nextHash = hashes[nextIdx]!;
+        if (e.shiftKey) {
+          ui.selectRange(nextHash, hashes);
+        } else {
+          ui.select(nextHash);
+        }
+        window.dispatchEvent(
+          new CustomEvent("scrollToTorrent", { detail: nextHash }),
+        );
+        return;
+      }
+      if (e.key === "Home" || e.key === "End") {
+        const hashes = visibleHashes();
+        if (hashes.length === 0) return;
+        e.preventDefault();
+        const nextHash =
+          e.key === "Home" ? hashes[0]! : hashes[hashes.length - 1]!;
+        if (e.shiftKey) ui.selectRange(nextHash, hashes);
+        else ui.select(nextHash);
+        window.dispatchEvent(
+          new CustomEvent("scrollToTorrent", { detail: nextHash }),
+        );
+        return;
+      }
+
       // Escape — unwind context menu → dialog → selection.
       if (e.key === "Escape") {
-        if (ui.columnMenu) ui.closeColumnMenu();
+        if (ui.sidebarOpen) ui.toggleSidebar();
+        else if (ui.columnMenu) ui.closeColumnMenu();
         else if (ui.contextMenu) ui.closeContextMenu();
         else if (ui.dialog) ui.closeDialog();
         else ui.clearSelection();
@@ -72,13 +139,15 @@ export function useKeyboardShortcuts() {
         else actions.resume();
         return;
       }
-      // Delete / Backspace — remove the selection (opens confirm in E7).
+      // Delete removes; ⇧Delete offers to take the data with it. Both open a
+      // confirmation — the data variant names the path and the count.
       if (
         (e.key === "Backspace" || e.key === "Delete") &&
         ui.selection.size > 0
       ) {
         e.preventDefault();
-        actions.requestRemove();
+        actions.requestRemove({ deleteData: e.shiftKey });
+        return;
       }
     };
 

@@ -1,42 +1,95 @@
-/* Left filter sidebar: fixed 150px, three grouped sections (Status, Labels,
-   Trackers). The active row gets the selected fill, a cyan left border, and
-   bright text; counts sit right-aligned in the dim tertiary color. */
+/*
+ * Filter sidebar (design frame 1a).
+ *
+ * The shell owns the column's frame — width (`--w-sidebar`), background and
+ * right border — so this is the inside: a scrolling list of filter groups over a
+ * pinned footer (the disk card on the web; nothing on the desktop).
+ *
+ * Rows are 26px with the count right-aligned in tabular numerals. The active row
+ * carries an accent tint and a 2px accent left border; every row reserves that
+ * border so text does not shift when the selection moves.
+ */
+
 .sidebar {
-  width: 150px;
-  flex: none;
-  border-right: 1px solid var(--border-mid);
-  padding: 8px 4px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   font-size: var(--fs-cell);
 }
 
-.group {
-  padding: 10px 8px 4px;
-  font-size: 9.5px;
-  font-weight: 700;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.list {
+  flex: 1;
+  min-height: 0;
+  padding: var(--sp-4) 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
-.group:first-child {
-  padding-top: 2px;
+
+.footer {
+  flex: none;
+  padding: var(--sp-4) var(--sp-5) 0;
+  border-top: 1px solid var(--border-default);
+}
+
+.group {
+  padding: var(--sp-2) var(--sp-5);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  color: var(--text-ghost);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
 }
 
 .row {
   display: flex;
-  justify-content: space-between;
-  padding: 3px 8px;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--h-sidebar-item);
+  padding: 0 var(--sp-5);
+  /* A row is a control, so the button's own chrome is stripped and the tokens
+     keep it looking like the list it belongs to. */
+  border: 0;
   border-left: 2px solid transparent;
-  color: var(--text-muted);
-  cursor: default;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   white-space: nowrap;
 }
+/* A row that carries another control keeps the layout; the inner button is the
+   filter itself, beside the remove control rather than around it. */
+.rowWithAction {
+  padding-right: 0;
+}
+.rowAction {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rowAction .count {
+  margin-left: auto;
+}
 .row:hover {
-  color: var(--text-body);
+  color: var(--text-primary);
+  background: var(--bg-control);
 }
 .row .count {
-  color: var(--text-dim);
+  margin-left: auto;
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
   font-variant-numeric: tabular-nums;
 }
 .label {
@@ -44,14 +97,39 @@
   text-overflow: ellipsis;
 }
 
+/* The 7×7 label swatch. Keyed by `data-label` so a label's square and its chip
+   in the table read the same hue (see TorrentTable.module.css). */
+.square {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--label-neutral);
+}
+.square[data-label="iso"] {
+  background: var(--label-iso);
+}
+.square[data-label="archive"] {
+  background: var(--label-archive);
+}
+.square[data-label="kernel"] {
+  background: var(--label-kernel);
+}
+.square[data-label="apps"] {
+  background: var(--label-apps);
+}
+.square[data-label="media"] {
+  background: var(--label-media);
+}
+
 /* Active filter row. */
 .active {
-  background: var(--bg-selected);
-  border-left-color: var(--accent-cyan);
-  color: var(--accent-cyan-bright);
+  background: var(--accent-tint);
+  border-left-color: var(--accent);
+  color: var(--text-primary);
 }
 .active .count {
-  color: var(--accent-cyan-bright);
+  color: var(--accent-text);
 }
 
 /* Smart-filter group (C4): a group header carrying a save button, an inline
@@ -64,37 +142,38 @@
 .groupAction {
   border: none;
   background: none;
-  color: var(--text-dim);
-  font-size: var(--fs-title);
+  color: var(--text-ghost);
+  font-size: var(--fs-control);
   line-height: 1;
   padding: 0 2px;
   cursor: default;
 }
 .groupAction:hover:not(:disabled) {
-  color: var(--accent-cyan);
+  color: var(--accent);
 }
 .groupAction:disabled {
   opacity: 0.35;
 }
 
 .naming {
-  padding: 2px 8px 4px;
+  padding: 2px var(--sp-5) var(--sp-1);
 }
 .nameInput {
   width: 100%;
   box-sizing: border-box;
-  padding: 3px 7px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-input);
-  background: var(--bg-field);
+  height: 24px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
   color: var(--text-body);
-  font-size: var(--fs-cell);
+  font-size: var(--fs-control);
 }
 
 .smartHint {
-  padding: 2px 8px 4px;
-  color: var(--text-dim);
-  font-size: 9.5px;
+  padding: 2px var(--sp-5) var(--sp-1);
+  color: var(--text-ghost);
+  font-size: var(--fs-meta);
   line-height: 1.4;
 }
 
@@ -102,10 +181,10 @@
 .removeSmart {
   border: none;
   background: none;
-  color: var(--text-dim);
-  font-size: 9px;
+  color: var(--text-ghost);
+  font-size: var(--fs-meta);
   line-height: 1;
-  padding: 0 0 0 6px;
+  padding: 0 0 0 var(--sp-2);
   cursor: default;
   visibility: hidden;
 }
@@ -113,5 +192,5 @@
   visibility: visible;
 }
 .removeSmart:hover {
-  color: var(--accent-red);
+  color: var(--status-error);
 }

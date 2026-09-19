@@ -1,5 +1,11 @@
 # Handoff: rtorrent Desktop Client — "Dark Ops" (1c)
 
+> **Superseded (2026-09-15).** The desktop client now follows the **rTorrent
+> Console** design — one design system for both shells. See
+> [`../docs/web-console-plan.md`](../docs/web-console-plan.md) (the design bundle
+> lands at `design/web-console/` in WC0-S1). This handoff and
+> `rTorrent Client 1c.dc.html` stay as the record of the shipped desktop design.
+
 ## Overview
 A desktop BitTorrent client GUI in the mold of qBittorrent, front-ending the `rtorrent`
 daemon. This package covers the complete main window plus every secondary window and modal:

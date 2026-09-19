@@ -21,10 +21,9 @@ const codeBlock: React.CSSProperties = {
   padding: 10,
   maxHeight: 260,
   overflow: "auto",
-  background: "var(--bg-inset, rgba(0,0,0,0.2))",
+  background: "var(--bg-inset))",
   border: "1px solid var(--border-row)",
   borderRadius: 4,
-  fontFamily: "var(--font-mono, monospace)",
   fontSize: 12,
   lineHeight: 1.5,
   whiteSpace: "pre",
@@ -99,7 +98,7 @@ export function TuneNetworkDialog() {
           {error && (
             <div
               className={forms.meta}
-              style={{ color: "var(--accent-red-soft, #ea6962)" }}
+              style={{ color: "var(--accent-red-soft)" }}
             >
               {error}
             </div>
@@ -112,7 +111,7 @@ export function TuneNetworkDialog() {
           ) : (
             <div
               className={forms.meta}
-              style={{ color: "var(--accent-amber-soft, #d8a657)" }}
+              style={{ color: "var(--accent-amber-soft)" }}
             >
               This is a remote daemon, so its <code>.rtorrent.rc</code> can’t be
               edited from here — the settings will be applied live over XML-RPC
@@ -135,10 +134,7 @@ function ResultView({ result }: { result: TuningResult }) {
           Wrote <code>{result.rcPath}</code>.
         </div>
       ) : result.fileError ? (
-        <div
-          className={forms.meta}
-          style={{ color: "var(--accent-red-soft, #ea6962)" }}
-        >
+        <div className={forms.meta} style={{ color: "var(--accent-red-soft)" }}>
           Could not write the rc file: {result.fileError}
         </div>
       ) : (
@@ -148,10 +144,7 @@ function ResultView({ result }: { result: TuningResult }) {
       )}
 
       {result.liveError ? (
-        <div
-          className={forms.meta}
-          style={{ color: "var(--accent-red-soft, #ea6962)" }}
-        >
+        <div className={forms.meta} style={{ color: "var(--accent-red-soft)" }}>
           Could not reach the daemon to apply live: {result.liveError}
         </div>
       ) : (

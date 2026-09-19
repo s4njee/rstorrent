@@ -114,6 +114,23 @@
   color: var(--accent-red);
   font-size: var(--fs-cell);
 }
+
+/* An existing value offered for reuse (e.g. a label already in use). */
+.chip {
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-control);
+  background: var(--bg-track);
+  color: var(--text-body);
+  font-size: var(--fs-chip);
+  cursor: default;
+}
+.chip:hover {
+  background: var(--accent-tint);
+  color: var(--text-primary);
+}
+
 .section {
   font-size: var(--fs-header);
   font-weight: 700;

@@ -1,5 +1,11 @@
 # rstorrent Web UI — Epics & Stories
 
+> **Superseded (2026-09-15).** This Dark Ops story tracker has been replaced by the
+> rTorrent Console port: [`../docs/web-console-tasks.md`](../docs/web-console-tasks.md)
+> (plan: [`../docs/web-console-plan.md`](../docs/web-console-plan.md)). Kept as the
+> record of what shipped — its only open story, WE6-S1 (Playwright), is carried
+> forward as WC10-S1.
+
 Execution backlog for the plan in [plan.md](plan.md). Design authority: [`design/README.md`](README.md) + `design/rTorrent Web UI.dc.html` (the desktop `rTorrent Client 1c.dc.html` covers the shared dialog designs).
 
 ## Conventions

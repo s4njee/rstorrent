@@ -66,7 +66,6 @@ const S = {
     justifyContent: "center",
     height: "100vh",
     background: "var(--bg-field)",
-    fontFamily: "var(--font-mono)",
   } as const,
   card: {
     display: "flex",
@@ -74,7 +73,7 @@ const S = {
     gap: 12,
     width: 320,
     padding: 24,
-    background: "var(--bg-panel)",
+    background: "var(--bg-chrome)",
     border: "1px solid var(--border-mid)",
     borderRadius: 8,
   } as const,

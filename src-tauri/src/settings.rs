@@ -38,7 +38,14 @@ impl Default for Settings {
             max_uploads_global: 0,
             max_downloads_global: 0,
             max_active_downloads: 0,
+            max_active_uploads: 0,
+            max_active_torrents: 0,
+            queue_slow_limit_kbs: 0,
             label_defaults: Vec::new(),
+            incomplete_dir: String::new(),
+            move_rules: Vec::new(),
+            bandwidth_rules: Vec::new(),
+            collision_policy: Default::default(),
             watch_folders: Vec::new(),
             run_on_complete: String::new(),
             seed_goal_action: SeedGoalAction::Stop,
@@ -46,6 +53,7 @@ impl Default for Settings {
             turtle_up_kb: 0,
             turtle_enabled: false,
             turtle_schedule: Default::default(),
+            schedule: Default::default(),
             connection_profiles: Vec::new(),
             rss_feeds: Vec::new(),
             rss_rules: Vec::new(),
@@ -110,6 +118,20 @@ pub fn save_path_for_label(settings: &Settings, label: &str) -> String {
         .find(|d| d.label == label && !d.save_path.is_empty())
         .map(|d| d.save_path.clone())
         .unwrap_or_else(|| settings.default_save_path.clone())
+}
+
+/// Route a new download through the incomplete dir (V3-14): the directory to
+/// load it with, plus the final directory to record in `d.custom=final_dir`
+/// when one is owed. `chosen` is the torrent's selected save path in local
+/// form; both returns are daemon-namespace (the incomplete dir is stored
+/// translated, like `default_save_path`).
+pub fn route_new_download(settings: &Settings, chosen: &str) -> (String, Option<String>) {
+    let final_dir = crate::localfs::to_daemon_path(chosen).unwrap_or_else(|_| chosen.to_string());
+    let incomplete = settings.incomplete_dir.trim();
+    if incomplete.is_empty() {
+        return (final_dir, None);
+    }
+    rtorrent_core::complete::route_new_download(incomplete, &final_dir)
 }
 
 /// True when the transport points at the local machine (gates delete-data /
@@ -219,6 +241,80 @@ mod tests {
         assert_eq!(patched.poll_ms, 2000);
         // Untouched field preserved.
         assert_eq!(patched.stall_window_s, s.stall_window_s);
+    }
+
+    #[test]
+    fn routing_is_identity_without_an_incomplete_dir() {
+        let s = Settings::default();
+        assert!(s.incomplete_dir.is_empty());
+        let (dir, final_dir) = route_new_download(&s, "/dl");
+        assert_eq!(dir, "/dl");
+        assert!(final_dir.is_none());
+    }
+
+    #[test]
+    fn routing_goes_through_the_incomplete_dir_when_set() {
+        let mut s = Settings::default();
+        s.incomplete_dir = "/dl/.incomplete".into();
+        let (dir, final_dir) = route_new_download(&s, "/media/video");
+        assert_eq!(dir, "/dl/.incomplete");
+        assert_eq!(final_dir.as_deref(), Some("/media/video"));
+    }
+
+    #[test]
+    fn old_settings_without_move_fields_still_load() {
+        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("incompleteDir");
+        object.remove("moveRules");
+        object.remove("collisionPolicy");
+        let loaded: Settings = serde_json::from_value(value).unwrap();
+        assert!(loaded.incomplete_dir.is_empty());
+        assert!(loaded.move_rules.is_empty());
+        assert_eq!(
+            loaded.collision_policy,
+            rtorrent_core::complete::CollisionPolicy::Error
+        );
+    }
+
+    #[test]
+    fn old_settings_without_queue_fields_still_load() {
+        let mut value = serde_json::to_value(Settings::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("maxActiveUploads");
+        object.remove("maxActiveTorrents");
+        object.remove("queueSlowLimitKbs");
+        object.remove("bandwidthRules");
+        let loaded: Settings = serde_json::from_value(value).unwrap();
+        assert_eq!(loaded.max_active_uploads, 0);
+        assert_eq!(loaded.max_active_torrents, 0);
+        assert_eq!(loaded.queue_slow_limit_kbs, 0);
+        assert!(loaded.bandwidth_rules.is_empty());
+    }
+
+    #[test]
+    fn old_rss_rules_without_v3_filters_still_load() {
+        // B11-era rule JSON: new filter keys default, adds start enabled.
+        let rule: crate::ipc::RssRule = serde_json::from_value(serde_json::json!({
+            "id": "r",
+            "name": "r",
+            "enabled": true,
+            "feedId": "",
+            "mustContain": "ubuntu",
+            "mustNotContain": "",
+            "label": "iso",
+            "savePath": "/dl"
+        }))
+        .unwrap();
+        assert_eq!(rule.must_contain, "ubuntu");
+        assert!(rule.regex_match.is_empty());
+        assert!(rule.season_range.is_empty());
+        assert_eq!(rule.min_size_mb, 0);
+        assert!(!rule.smart_episode);
+        assert!(rule.tags.is_empty());
+        assert!(rule.start, "adds start by default");
+        assert!(!rule.top_of_queue);
+        assert_eq!(rule.poll_minutes, 0);
     }
 
     #[test]

@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { webBackend, setUnauthorizedHandler } from "./web";
+import { webBackend, setUnauthorizedHandler, __resetPollForTests } from "./web";
 import type { Snapshot } from "./types";
 
 const SNAP: Snapshot = {
+  revision: 1,
   torrents: [],
   globals: {
     downRate: 1,
@@ -47,42 +48,46 @@ beforeEach(() => {
     configurable: true,
     get: () => hidden,
   });
+  __resetPollForTests();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   setUnauthorizedHandler(() => {});
+  __resetPollForTests();
 });
 
 describe("web backend — snapshot polling", () => {
-  it("delivers the first snapshot and reuses the ETag on the next poll", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(res(SNAP, { status: 200, etag: '"abc"' }));
+  it("delivers the first snapshot and then polls delta", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes("/api/delta")) return res(null, { status: 304 });
+      return res(SNAP, { status: 200, etag: '"abc"' });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const cb = vi.fn();
     const un = await webBackend.listen<Snapshot>("state://snapshot", cb);
 
-    // First tick fires immediately.
+    // First tick fires immediately to /api/state.
     await vi.advanceTimersByTimeAsync(0);
     expect(cb).toHaveBeenCalledWith(SNAP);
     expect(fetchMock).toHaveBeenLastCalledWith("/api/state", { headers: {} });
 
-    // Next poll one interval later carries If-None-Match with the stored ETag.
+    // Next poll one interval later goes to delta with since=1.
     await vi.advanceTimersByTimeAsync(1000);
-    expect(fetchMock).toHaveBeenLastCalledWith("/api/state", {
-      headers: { "If-None-Match": '"abc"' },
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/delta?since=1", {
+      headers: {},
     });
     un();
   });
 
-  it("does not re-deliver on a 304", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(res(SNAP, { status: 200, etag: '"abc"' }))
-      .mockResolvedValue(res(null, { status: 304 }));
+  it("does not re-deliver on a 304 from delta", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (String(url).includes("/api/state"))
+        return res(SNAP, { status: 200, etag: '"abc"' });
+      return res(null, { status: 304 });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const cb = vi.fn();
@@ -95,9 +100,10 @@ describe("web backend — snapshot polling", () => {
   });
 
   it("pauses fetching while the tab is hidden", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(res(SNAP, { status: 200, etag: '"abc"' }));
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes("/api/delta")) return res(null, { status: 304 });
+      return res(SNAP, { status: 200, etag: '"abc"' });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const cb = vi.fn();
@@ -109,7 +115,7 @@ describe("web backend — snapshot polling", () => {
     await vi.advanceTimersByTimeAsync(3000); // several intervals, tab hidden
     expect(fetchMock).toHaveBeenCalledTimes(1); // no further fetches
 
-    // Becoming visible again refetches immediately.
+    // Becoming visible again refetches immediately (delta).
     hidden = false;
     document.dispatchEvent(new Event("visibilitychange"));
     await vi.advanceTimersByTimeAsync(0);
@@ -118,9 +124,10 @@ describe("web backend — snapshot polling", () => {
   });
 
   it("stops polling after unlisten", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(res(SNAP, { status: 200, etag: '"abc"' }));
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes("/api/delta")) return res(null, { status: 304 });
+      return res(SNAP, { status: 200, etag: '"abc"' });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const un = await webBackend.listen<Snapshot>("state://snapshot", vi.fn());
@@ -141,6 +148,37 @@ describe("web backend — snapshot polling", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(onAuth).toHaveBeenCalled();
     un();
+  });
+
+  it("heals a missed revision via 409 snapshot", async () => {
+    const delta = {
+      revision: 2,
+      baseRevision: 1,
+      added: [],
+      updated: [],
+      removed: [],
+      globals: SNAP.globals,
+      connection: SNAP.connection,
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      const s = String(url);
+      if (s.includes("/api/state"))
+        return res({ ...SNAP, revision: 1 }, { status: 200, etag: '"s1"' });
+      if (s.includes("since=1"))
+        return res(delta, { status: 200, etag: '"d1"' });
+      return res(null, { status: 304 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const snapCb = vi.fn();
+    const deltaCb = vi.fn();
+    const un1 = await webBackend.listen<Snapshot>("state://snapshot", snapCb);
+    const un2 = await webBackend.listen("state://delta", deltaCb);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(snapCb).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(deltaCb).toHaveBeenCalledWith(delta);
+    un1();
+    un2();
   });
 });
 
@@ -193,6 +231,26 @@ describe("web backend — commands", () => {
       /not available in the web UI/,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fetches move statuses from /api/moves", async () => {
+    const moves = [
+      {
+        id: "A-1",
+        hash: "A",
+        name: "Show",
+        src: "/incomplete/Show",
+        dst: "/dl/Show",
+        state: "in_progress",
+        error: "",
+        doneBytes: 50,
+        totalBytes: 100,
+      },
+    ];
+    const fetchMock = vi.fn().mockResolvedValue(res(moves, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await webBackend.invoke("get_moves")).toEqual(moves);
+    expect(fetchMock).toHaveBeenCalledWith("/api/moves");
   });
 
   it("non-blank capabilities: browser can read clipboard, not the local FS", () => {

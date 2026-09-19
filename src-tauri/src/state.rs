@@ -16,7 +16,7 @@ use std::sync::{Arc, RwLock};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Notify;
 
-use crate::ipc::{ConnPhase, ConnState, DetailTab, LogLevel, NamedThrottle, Settings};
+use crate::ipc::{ConnPhase, ConnState, DetailTab, LogLevel, NamedThrottle, Settings, Snapshot};
 use crate::log::LogBuffer;
 use crate::rtorrent::{make_backend, RtorrentApi};
 use crate::settings;
@@ -26,7 +26,7 @@ pub struct AppState {
     backend: RwLock<Arc<dyn RtorrentApi>>,
     /// Live settings; persisted to `settings_path` on change.
     settings: RwLock<Settings>,
-    settings_path: PathBuf,
+    pub(crate) settings_path: PathBuf,
     /// Bounded app event log (Log tab).
     pub log: LogBuffer,
     /// hash → primary tracker host, filled by the slow poll.
@@ -44,6 +44,14 @@ pub struct AppState {
     pub detail_repoll: Notify,
     /// Path to the persisted since-install transfer counters (see `stats.rs`).
     pub stats_path: PathBuf,
+    /// Latest snapshot (FND-02 revisioned); served to `get_snapshot` for delta heal.
+    pub snapshot: RwLock<Option<Snapshot>>,
+    /// Move-on-complete journal + live tasks (V3-14); the poller plans, the
+    /// `get_moves`/`cancel_move`/`retry_move` commands inspect and steer.
+    pub moves: std::sync::Mutex<rtorrent_core::mover::MoveStore>,
+    /// Session-import status + cancel flag (V3-22 / LIB-09).
+    pub import_status: std::sync::Mutex<crate::session::ImportStatus>,
+    pub import_cancel: std::sync::atomic::AtomicBool,
 }
 
 impl AppState {
@@ -66,7 +74,10 @@ impl AppState {
         Self {
             backend: RwLock::new(Arc::from(backend)),
             settings: RwLock::new(settings),
-            settings_path,
+            settings_path: settings_path.clone(),
+            moves: std::sync::Mutex::new(rtorrent_core::mover::MoveStore::load(
+                crate::moves::journal_path(&settings_path),
+            )),
             log: LogBuffer::new(),
             tracker_cache: std::sync::Mutex::new(HashMap::new()),
             views: std::sync::Mutex::new(Vec::new()),
@@ -75,7 +86,18 @@ impl AppState {
             repoll: Notify::new(),
             detail_repoll: Notify::new(),
             stats_path,
+            snapshot: RwLock::new(None),
+            import_status: std::sync::Mutex::new(crate::session::ImportStatus::default()),
+            import_cancel: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Directory holding settings-adjacent state (settings, journals).
+    pub fn state_dir(&self) -> std::path::PathBuf {
+        self.settings_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
     }
 
     /// Clone the current backend `Arc` (drop the guard before awaiting on it).
@@ -160,5 +182,13 @@ impl AppState {
     ) {
         let entry = self.log.push(level, message, hash);
         let _ = app.emit("log://append", entry);
+    }
+
+    pub fn set_snapshot(&self, s: Snapshot) {
+        *self.snapshot.write().unwrap() = Some(s);
+    }
+
+    pub fn snapshot(&self) -> Option<Snapshot> {
+        self.snapshot.read().unwrap().clone()
     }
 }

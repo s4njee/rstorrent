@@ -8,7 +8,10 @@ import reactHooks from "eslint-plugin-react-hooks";
 export default tseslint.config(
   // `target` is the workspace build dir (now at the repo root); it holds
   // Tauri-generated JS that must not be linted. `src-tauri/target` is kept for
-  // any stale pre-workspace build dir.
+  // any stale pre-workspace build dir. `design` holds the design handoffs —
+  // static reference bundles, not source. Its `.dc.html` prototypes ship a
+  // vendored runtime (`support.js`) that the handoff explicitly says is for
+  // reading only; linting it reports 90+ errors about code we will never keep.
   {
     ignores: [
       "dist",
@@ -17,10 +20,26 @@ export default tseslint.config(
       "src-tauri/target",
       "node_modules",
       ".claude",
+      "design/**",
     ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  // Node-executed scripts (no bundler, so no browser globals): declare the few
+  // Node globals they use rather than pulling in the `globals` package.
+  {
+    files: ["scripts/**/*.mjs", "tools/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        URL: "readonly",
+        URLSearchParams: "readonly",
+      },
+    },
+  },
   {
     plugins: { "react-hooks": reactHooks },
     rules: {

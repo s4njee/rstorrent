@@ -1,0 +1,74 @@
+/*
+ * Action toolbar (design frame 1a): 36px, one shade above the app surface, with
+ * the transport controls, the selection verbs, and the readout.
+ *
+ * Buttons are 24px tall with the design's control chrome. Disabled buttons dim
+ * their text and border rather than disappearing, so the bar's shape is stable
+ * as the selection changes.
+ */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  height: var(--h-toolbar);
+  padding: 0 var(--sp-4);
+  background: var(--bg-row-alt);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 24px;
+  flex: none;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-body);
+  font-size: var(--fs-control);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-control-active);
+  color: var(--text-primary);
+}
+
+.btn:disabled {
+  border-color: var(--border-default);
+  color: var(--text-ghost);
+}
+
+/* The transport glyph carries the accent; the label does not. */
+.transport svg {
+  color: var(--accent);
+}
+.transport:disabled svg {
+  color: var(--text-ghost);
+}
+
+.divider {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  margin: 0 var(--sp-2);
+  background: var(--border-default);
+}
+
+.grow {
+  flex: 1;
+  min-width: var(--sp-4);
+}
+
+.readout {
+  flex: none;
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -6,7 +6,7 @@
 
 import type { TorrentDto } from "../ipc/types";
 import type {
-  ActiveFilter,
+  Facets,
   SmartFilter,
   SmartFilterCriteria,
   SortColumn,
@@ -16,6 +16,27 @@ import type {
 /** Does a torrent match a status key? "completed" is a superset. */
 function matchesStatus(t: TorrentDto, status: string): boolean {
   if (status === "completed") return t.percent >= 100;
+  // Error buckets (D19): `error` is the aggregate, sub-keys like `tracker_timeout`
+  // or `missing_files` match the classified `errorKind`.
+  if (status === "error") return t.status === "error";
+  if (status.startsWith("error:")) {
+    return t.errorKind === status.slice(6);
+  }
+  // Allow direct errorKind values as status filters (sidebar buckets)
+  if (
+    [
+      "unregistered",
+      "tracker_timeout",
+      "tracker_error",
+      "missing_files",
+      "no_space",
+      "permission",
+      "disk_error",
+      "other",
+    ].includes(status)
+  ) {
+    return t.errorKind === status;
+  }
   return t.status === status;
 }
 
@@ -29,45 +50,53 @@ export function matchesCriteria(
   criteria: SmartFilterCriteria,
 ): boolean {
   if (criteria.status && !matchesStatus(t, criteria.status)) return false;
+  if (criteria.errorKind && t.errorKind !== criteria.errorKind) return false;
   if (criteria.label && t.label !== criteria.label) return false;
+  if (criteria.tags && !(t.tags ?? []).includes(criteria.tags)) return false;
   if (criteria.tracker && t.trackerHost !== criteria.tracker) return false;
+  if (criteria.view && !t.views.includes(criteria.view)) return false;
   if (criteria.text && !matchesSearch(t, criteria.text)) return false;
   return true;
 }
 
-/** Does a torrent match the active sidebar filter? */
-function matchesFilter(
+/**
+ * Does a torrent satisfy the live facets? Every constrained dimension must
+ * match (AND), and the search box ANDs on top.
+ */
+export function matchesFacets(
   t: TorrentDto,
-  filter: ActiveFilter,
-  smartFilters: SmartFilter[],
+  facets: Facets,
+  smartFilters: SmartFilter[] = [],
 ): boolean {
-  if (!filter) return true;
-  switch (filter.type) {
-    case "status":
-      return matchesStatus(t, filter.value);
-    case "label":
-      return t.label === filter.value;
-    case "tracker":
-      return t.trackerHost === filter.value;
-    case "view":
-      return t.views.includes(filter.value);
-    case "smart": {
-      const saved = smartFilters.find((f) => f.id === filter.value);
-      // A dangling id shows everything rather than an unexplained empty table
-      // (the store also drops dangling references on load and on delete).
-      return saved ? matchesCriteria(t, saved) : true;
-    }
+  if (facets.status && !matchesStatus(t, facets.status)) return false;
+  if (facets.errorKind && t.errorKind !== facets.errorKind) return false;
+  // `label: ""` is the unlabeled facet, so test for the key, not for truth.
+  if (facets.label !== undefined && t.label !== facets.label) return false;
+  if (facets.tags !== undefined && !(t.tags ?? []).includes(facets.tags)) {
+    return false;
   }
+  if (facets.tracker && t.trackerHost !== facets.tracker) return false;
+  if (facets.view && !t.views.includes(facets.view)) return false;
+  if (facets.smart) {
+    const saved = smartFilters.find((f) => f.id === facets.smart);
+    // A dangling id shows everything rather than an unexplained empty table
+    // (the store also drops dangling references on load and on delete).
+    if (saved && !matchesCriteria(t, saved)) return false;
+  }
+  return true;
 }
 
-/** Case-insensitive substring match across name, label, and tracker. */
+/** Case-insensitive substring match across name, hash, label, tags, tracker and save path. */
 function matchesSearch(t: TorrentDto, search: string): boolean {
   if (!search) return true;
   const q = search.toLowerCase();
   return (
     t.name.toLowerCase().includes(q) ||
+    t.hash.toLowerCase().includes(q) ||
     t.label.toLowerCase().includes(q) ||
-    t.trackerHost.toLowerCase().includes(q)
+    (t.tags ?? []).some((tag) => tag.toLowerCase().includes(q)) ||
+    t.trackerHost.toLowerCase().includes(q) ||
+    (t.savePath ?? "").toLowerCase().includes(q)
   );
 }
 
@@ -91,6 +120,9 @@ function sortKey(t: TorrentDto, col: SortColumn): number | string {
       return t.etaSeconds ?? Number.MAX_SAFE_INTEGER;
     case "ratio":
       return t.ratio;
+    case "addedAt":
+      // rtorrent reports 0 when it does not know; those sort oldest.
+      return t.addedAt ?? 0;
     case "startedAt":
       return t.startedAt;
     case "finishedAt":
@@ -101,34 +133,43 @@ function sortKey(t: TorrentDto, col: SortColumn): number | string {
 /**
  * Filter + search + sort. Returns a new array; input is not mutated.
  *
- * `smartFilters` is only needed to resolve a `{type:'smart'}` filter by id; it
- * defaults to empty so callers with no smart filters are unaffected. The search
- * box always ANDs on top, including over a smart filter's own text.
+ * `smartFilters` is only needed to resolve a saved filter by id; it defaults to
+ * empty so callers with no saved filters are unaffected. The search box always
+ * ANDs on top, including over a saved filter's own text.
  */
 export function selectVisible(
   torrents: TorrentDto[],
-  filter: ActiveFilter,
+  facets: Facets,
   search: string,
   sortColumn: SortColumn,
   sortDir: SortDir,
   smartFilters: SmartFilter[] = [],
+  /** Hashes whose contained filenames match `search`, from the server's index
+   *  (V3-12). A torrent matches if either its own fields or its files match. */
+  fileMatches?: ReadonlySet<string>,
 ): TorrentDto[] {
-  const rows = torrents.filter(
-    (t) => matchesFilter(t, filter, smartFilters) && matchesSearch(t, search),
-  );
+  const needle = search.trim();
+  const rows = torrents.filter((t) => {
+    if (!matchesFacets(t, facets, smartFilters)) return false;
+    if (!needle) return true;
+    return matchesSearch(t, needle) || Boolean(fileMatches?.has(t.hash));
+  });
   const dir = sortDir === "asc" ? 1 : -1;
   return rows.sort((a, b) => {
     const ka = sortKey(a, sortColumn);
     const kb = sortKey(b, sortColumn);
     if (ka < kb) return -1 * dir;
     if (ka > kb) return 1 * dir;
-    return 0;
+    // Ties break on name, so an equal-valued column is still a stable list.
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
   });
 }
 
 export interface SidebarCounts {
   status: Record<string, number>;
+  errors: Array<{ value: string; count: number }>;
   labels: Array<{ value: string; count: number }>;
+  tags: Array<{ value: string; count: number }>;
   trackers: Array<{ value: string; count: number }>;
   views: Array<{ value: string; count: number }>;
 }
@@ -143,19 +184,34 @@ export function sidebarCounts(torrents: TorrentDto[]): SidebarCounts {
     all: torrents.length,
     downloading: 0,
     seeding: 0,
-    completed: 0,
+    // `paused` covers both the console's Stopped (closed) and Queued (open but
+    // idle) rows — the sidebar offers one row for the pair.
     paused: 0,
-    stalled: 0,
+    checking: 0,
     error: 0,
+    // Percent-complete superset, and the state between downloading and stalled.
+    completed: 0,
+    stalled: 0,
+    unlabeled: 0,
   };
   const labelMap = new Map<string, number>();
+  const tagMap = new Map<string, number>();
   const trackerMap = new Map<string, number>();
   const viewMap = new Map<string, number>();
+  const errorMap = new Map<string, number>();
 
   for (const t of torrents) {
     if (t.status in status) status[t.status] += 1;
     if (t.percent >= 100) status.completed += 1;
+    if (!t.label) status.unlabeled += 1;
+    if (t.status === "error" && t.errorKind) {
+      errorMap.set(t.errorKind, (errorMap.get(t.errorKind) ?? 0) + 1);
+    }
     if (t.label) labelMap.set(t.label, (labelMap.get(t.label) ?? 0) + 1);
+    // A torrent can carry several tags, so each membership counts (V3-10).
+    for (const tag of t.tags ?? []) {
+      tagMap.set(tag, (tagMap.get(tag) ?? 0) + 1);
+    }
     if (t.trackerHost)
       trackerMap.set(t.trackerHost, (trackerMap.get(t.trackerHost) ?? 0) + 1);
     // A torrent can be in several views, so each membership counts.
@@ -169,7 +225,9 @@ export function sidebarCounts(torrents: TorrentDto[]): SidebarCounts {
 
   return {
     status,
+    errors: toSorted(errorMap),
     labels: toSorted(labelMap),
+    tags: toSorted(tagMap),
     trackers: toSorted(trackerMap),
     views: toSorted(viewMap),
   };
@@ -229,4 +287,49 @@ export function selectionSummary(
     if (t.status === "paused") summary.paused += 1;
   }
   return summary;
+}
+
+/**
+ * Torrents bucketed by the console's status words, for the status bar.
+ *
+ * Deliberately coarser than the sidebar's groups: `checking` and `stalled` are
+ * things a download is doing, so they count as downloading, and `completed` (a
+ * percent superset in this codebase) counts as seeding.
+ */
+export function statusBarCounts(torrents: Array<{ status: string }>): {
+  torrents: number;
+  downloading: number;
+  seeding: number;
+  stopped: number;
+  errored: number;
+} {
+  const counts = {
+    torrents: torrents.length,
+    downloading: 0,
+    seeding: 0,
+    stopped: 0,
+    errored: 0,
+  };
+  for (const torrent of torrents) {
+    switch (torrent.status) {
+      case "downloading":
+      case "stalled":
+      case "checking":
+        counts.downloading += 1;
+        break;
+      case "seeding":
+      case "completed":
+        counts.seeding += 1;
+        break;
+      case "paused":
+        counts.stopped += 1;
+        break;
+      case "error":
+        counts.errored += 1;
+        break;
+      default:
+        break;
+    }
+  }
+  return counts;
 }

@@ -18,7 +18,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time"
 
 # --- rtorrent protocol plumbing ---
 quick-xml = "0.37"    # minimal hand-rolled XML-RPC encode/parse (handles <i8>)
-base64 = "0.22"       # load.raw payloads
+base64 = "0.22"
+regex = "1"            # RSS rule patterns (V3-23); compiled per evaluation       # load.raw payloads
 lava_torrent = "0.11" # .torrent metadata parsing for the Add dialog
 # XML-RPC over HTTP(S) for remote daemons (B9). native-tls binds the platform
 # trust store (Security.framework on macOS, SChannel on Windows) rather than
@@ -40,4 +41,5 @@ keyring = { version = "3", features = ["apple-native"] }
 keyring = { version = "3", features = ["windows-native"] } # Credential Manager
 
 [dev-dependencies]
+tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "test-util"] }

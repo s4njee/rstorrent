@@ -54,7 +54,7 @@ export function ShutdownDialog() {
         {error && (
           <div
             className={forms.meta}
-            style={{ color: "var(--accent-red-soft, #ea6962)" }}
+            style={{ color: "var(--accent-red-soft)" }}
           >
             {error}
           </div>

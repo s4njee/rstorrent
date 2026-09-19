@@ -11,6 +11,10 @@ export interface TreeNode {
   isDir: boolean;
   /** Total size of this node (leaf size, or sum of descendants for a folder). */
   size: number;
+  /** Completion percentage; folders are size-weighted aggregates. */
+  progress: number;
+  /** Leaf priority, or -1 when a folder contains mixed priorities. */
+  priority: number;
   /** Index into the original flat file array; only set on leaves. */
   fileIndex?: number;
   children: TreeNode[];
@@ -18,7 +22,14 @@ export interface TreeNode {
 
 /** Build a tree from file paths like "Folder/sub/file.iso". */
 export function buildTree(files: FileNode[]): TreeNode[] {
-  const root: TreeNode = { name: "", isDir: true, size: 0, children: [] };
+  const root: TreeNode = {
+    name: "",
+    isDir: true,
+    size: 0,
+    progress: 0,
+    priority: -1,
+    children: [],
+  };
 
   files.forEach((file, fileIndex) => {
     const parts = file.path.split("/").filter(Boolean);
@@ -33,6 +44,8 @@ export function buildTree(files: FileNode[]): TreeNode[] {
           name: part,
           isDir: !isLeaf,
           size: isLeaf ? file.size : 0,
+          progress: isLeaf ? file.progress : 0,
+          priority: isLeaf ? file.priority : -1,
           fileIndex: isLeaf ? fileIndex : undefined,
           children: [],
         };
@@ -43,12 +56,29 @@ export function buildTree(files: FileNode[]): TreeNode[] {
   });
 
   // Roll folder sizes up from their descendants.
-  const sumSizes = (n: TreeNode): number => {
+  const sumStats = (n: TreeNode): number => {
     if (!n.isDir) return n.size;
-    n.size = n.children.reduce((s, c) => s + sumSizes(c), 0);
+    n.children.forEach(sumStats);
+    n.size = n.children.reduce((s, c) => s + c.size, 0);
+    const weighted = n.children.reduce(
+      (sum, child) => sum + child.size * child.progress,
+      0,
+    );
+    n.progress =
+      n.size > 0
+        ? weighted / n.size
+        : n.children.length > 0
+          ? n.children.reduce((sum, child) => sum + child.progress, 0) /
+            n.children.length
+          : 0;
+    const priorities = n.children.map((child) => child.priority);
+    n.priority =
+      priorities.length > 0 && priorities.every((p) => p === priorities[0])
+        ? priorities[0]
+        : -1;
     return n.size;
   };
-  root.children.forEach(sumSizes);
+  root.children.forEach(sumStats);
   return root.children;
 }
 

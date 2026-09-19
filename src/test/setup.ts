@@ -39,6 +39,10 @@ class MemoryStorage implements Storage {
   }
 }
 
+// Silence React 19 act() warnings in jsdom.
+(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT =
+  true;
+
 if (typeof globalThis.localStorage === "undefined") {
   Object.defineProperty(globalThis, "localStorage", {
     value: new MemoryStorage(),

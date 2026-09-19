@@ -7,7 +7,7 @@
 #   * server          — (added in WE1) the `rstorrent-web` self-hosted server.
 [workspace]
 resolver = "2"
-members = ["crates/rtorrent", "server", "src-tauri"]
+members = ["crates/rtorrent", "crates/gpui", "server", "src-tauri"]
 
 # Profiles apply workspace-wide and must live at the root; a member's own
 # `[profile.*]` is ignored. Kept from the desktop app's packaging tuning.

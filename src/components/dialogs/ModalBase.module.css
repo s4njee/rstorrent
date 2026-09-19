@@ -4,7 +4,7 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15,7 +15,7 @@
   background: var(--bg-app);
   border: 1px solid var(--border-black);
   border-radius: var(--radius-window);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -26,7 +26,7 @@
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  background: var(--bg-panel);
+  background: var(--bg-chrome);
   border-bottom: 1px solid var(--border-black);
   flex: none;
 }
@@ -43,8 +43,12 @@
   justify-content: center;
   width: 16px;
   height: 16px;
+  /* A button, stripped back to the glyph it carries. */
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text-dim);
-  cursor: default;
+  cursor: pointer;
 }
 .close:hover {
   color: var(--text-body);
@@ -61,7 +65,7 @@
   gap: 8px;
   justify-content: flex-end;
   padding: 11px 16px;
-  background: var(--bg-panel);
+  background: var(--bg-chrome);
   border-top: 1px solid var(--border-black);
   flex: none;
 }

@@ -1,5 +1,6 @@
 /**
- * Statistics dialog (design screen 05) with a Daemon health tab (D16).
+ * Statistics dialog (design screen 05) with global transfer history and a
+ * Daemon health tab (C17/D16).
  *
  * The Statistics tab shows two groups of `key … value` rows — User and Cache —
  * loaded via `get_statistics`. The Daemon tab (D16) surfaces what the daemon
@@ -13,10 +14,12 @@ import { useUi } from "../../store/ui";
 import { getStatistics, daemonHealth } from "../../ipc/commands";
 import type { DaemonHealth, Statistics } from "../../ipc/types";
 import { formatBytes } from "../../utils/format";
+import { GlobalTransferChart } from "../details/GlobalTransferChart";
+import { useTransferHistory } from "../../store/transferHistory";
 import { ModalBase, Button } from "./ModalBase";
 import forms from "./forms.module.css";
 
-type Tab = "stats" | "daemon";
+type Tab = "stats" | "history" | "daemon";
 
 /** Format a nullable number, or an em-dash when unavailable. */
 const dash = (v: number | null, fmt: (n: number) => string) =>
@@ -36,7 +39,7 @@ export function StatisticsDialog() {
   return (
     <ModalBase
       title="Statistics"
-      width={400}
+      width={tab === "history" ? 600 : 400}
       onCancel={closeDialog}
       onPrimary={closeDialog}
       footer={
@@ -50,6 +53,12 @@ export function StatisticsDialog() {
           <TabButton active={tab === "stats"} onClick={() => setTab("stats")}>
             Statistics
           </TabButton>
+          <TabButton
+            active={tab === "history"}
+            onClick={() => setTab("history")}
+          >
+            History
+          </TabButton>
           <TabButton active={tab === "daemon"} onClick={() => setTab("daemon")}>
             Daemon
           </TabButton>
@@ -57,11 +66,45 @@ export function StatisticsDialog() {
 
         {tab === "stats" ? (
           <StatsTab stats={stats} />
+        ) : tab === "history" ? (
+          <HistoryTab />
         ) : (
           <DaemonTab health={health} />
         )}
       </div>
     </ModalBase>
+  );
+}
+
+function HistoryTab() {
+  const points = useTransferHistory((s) => s.points);
+  const clear = useTransferHistory((s) => s.clear);
+
+  return (
+    <>
+      <Section title="Global Transfer History">
+        <GlobalTransferChart />
+      </Section>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: 10,
+        }}
+      >
+        <span className={forms.meta}>
+          Up to 30 minutes retained in this session ({points.length} samples).
+        </span>
+        <Button
+          variant="secondary"
+          disabled={points.length === 0}
+          onClick={clear}
+        >
+          Clear
+        </Button>
+      </div>
+    </>
   );
 }
 

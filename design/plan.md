@@ -1,5 +1,11 @@
 # rstorrent Web UI — Implementation Plan
 
+> **Superseded (2026-09-15).** This Dark Ops web plan has been replaced by the
+> rTorrent Console port: [`../docs/web-console-plan.md`](../docs/web-console-plan.md)
+> and [`../docs/web-console-tasks.md`](../docs/web-console-tasks.md). Kept as the
+> record of the shipped web client's architecture; its open story (WE6-S1,
+> Playwright) was carried into the new tracker as WC10-S1.
+
 A **browser-based web UI** for the `rtorrent` daemon (the ruTorrent/Flood category), implementing the **"Dark Ops" web** high-fidelity design specified in [`design/README.md`](README.md). It is a sibling of the shipped desktop app: same visual language, same rtorrent plumbing, delivered as a single self-hosted server binary you point a browser at.
 
 This document explains *what we're building and how*. Treat `design/README.md` as the authoritative visual spec; the desktop [`plan.md`](../plan.md) remains the architecture doc for the Tauri app. The companion [tasks.md](tasks.md) breaks this plan into epics and stories (ids `WE#-S#`) for execution.

@@ -1,0 +1,94 @@
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionTitle {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 6px;
+}
+
+.hint {
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.trackersTextarea {
+  width: 100%;
+  box-sizing: border-box;
+  height: 80px;
+  resize: vertical;
+  min-height: 50px;
+  max-height: 160px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  background: var(--bg-field);
+  color: var(--text-body);
+  font-size: var(--fs-cell);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.optionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.error {
+  padding: 8px 10px;
+  border-radius: var(--radius-input);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  font-size: var(--fs-cell);
+}
+
+.success {
+  padding: 10px;
+  border-radius: var(--radius-input);
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--accent-green);
+  font-size: var(--fs-cell);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.successHash {
+  font-size: var(--fs-cell);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  user-select: text;
+}

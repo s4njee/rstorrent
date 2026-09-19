@@ -35,6 +35,8 @@ export interface TorrentDto {
   status: Status;
   /** rtorrent's `d.message` (tracker/storage error text), empty when none. */
   statusMsg: string;
+  /** Classified error bucket (D19); empty when not in error. */
+  errorKind: string;
   /** Peers we're connected to that have the complete file (seeds). */
   seedsConnected: number;
   /** Total peers we're connected to (incl. seeds). */
@@ -64,6 +66,27 @@ export interface TorrentDto {
    *  and Finished columns; durable across daemon restarts. */
   startedAt: number;
   finishedAt: number;
+  /** Per-torrent connection caps; 0 means the daemon default (D3). */
+  peersMax?: number;
+  peersMin?: number;
+  uploadsMax?: number;
+  /** Current connection type, e.g. seed or initial_seed (D5). */
+  connectionType?: string;
+  /** Sticky add provenance from d.custom (D6). */
+  addedBy?: string;
+  sourcePath?: string;
+  addedAt?: number;
+  /** Client-managed tags (V3-10), stored in `d.custom=tags`. */
+  tags?: string[];
+  /** Force-start (V3-17 / QUE-01): exempt from the client queue scheduler. */
+  forceStart?: boolean;
+  /** Bandwidth-rule marker (V3-18 / QUE-04): managing rule id, "" = none. */
+  throttleRule?: string;
+  /** rtorrent's `d.is_open` — loaded and may hold peer connections. */
+  isOpen?: boolean;
+  /** rtorrent's `d.is_active` — actually transferring. Distinguishes a stopped
+   *  torrent (closed) from a queued one (loaded but idle). */
+  isActive?: boolean;
   /** Native rtorrent views this torrent belongs to (D12); empty until resolved. */
   views: string[];
 }
@@ -104,7 +127,20 @@ export interface ConnState {
 
 /** The full state pushed on every fast poll via the `state://snapshot` event. */
 export interface Snapshot {
+  /** Monotonic revision; 0 on legacy payloads (optional for backwards compat). */
+  revision?: number;
   torrents: TorrentDto[];
+  globals: GlobalStats;
+  connection: ConnState;
+}
+
+/** Incremental update between two Snapshots (FND-02). */
+export interface SnapshotDelta {
+  revision: number;
+  baseRevision: number;
+  added: TorrentDto[];
+  updated: TorrentDto[];
+  removed: string[];
   globals: GlobalStats;
   connection: ConnState;
 }
@@ -206,6 +242,29 @@ export interface TorrentMeta {
   trackers: string[];
 }
 
+/** Parameters for creating a new .torrent file. */
+export interface CreateTorrentParams {
+  sourcePath: string;
+  outputPath?: string | null;
+  pieceLength?: number | null;
+  trackers: string[];
+  isPrivate: boolean;
+  comment?: string | null;
+  source?: string | null;
+  startSeeding: boolean;
+}
+
+/** Result from creating a new .torrent file. */
+export interface CreateTorrentResult {
+  name: string;
+  infoHash: string;
+  totalSize: number;
+  pieceLength: number;
+  pieceCount: number;
+  outputPath?: string | null;
+  isPrivate: boolean;
+}
+
 /** Options passed with an add request. */
 export interface AddOptions {
   savePath: string;
@@ -249,6 +308,49 @@ export interface LabelDefault {
   savePath: string;
 }
 
+/** One move-on-complete destination rule: a tag match or a label match (V3-14). */
+export interface MoveRule {
+  tag?: string;
+  label?: string;
+  destination: string;
+}
+
+/** What to do when a move destination is already taken (V3-14). */
+export type CollisionPolicy = "error" | "auto-rename";
+
+/** One bandwidth rule: a tag or label match plus caps (V3-18 / QUE-04). */
+export interface BandwidthRule {
+  id: string;
+  tag?: string;
+  label?: string;
+  downKb: number;
+  upKb: number;
+  peersMax?: number;
+  peersMin?: number;
+  uploadsMax?: number;
+}
+
+/** Move-on-complete journal state (V3-14), mirroring the Rust `MoveState`. */
+export type MoveState =
+  | "pending"
+  | "in_progress"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+/** One move-on-complete entry with live byte progress (V3-14). */
+export interface MoveStatus {
+  id: string;
+  hash: string;
+  name: string;
+  src: string;
+  dst: string;
+  state: MoveState;
+  error: string;
+  doneBytes: number;
+  totalBytes: number;
+}
+
 /** One watched folder (C12); empty label/savePath fall back to defaults. */
 export interface WatchFolder {
   path: string;
@@ -265,6 +367,32 @@ export interface TurtleSchedule {
   endMin: number;
   /** Active weekdays, 0=Sunday..6=Saturday. Empty = every day. */
   days: number[];
+}
+
+/** One scheduler grid window (V3-18 / QUE-05). */
+export interface SchedWindow {
+  /** Weekdays, 0=Sunday..6=Saturday. Empty = every day. */
+  days: number[];
+  startMin: number;
+  endMin: number;
+  /** Pause all traffic instead of capping it. */
+  pause: boolean;
+  downKb: number;
+  upKb: number;
+}
+
+/** Temporary scheduler override with a wall-clock expiry (unix ms). */
+export interface TempOverride {
+  pause: boolean;
+  downKb: number;
+  upKb: number;
+  untilMs: number;
+}
+
+/** Weekly scheduler grid plus an optional override (V3-18 / QUE-05). */
+export interface Schedule {
+  windows: SchedWindow[];
+  tempOverride: TempOverride | null;
 }
 
 /** App settings shared with the frontend Preferences UI. */
@@ -311,8 +439,22 @@ export interface Settings {
   // --- Automation (v1.7) ---
   /** Keep at most this many torrents downloading; queue the rest (C9). 0 = off. */
   maxActiveDownloads: number;
+  /** Keep at most this many finished torrents seeding (V3-17). 0 = off. */
+  maxActiveUploads: number;
+  /** Keep at most this many torrents active in total (V3-17). 0 = off. */
+  maxActiveTorrents: number;
+  /** Torrents slower than this (down + up, KiB/s) are never held back (V3-17). 0 = off. */
+  queueSlowLimitKbs: number;
   /** Per-label default save paths (C11). */
   labelDefaults: LabelDefault[];
+  /** "Keep incomplete torrents in" (V3-14 / LIB-08); empty = disabled. */
+  incompleteDir: string;
+  /** Destination rules for completed data, by tag or label (V3-14 / LIB-07). */
+  moveRules: MoveRule[];
+  /** What to do when a move destination is already taken (V3-14). */
+  collisionPolicy: CollisionPolicy;
+  /** Named bandwidth profiles applied by tag/label (V3-18 / QUE-04). */
+  bandwidthRules: BandwidthRule[];
   /** Watched folders for auto-add (C12). */
   watchFolders: WatchFolder[];
   /** Command run on completion with %N/%F/%H tokens (C13); empty = disabled. */
@@ -327,6 +469,8 @@ export interface Settings {
   turtleEnabled: boolean;
   /** Optional daily schedule that auto-engages turtle mode (B14). */
   turtleSchedule: TurtleSchedule;
+  /** Weekly scheduler grid (V3-18 / QUE-05); non-empty wins over turtleSchedule. */
+  schedule: Schedule;
   /** Saved daemon connections (B10); the active one is mirrored in transport. */
   connectionProfiles: ConnectionProfile[];
   /** RSS/Atom feeds to poll (B11). */
@@ -386,7 +530,7 @@ export interface RssFeed {
   enabled: boolean;
 }
 
-/** An auto-download rule matched against feed item titles (B11). */
+/** An auto-download rule matched against feed items (B11, filters in V3-23). */
 export interface RssRule {
   id: string;
   name: string;
@@ -397,16 +541,38 @@ export interface RssRule {
   mustContain: string;
   /** Whitespace tokens of which none may appear. */
   mustNotContain: string;
+  /** Optional regex the title must match (case-insensitive). */
+  regexMatch?: string;
+  /** Season selector (`2`, `1-3`); empty = any. */
+  seasonRange?: string;
+  /** Episode selector; empty = any. */
+  episodeRange?: string;
+  /** Size bounds in MiB; 0 = no bound. Unknown sizes fail a set bound. */
+  minSizeMb?: number;
+  maxSizeMb?: number;
+  /** Quality token preferred within an episode (e.g. `1080p`). */
+  preferQuality?: string;
+  /** Keep only the best release per episode within one poll. */
+  smartEpisode?: boolean;
   label: string;
+  /** Comma-separated tags applied on add. */
+  tags?: string[];
   savePath: string;
+  /** Start immediately (false = add stopped). */
+  start?: boolean;
+  /** Pin to the top of the queue on add. */
+  topOfQueue?: boolean;
+  /** Poll cadence in minutes; 0 = the global interval. */
+  pollMinutes?: number;
 }
 
 /** One parsed feed entry (B11), shown in the RSS preview. */
 export interface FeedItem {
-  title: string;
-  link: string;
+  title: string;  link: string;
   guid: string;
   pubDate: string;
+  /** Enclosure length in bytes, when the feed states one. */
+  sizeBytes?: number | null;
 }
 
 /** What the daemon reports about itself, for the Daemon tab (D16). */

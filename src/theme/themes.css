@@ -1,0 +1,12 @@
+/*
+ * Every non-default theme, in one import.
+ *
+ * Each file is a `html[data-theme="…"]` override of the palette in
+ * `palette.css`; their selectors are disjoint, so the order here is irrelevant.
+ * Entries import this after `palette.css` and before `tokens.css`.
+ */
+
+@import "./themes/light.css";
+@import "./themes/midnight.css";
+@import "./themes/contrast.css";
+@import "./themes/classic.css";

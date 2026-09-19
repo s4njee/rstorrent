@@ -29,8 +29,10 @@ export function ColumnMenu() {
         role="menu"
         aria-label="Torrent table columns"
       >
-        {COLUMN_DEFINITIONS.map((column) => {
-          const locked = column.id === "name";
+        {COLUMN_DEFINITIONS.filter((column) => column.label).map((column) => {
+          // The selection box has no label and is not the user's to hide; the
+          // name is the row's identity. Both are pinned.
+          const locked = Boolean(column.locked);
           const visible = columns.visibility[column.id];
           return (
             <div

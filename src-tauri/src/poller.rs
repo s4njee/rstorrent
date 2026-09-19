@@ -208,52 +208,94 @@ async fn apply_seed_goal(
     }
 }
 
-/// Start/stop decisions to honor the max-active-downloads limit (C9).
-#[derive(Debug, Default, PartialEq, Eq)]
-struct QueueActions {
-    start: Vec<String>,
-    stop: Vec<String>,
-}
-
-/// `started_at` with 0 (unknown) sorted last, so torrents with a real start
-/// time keep their slots ahead of ones we can't order.
-fn started_key(t: &RawTorrent) -> i64 {
-    if t.started_at == 0 {
-        i64::MAX
-    } else {
-        t.started_at
+/// Build the queue config (V3-17 / QUE-01) from settings.
+fn queue_config(settings: &crate::ipc::Settings) -> rtorrent_core::queue::QueueConfig {
+    rtorrent_core::queue::QueueConfig {
+        max_downloads: settings.max_active_downloads,
+        max_uploads: settings.max_active_uploads,
+        max_total: settings.max_active_torrents,
+        slow_limit_kbs: settings.queue_slow_limit_kbs,
     }
 }
 
-/// Decide which downloads to start/stop to honor the max-active limit (C9).
-///
-/// Considers only incomplete torrents that are neither hash-checking nor in an
-/// error state. Keeps the highest-priority `max_active` of them active (ties
-/// broken by earliest start), stops the rest, and starts stopped ones to fill
-/// free slots. `max_active <= 0` disables queue management.
-fn queue_decisions(torrents: &[RawTorrent], max_active: i64) -> QueueActions {
-    let mut actions = QueueActions::default();
-    if max_active <= 0 {
-        return actions;
-    }
-    let mut downloads: Vec<&RawTorrent> = torrents
+/// Execute one tick's bandwidth plan (V3-18 / QUE-04): define-once rule
+/// throttles, assign/release, caps, and the adoption marker. Steady state
+/// issues no daemon calls at all.
+async fn apply_bandwidth(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    backend: &dyn crate::rtorrent::RtorrentApi,
+    settings: &crate::ipc::Settings,
+    raw: &[RawTorrent],
+    bw: &mut rtorrent_core::bandwidth::BandwidthState,
+) {
+    use rtorrent_core::bandwidth::{plan_bandwidth, BandwidthAction, RULE_KEY};
+    let names: std::collections::HashMap<&str, &str> = raw
         .iter()
-        .filter(|t| !t.complete && !t.hashing && t.message.is_empty())
+        .map(|t| (t.hash.as_str(), t.name.as_str()))
         .collect();
-    downloads.sort_by(|a, b| {
-        b.priority
-            .cmp(&a.priority)
-            .then_with(|| started_key(a).cmp(&started_key(b)))
-    });
-    for (i, t) in downloads.iter().enumerate() {
-        let want_active = (i as i64) < max_active;
-        if want_active && !t.is_active {
-            actions.start.push(t.hash.clone());
-        } else if !want_active && t.is_active {
-            actions.stop.push(t.hash.clone());
+    let name_of = |hash: &str| names.get(hash).copied().unwrap_or(hash).to_owned();
+    for action in plan_bandwidth(raw, &settings.bandwidth_rules) {
+        match action {
+            BandwidthAction::Adopt { hash, rule } => {
+                let throttle = rule.throttle_name();
+                if bw.needs_define(&throttle) {
+                    if let Err(error) = backend
+                        .define_named_throttle(&throttle, rule.down_kb, rule.up_kb)
+                        .await
+                    {
+                        if bw.should_warn(&rule.id) {
+                            state.log(
+                                app,
+                                LogLevel::Error,
+                                format!(
+                                    "bandwidth rule {} ({}): could not define throttle: {error}",
+                                    rule.id,
+                                    rule.describe()
+                                ),
+                                Some(hash),
+                            );
+                        }
+                        continue;
+                    }
+                }
+                bw.clear_warned(&rule.id);
+                let one = std::slice::from_ref(&hash);
+                if backend.assign_throttle(one, Some(&throttle)).await.is_err() {
+                    continue;
+                }
+                let _ = backend
+                    .set_connection_limits(&hash, rule.peers_max, rule.peers_min, rule.uploads_max)
+                    .await;
+                let _ = backend
+                    .set_custom_metadata(&hash, &[(RULE_KEY, &rule.id)])
+                    .await;
+                state.log(
+                    &app,
+                    LogLevel::Info,
+                    format!(
+                        "bandwidth rule {} ({}) now shaping {}",
+                        rule.id,
+                        rule.describe(),
+                        name_of(&hash)
+                    ),
+                    Some(hash),
+                );
+            }
+            BandwidthAction::Release { hash } => {
+                let one = std::slice::from_ref(&hash);
+                let _ = backend.assign_throttle(one, None).await;
+                let _ = backend.set_connection_limits(&hash, 0, 0, 0).await;
+                let _ = backend.set_custom_metadata(&hash, &[(RULE_KEY, "")]).await;
+                state.log(
+                    &app,
+                    LogLevel::Info,
+                    format!("bandwidth rule released {hash} back to global limits"),
+                    Some(hash),
+                );
+            }
         }
     }
-    actions
 }
 
 /// Spawn the fast and detail polling loops.
@@ -268,17 +310,28 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
     tauri::async_runtime::spawn(detail_loop(app, state));
 }
 
+/// How often a full snapshot is sent for reconciliation (FND-02).
+const FULL_EVERY: u64 = 30;
+
 /// The main ~1s poll: list + globals + tracker resolution + snapshot emit.
 async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
     let mut failures: usize = 0;
     let mut completion_tracker = CompletionTracker::default();
     let mut goal_stops: HashMap<String, GoalStopRecord> = HashMap::new();
+    let mut queue_mem = rtorrent_core::queue::QueueMemory::default();
+    let mut sched_mem = rtorrent_core::schedule::SchedMemory::default();
+    let mut bw_state = rtorrent_core::bandwidth::BandwidthState::default();
     // Last global rate limits pushed to the daemon (B14). Recomputed each tick
     // from turtle state; re-applied only on change. Cleared on disconnect so a
     // reconnect re-applies.
     let mut applied_limits: Option<(i64, i64)> = None;
     // Successful-poll counter, used to refresh native views on a slow cadence.
     let mut tick: u64 = 0;
+    // FND-02 revisioned delta state.
+    let mut revision: u64 = 0;
+    let mut last_snapshot: Option<Snapshot> = None;
+    // Move-journal recovery runs once, after the first successful tick.
+    let mut moves_resumed = false;
 
     loop {
         let backend = state.backend();
@@ -320,6 +373,22 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                             );
                         }
                     }
+                    // Bandwidth-rule throttles (V3-18) are definitions too:
+                    // replay every configured rule's rates.
+                    for (name, (down_kb, up_kb)) in
+                        rtorrent_core::bandwidth::rule_throttles(&state.settings().bandwidth_rules)
+                    {
+                        if let Err(error) =
+                            backend.define_named_throttle(&name, down_kb, up_kb).await
+                        {
+                            state.log(
+                                &app,
+                                LogLevel::Error,
+                                format!("could not restore bandwidth rule {name}: {error}"),
+                                None,
+                            );
+                        }
+                    }
                     // Push the app-owned network prefs (encryption/PEX, proxy,
                     // bind, global caps). rtorrent forgets runtime config on a
                     // restart and several have no getter, so replay them here.
@@ -356,6 +425,9 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                 if !continuing_session {
                     completion_tracker.reset();
                     goal_stops.clear();
+                    queue_mem.reset();
+                    bw_state.reset();
+                    sched_mem.reset();
                 }
 
                 let settings = state.settings();
@@ -390,6 +462,9 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                     &goal_stops,
                     unix_now(),
                 );
+                // Hashes policy acted on this tick: the mover must not touch
+                // them (in particular it must never restart a seed-goal stop).
+                let acted: HashSet<String> = decisions.iter().map(|d| d.hash.clone()).collect();
                 if !decisions.is_empty() {
                     apply_seed_goal(
                         &app,
@@ -403,15 +478,39 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                     .await;
                 }
 
-                // Max-active-downloads queue (C9): keep the top N incomplete
-                // torrents downloading, stop the rest, promote as slots free.
-                let queue = queue_decisions(&raw, settings.max_active_downloads);
-                if !queue.stop.is_empty() && backend.stop(&queue.stop).await.is_ok() {
+                // Move-on-complete (V3-14): plan from this tick's rows, one
+                // detached task per intent. Runs after seed goals so the
+                // skip-set above stays truthful.
+                if !moves_resumed {
+                    moves_resumed = true;
+                    let resume_app = app.clone();
+                    let resume_state = state.clone();
+                    let resume_raw = raw.clone();
+                    tauri::async_runtime::spawn(async move {
+                        crate::moves::resume_once(&resume_app, &resume_state, &resume_raw).await;
+                    });
+                }
+                crate::moves::run_due_moves(&app, &state, &raw, &acted).await;
+
+                // Complete queue policy (V3-17 / QUE-01): downloads, seeds
+                // and total caps with slow-torrent exemption and force-start.
+                // Holds pause (stay loaded → renders "Queued"), never stop.
+                // Seed-goal decrees and in-flight moves are skipped: the queue
+                // must never restart a torrent a move task just stopped.
+                let mut queue_skip = acted.clone();
+                queue_skip.extend(state.moves.lock().unwrap().busy_hashes());
+                let queue = rtorrent_core::queue::decide_queues(
+                    &raw,
+                    queue_config(&settings),
+                    &mut queue_mem,
+                    &queue_skip,
+                );
+                if !queue.stop.is_empty() && backend.pause(&queue.stop).await.is_ok() {
                     state.log(
                         &app,
                         LogLevel::Info,
                         format!(
-                            "queued {} download(s) over the active limit",
+                            "queued {} torrent(s) over the active limit",
                             queue.stop.len()
                         ),
                         None,
@@ -421,24 +520,121 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                     state.log(
                         &app,
                         LogLevel::Info,
-                        format!("started {} queued download(s)", queue.start.len()),
+                        format!("started {} queued torrent(s)", queue.start.len()),
                         None,
                     );
                 }
 
-                // Turtle mode (B14): compute the effective global limits for the
-                // current wall clock and push them only when they change.
-                let now = Local::now();
-                let turtle_active = crate::turtle::is_active(
+                // Bandwidth rules (V3-18 / QUE-04): adopt/release per the
+                // plan; steady torrents cost zero daemon traffic.
+                apply_bandwidth(
+                    &app,
+                    &state,
+                    backend.as_ref(),
                     &settings,
-                    now.weekday().num_days_from_sunday() as u8,
-                    i64::from(now.hour() * 60 + now.minute()),
+                    &raw,
+                    &mut bw_state,
+                )
+                .await;
+
+                // Turtle mode (B14) is now the scheduler grid (V3-18 /
+                // QUE-05): weekly windows + override + the manual toggle.
+                // Pause windows halt traffic via scheduler-owned pauses;
+                // limit windows push global rates change-gated as before.
+                let now = Local::now();
+                let weekday = now.weekday().num_days_from_sunday() as u8;
+                let minute = i64::from(now.hour() * 60 + now.minute());
+                let now_ms = now.timestamp_millis();
+                let legacy = rtorrent_core::schedule::LegacyWindow {
+                    enabled: settings.turtle_schedule.enabled,
+                    start_min: settings.turtle_schedule.start_min,
+                    end_min: settings.turtle_schedule.end_min,
+                    days: settings.turtle_schedule.days.clone(),
+                    down_kb: settings.turtle_down_kb,
+                    up_kb: settings.turtle_up_kb,
+                };
+                let windows: Vec<rtorrent_core::schedule::SchedWindow> =
+                    if settings.schedule.windows.is_empty() {
+                        rtorrent_core::schedule::import_legacy(&legacy)
+                    } else {
+                        settings.schedule.windows.clone()
+                    };
+                let manual = settings
+                    .turtle_enabled
+                    .then_some((settings.turtle_down_kb, settings.turtle_up_kb));
+                let sched_state = rtorrent_core::schedule::evaluate(
+                    &windows,
+                    settings.schedule.temp_override.as_ref(),
+                    manual,
+                    weekday,
+                    minute,
+                    now_ms,
                 );
-                let limits = crate::turtle::effective_limits(&settings, turtle_active);
-                if applied_limits != Some(limits)
-                    && backend.set_throttles(limits.0, limits.1).await.is_ok()
-                {
-                    applied_limits = Some(limits);
+                let turtle_active = sched_state.turtle_active();
+                // Pause transitions own their torrents through the queue's
+                // user-paused set, so neither the queue nor a reconnect
+                // mistakes them for manual pauses.
+                let actions = sched_mem.transition(
+                    sched_state.is_paused(),
+                    raw.iter()
+                        .filter(|t| t.is_active)
+                        .map(|t| t.hash.clone())
+                        // Plus anything the queue just promoted: the snapshot
+                        // predates this tick's starts.
+                        .chain(queue.start.iter().cloned()),
+                );
+                if !actions.pause.is_empty() {
+                    if backend.pause(&actions.pause).await.is_ok() {
+                        for h in &actions.pause {
+                            queue_mem.set_scheduler_held(h, true);
+                        }
+                        state.log(
+                            &app,
+                            LogLevel::Info,
+                            format!(
+                                "scheduler paused {} torrent(s) for the pause window",
+                                actions.pause.len()
+                            ),
+                            None,
+                        );
+                    } else {
+                        // Failed to pause: forget the entry so the next tick
+                        // retries instead of believing the torrents are held.
+                        sched_mem.reset();
+                    }
+                }
+                if !actions.release.is_empty() {
+                    for h in &actions.release {
+                        queue_mem.set_scheduler_held(h, false);
+                    }
+                    // No starts here: the queue converges wanted torrents on
+                    // its next tick, and anything else stays as the user or
+                    // the seed goals left it.
+                    state.log(
+                        &app,
+                        LogLevel::Info,
+                        format!(
+                            "scheduler released {} torrent(s) at the window end",
+                            actions.release.len()
+                        ),
+                        None,
+                    );
+                }
+                // Limit states push global rates exactly as turtle did; while
+                // paused there is nothing to push and the last-applied memory
+                // is left alone so resume re-pushes only on change.
+                if !sched_state.is_paused() {
+                    let limits = match &sched_state {
+                        rtorrent_core::schedule::SchedState::Limited { down_kb, up_kb } => {
+                            (*down_kb, *up_kb)
+                        }
+                        _ => (settings.down_limit_kb, settings.up_limit_kb),
+                    };
+                    if applied_limits != Some(limits)
+                        && backend.set_throttles(limits.0, limits.1).await.is_ok()
+                    {
+                        applied_limits = Some(limits);
+                    }
                 }
 
                 resolve_trackers(&app, &state, &raw).await;
@@ -450,15 +646,44 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                     }
                 }
                 tick += 1;
-                let snapshot = build_snapshot(&state, raw, globals, turtle_active).await;
-                let _ = app.emit("state://snapshot", &snapshot);
+                crate::tray::update_tray(
+                    &app,
+                    globals.down_rate,
+                    globals.up_rate,
+                    notifications::active_download_count(&raw) as usize,
+                    turtle_active,
+                );
+                revision = revision.wrapping_add(1);
+                let mut snapshot =
+                    build_snapshot(&state, raw, globals, turtle_active, revision).await;
+                // Ensure revision is monotonic even if build_snapshot helper
+                // overwrites it; keep the poller's counter authoritative.
+                snapshot.revision = revision;
+                state.set_snapshot(snapshot.clone());
+                // FND-02: emit delta when we have a previous snapshot and this
+                // is not the first tick after a (re)connect and not a
+                // periodic full reconciliation.
+                let should_emit_full =
+                    last_snapshot.is_none() || !continuing_session || tick % FULL_EVERY == 0;
+                if should_emit_full {
+                    let _ = app.emit("state://snapshot", &snapshot);
+                } else if let Some(prev) = last_snapshot.as_ref() {
+                    let delta = rtorrent_core::delta::diff(prev, &snapshot);
+                    let _ = app.emit("state://delta", &delta);
+                } else {
+                    let _ = app.emit("state://snapshot", &snapshot);
+                }
+                last_snapshot = Some(snapshot);
             }
             Err(e) => {
                 failures += 1;
                 completion_tracker.reset();
                 goal_stops.clear();
+                queue_mem.reset();
+                sched_mem.reset();
                 applied_limits = None;
                 notifications::set_dock_badge(&app, 0);
+                crate::tray::update_tray(&app, 0, 0, 0, false);
                 let delay = BACKOFF[(failures - 1).min(BACKOFF.len() - 1)];
                 let s = state.settings();
                 // Only log the first failure of a streak to avoid log spam.
@@ -479,14 +704,16 @@ async fn fast_loop(app: AppHandle, state: Arc<AppState>) {
                 };
                 state.set_conn(conn.clone());
                 // Emit an empty snapshot so the UI can render the disconnected card.
-                let _ = app.emit(
-                    "state://snapshot",
-                    &Snapshot {
-                        torrents: vec![],
-                        globals: empty_globals(),
-                        connection: conn,
-                    },
-                );
+                revision = revision.wrapping_add(1);
+                let snap = Snapshot {
+                    revision,
+                    torrents: vec![],
+                    globals: empty_globals(),
+                    connection: conn,
+                };
+                state.set_snapshot(snap.clone());
+                last_snapshot = Some(snap.clone());
+                let _ = app.emit("state://snapshot", &snap);
                 wait(delay * 1000, &state).await;
                 continue;
             }
@@ -545,6 +772,7 @@ async fn build_snapshot(
     raw: Vec<crate::rtorrent::RawTorrent>,
     g: RawGlobal,
     turtle_active: bool,
+    revision: u64,
 ) -> Snapshot {
     let settings = state.settings();
     let mut torrents: Vec<TorrentDto> = raw
@@ -595,6 +823,7 @@ async fn build_snapshot(
     };
 
     Snapshot {
+        revision,
         // Total-volume size is only surfaced by the web disk card; the desktop
         // status bar shows free space alone, so `disk_size` stays `None` here
         // (WE0-S2). Globals assembly itself is shared with the web server.
@@ -856,48 +1085,17 @@ mod tests {
         );
     }
 
-    fn dl(hash: &str, priority: i64, active: bool, started_at: i64) -> RawTorrent {
-        RawTorrent {
-            hash: hash.into(),
-            complete: false,
-            is_active: active,
-            priority,
-            started_at,
-            ..RawTorrent::default()
-        }
-    }
-
     #[test]
-    fn queue_keeps_top_priority_active_and_promotes_to_fill() {
-        // Three incomplete downloads, cap of 2. B (pri 3) and A (pri 2) should be
-        // the two active; C (pri 1) is queued.
-        let torrents = vec![
-            dl("A", 2, true, 100),
-            dl("B", 3, false, 90), // higher priority but stopped → promote
-            dl("C", 1, true, 80),  // lowest priority but active → stop
-        ];
-        let actions = queue_decisions(&torrents, 2);
-        assert_eq!(actions.start, vec!["B".to_string()]);
-        assert_eq!(actions.stop, vec!["C".to_string()]);
-    }
-
-    #[test]
-    fn queue_zero_is_disabled() {
-        let torrents = vec![dl("A", 2, false, 1), dl("B", 2, true, 2)];
-        assert_eq!(queue_decisions(&torrents, 0), QueueActions::default());
-    }
-
-    #[test]
-    fn queue_ignores_complete_hashing_and_errored() {
-        let mut complete = dl("DONE", 3, true, 1);
-        complete.complete = true;
-        let mut hashing = dl("CHK", 3, true, 1);
-        hashing.hashing = true;
-        let mut errored = dl("ERR", 3, true, 1);
-        errored.message = "tracker down".into();
-        let active = dl("A", 1, true, 1);
-        // Cap 0-of-these-managed: only "A" is a managed download; cap 1 keeps it.
-        let actions = queue_decisions(&[complete, hashing, errored, active], 1);
-        assert!(actions.start.is_empty() && actions.stop.is_empty());
+    fn queue_config_maps_all_four_settings() {
+        let mut settings = crate::ipc::Settings::default();
+        settings.max_active_downloads = 3;
+        settings.max_active_uploads = 2;
+        settings.max_active_torrents = 4;
+        settings.queue_slow_limit_kbs = 50;
+        let cfg = queue_config(&settings);
+        assert_eq!(cfg.max_downloads, 3);
+        assert_eq!(cfg.max_uploads, 2);
+        assert_eq!(cfg.max_total, 4);
+        assert_eq!(cfg.slow_limit_kbs, 50);
     }
 }

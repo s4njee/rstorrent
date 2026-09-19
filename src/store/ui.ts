@@ -9,10 +9,11 @@
 
 import { create } from "zustand";
 import type { AddSource } from "../ipc/commands";
-import type { DetailTab } from "../ipc/types";
+import { DEFAULT_PANE, parsePane, type DetailPane } from "../utils/panes";
 import {
   defaultColumnState,
   deserializeColumnState,
+  moveColumn as moveColumnState,
   resizeColumn as resizeColumnState,
   serializeColumnState,
   toggleColumn as toggleColumnState,
@@ -30,6 +31,7 @@ export type SortColumn =
   | "upRate"
   | "etaSeconds"
   | "ratio"
+  | "addedAt"
   | "startedAt"
   | "finishedAt";
 
@@ -41,8 +43,12 @@ export type SortDir = "asc" | "desc";
  */
 export interface SmartFilterCriteria {
   status?: string;
+  errorKind?: string;
   label?: string;
+  /** A single tag to match (V3-10). */
+  tags?: string;
   tracker?: string;
+  view?: string;
   text?: string;
 }
 
@@ -52,15 +58,35 @@ export interface SmartFilter extends SmartFilterCriteria {
   name: string;
 }
 
-export type ActiveFilter =
-  | { type: "status"; value: string }
-  | { type: "label"; value: string }
-  | { type: "tracker"; value: string }
-  /** `value` is a native rtorrent view name (D12). */
-  | { type: "view"; value: string }
-  /** `value` is a SmartFilter id, resolved against `smartFilters`. */
-  | { type: "smart"; value: string }
-  | null;
+/**
+ * The live filter: one value per dimension, all ANDed (the design's
+ * "status AND label AND tracker AND text match").
+ *
+ * A dimension with no value is unconstrained; clicking the active row in the
+ * sidebar clears that dimension rather than replacing the whole filter, so
+ * "downloading" and "iso" can be asked at once.
+ */
+export interface Facets {
+  status?: string;
+  errorKind?: string;
+  label?: string;
+  /** A tag every shown torrent must carry (V3-10). */
+  tags?: string;
+  tracker?: string;
+  /** A native rtorrent view name (D12). */
+  view?: string;
+  /** A saved filter, resolved against `smartFilters` by id. */
+  smart?: string;
+}
+
+/** Which facet a sidebar row sets. */
+export type FacetKind =
+  "status" | "errorKind" | "label" | "tags" | "tracker" | "view" | "smart";
+
+/** True when any dimension is constrained. */
+export function hasFacets(facets: Facets): boolean {
+  return Object.values(facets).some((value) => Boolean(value));
+}
 
 /** Ids only need to be unique within this app's storage, not globally. */
 function newSmartFilterId(): string {
@@ -76,24 +102,30 @@ function newSmartFilterId(): string {
  * faithful representation — saving it would have to silently drop or overwrite
  * X's own text. Clear the filter and rebuild instead.
  */
-export function canSaveSmartFilter(
-  filter: ActiveFilter,
-  search: string,
-): boolean {
-  if (filter?.type === "smart") return false;
-  return Boolean(filter) || search.trim().length > 0;
+export function canSaveSmartFilter(facets: Facets, search: string): boolean {
+  // Saving while a saved filter is active would nest one inside the other; the
+  // criteria hold a single set of dimensions, so there is nowhere to put it.
+  if (facets.smart) return false;
+  return hasFacets(facets) || search.trim().length > 0;
 }
 
 export type DialogKind =
   | null
   | "add-file"
   | "add-magnet"
+  | "create-torrent"
   | "prefs"
   | "stats"
   | "remove"
+  | "recheck"
   | "rate-limit"
   | "tune-network"
-  | "shutdown";
+  | "shutdown"
+  | "set-location"
+  | "set-label"
+  | "set-tags"
+  | "moves"
+  | "session";
 
 export interface ExternalAddRequest {
   id: number;
@@ -102,17 +134,26 @@ export interface ExternalAddRequest {
 
 let nextExternalRequestId = 1;
 
+/** The facets minus the saved-filter dimension. */
+function withoutSmart(facets: Facets): Facets {
+  const { smart: _smart, ...rest } = facets;
+  return rest;
+}
+
 interface UiState {
   selection: Set<string>;
   anchor: string | null;
-  filter: ActiveFilter;
+  facets: Facets;
   /** Saved multi-dimension queries (C4), shown as their own sidebar group. */
   smartFilters: SmartFilter[];
   search: string;
+  /** Hashes whose contained filenames match `search`, from the server's index
+   *  (V3-12). Transient: cleared when the search box empties. */
+  fileMatches: Set<string>;
   sortColumn: SortColumn;
   sortDir: SortDir;
   columns: ColumnState;
-  activeTab: DetailTab;
+  activeTab: DetailPane;
   dialog: DialogKind;
   externalAddRequest: ExternalAddRequest | null;
   externalAddComplete: (() => void) | null;
@@ -120,6 +161,12 @@ interface UiState {
   contextMenu: { x: number; y: number } | null;
   /** Cursor position for the header column menu, or null when closed. */
   columnMenu: { x: number; y: number } | null;
+  /** Narrow windows show the sidebar as an overlay panel (design §Responsive);
+   *  at full width it is always visible and this is ignored. */
+  sidebarOpen: boolean;
+  /** Whether the remove confirmation should open with "delete the files"
+   *  ticked — what the design's ⇧Delete carries in. Cleared on close. */
+  removeWithData: boolean;
 
   // --- selection ---
   select: (hash: string) => void;
@@ -131,7 +178,10 @@ interface UiState {
   pruneSelection: (existing: Set<string>) => void;
 
   // --- view ---
-  setFilter: (f: ActiveFilter) => void;
+  /** Toggle one dimension: setting the value it already holds clears it. */
+  setFacet: (kind: FacetKind, value: string | null) => void;
+  /** Every dimension cleared, for "Clear filters". */
+  clearFacets: () => void;
   /**
    * Save the current view (dimension filter + search text) as a named smart
    * filter, then activate it. Only meaningful for a non-smart view — see
@@ -140,11 +190,15 @@ interface UiState {
   saveSmartFilter: (name: string) => void;
   removeSmartFilter: (id: string) => void;
   setSearch: (s: string) => void;
+  /** Replace the filename-search results (V3-12). */
+  setFileMatches: (hashes: string[]) => void;
   setSort: (col: SortColumn) => void;
   resizeColumn: (id: ColumnId, width: number) => void;
   toggleColumn: (id: ColumnId) => void;
+  /** Drag a header onto another to reorder the table. */
+  moveColumn: (id: ColumnId, before: ColumnId) => void;
   resetColumns: () => void;
-  setActiveTab: (t: DetailTab) => void;
+  setActiveTab: (t: DetailPane) => void;
 
   // --- dialogs / menu ---
   openDialog: (d: DialogKind) => void;
@@ -154,6 +208,8 @@ interface UiState {
   closeContextMenu: () => void;
   openColumnMenu: (x: number, y: number) => void;
   closeColumnMenu: () => void;
+  toggleSidebar: () => void;
+  requestRemoveData: () => void;
 }
 
 // --- localStorage persistence for view prefs ---
@@ -161,10 +217,16 @@ const LS_KEY = "rstorrent.view";
 interface PersistedView {
   sortColumn: SortColumn;
   sortDir: SortDir;
-  filter: ActiveFilter;
-  activeTab: DetailTab;
+  facets: Facets;
+  activeTab: DetailPane;
   columns: string;
   smartFilters: SmartFilter[];
+}
+
+/** The shape written before the facet set: one dimension, or null. */
+interface LegacyFilter {
+  type: "status" | "errorKind" | "label" | "tracker" | "view" | "smart";
+  value: string;
 }
 
 interface LoadedView extends Omit<PersistedView, "columns"> {
@@ -173,10 +235,11 @@ interface LoadedView extends Omit<PersistedView, "columns"> {
 
 function loadView(): LoadedView {
   const fallback: LoadedView = {
-    sortColumn: "name",
-    sortDir: "asc",
-    filter: null,
-    activeTab: "general",
+    // The design's default: newest first, ties broken by name (see selectors).
+    sortColumn: "addedAt",
+    sortDir: "desc",
+    facets: {},
+    activeTab: DEFAULT_PANE,
     columns: defaultColumnState(),
     smartFilters: [],
   };
@@ -184,22 +247,21 @@ function loadView(): LoadedView {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<PersistedView>;
+      const parsed = JSON.parse(raw) as Partial<PersistedView> & {
+        filter?: LegacyFilter | null;
+      };
       const smartFilters = parsed.smartFilters ?? fallback.smartFilters;
-      let filter = parsed.filter ?? fallback.filter;
+      const facets = parsed.facets ?? migrateFilter(parsed.filter);
       // Don't restore a filter pointing at a smart filter that no longer
       // exists — that would silently show an unexplained empty table.
-      if (
-        filter?.type === "smart" &&
-        !smartFilters.some((f) => f.id === filter?.value)
-      ) {
-        filter = null;
+      if (facets.smart && !smartFilters.some((f) => f.id === facets.smart)) {
+        delete facets.smart;
       }
       return {
         sortColumn: parsed.sortColumn ?? fallback.sortColumn,
         sortDir: parsed.sortDir ?? fallback.sortDir,
-        filter,
-        activeTab: parsed.activeTab ?? fallback.activeTab,
+        facets,
+        activeTab: parsePane(parsed.activeTab) ?? fallback.activeTab,
         columns: deserializeColumnState(parsed.columns),
         smartFilters,
       };
@@ -208,6 +270,12 @@ function loadView(): LoadedView {
     // ignore malformed storage
   }
   return fallback;
+}
+
+/** A pre-facet view's single filter, as a facet set. */
+function migrateFilter(filter: LegacyFilter | null | undefined): Facets {
+  if (!filter || typeof filter.value !== "string" || !filter.value) return {};
+  return { [filter.type]: filter.value };
 }
 
 function saveView(v: PersistedView) {
@@ -227,7 +295,7 @@ export const useUi = create<UiState>((set, get) => {
     saveView({
       sortColumn: s.sortColumn,
       sortDir: s.sortDir,
-      filter: s.filter,
+      facets: s.facets,
       activeTab: s.activeTab,
       columns: serializeColumnState(s.columns),
       smartFilters: s.smartFilters,
@@ -237,9 +305,10 @@ export const useUi = create<UiState>((set, get) => {
   return {
     selection: new Set(),
     anchor: null,
-    filter: initial.filter,
+    facets: initial.facets,
     smartFilters: initial.smartFilters,
     search: "",
+    fileMatches: new Set(),
     sortColumn: initial.sortColumn,
     sortDir: initial.sortDir,
     columns: initial.columns,
@@ -249,6 +318,8 @@ export const useUi = create<UiState>((set, get) => {
     externalAddComplete: null,
     contextMenu: null,
     columnMenu: null,
+    sidebarOpen: false,
+    removeWithData: false,
 
     select: (hash) => set({ selection: new Set([hash]), anchor: hash }),
 
@@ -286,28 +357,45 @@ export const useUi = create<UiState>((set, get) => {
         return changed ? { selection: next } : {};
       }),
 
-    setFilter: (f) => {
-      set({ filter: f });
+    setFacet: (kind, value) => {
+      set((s) => {
+        const facets = { ...s.facets };
+        // Only null clears. An empty string is a real value: `label: ""` is the
+        // "unlabeled" facet, which is how the sidebar offers that row.
+        if (value === null || facets[kind] === value) delete facets[kind];
+        else facets[kind] = value;
+        return { facets };
+      });
+      persist();
+    },
+
+    clearFacets: () => {
+      set({ facets: {} });
       persist();
     },
 
     saveSmartFilter: (name) => {
       const s = get();
       const trimmed = name.trim();
-      if (!trimmed || !canSaveSmartFilter(s.filter, s.search)) return;
+      if (!trimmed || !canSaveSmartFilter(s.facets, s.search)) return;
 
-      const filter = s.filter;
+      const { status, label, tags, tracker, errorKind, view } = s.facets;
       const saved: SmartFilter = {
         id: newSmartFilterId(),
         name: trimmed,
-        ...(filter && filter.type !== "smart"
-          ? { [filter.type]: filter.value }
-          : {}),
+        ...(status ? { status } : {}),
+        ...(label ? { label } : {}),
+        ...(tags ? { tags } : {}),
+        ...(tracker ? { tracker } : {}),
+        ...(errorKind ? { errorKind } : {}),
+        ...(view ? { view } : {}),
         ...(s.search.trim() ? { text: s.search.trim() } : {}),
       };
       set({
         smartFilters: [...s.smartFilters, saved],
-        filter: { type: "smart", value: saved.id },
+        // The saved filter becomes the active one, and its criteria move out of
+        // the live facets so they are not applied twice.
+        facets: { smart: saved.id },
         // The text now lives in the filter, so clear the box: the visible rows
         // are unchanged, but the criterion has exactly one home.
         search: "",
@@ -317,15 +405,18 @@ export const useUi = create<UiState>((set, get) => {
 
     removeSmartFilter: (id) => {
       const s = get();
-      const wasActive = s.filter?.type === "smart" && s.filter.value === id;
+      const wasActive = s.facets.smart === id;
       set({
         smartFilters: s.smartFilters.filter((f) => f.id !== id),
-        filter: wasActive ? null : s.filter,
+        facets: wasActive ? withoutSmart(s.facets) : s.facets,
       });
       persist();
     },
 
-    setSearch: (search) => set({ search }),
+    setSearch: (search) =>
+      // An emptied box has no filename matches left.
+      set(search.trim() ? { search } : { search, fileMatches: new Set() }),
+    setFileMatches: (hashes) => set({ fileMatches: new Set(hashes) }),
     setSort: (col) => {
       set((s) => {
         // Same column → flip direction; new column → default ascending.
@@ -342,6 +433,10 @@ export const useUi = create<UiState>((set, get) => {
     },
     toggleColumn: (id) => {
       set((s) => ({ columns: toggleColumnState(s.columns, id) }));
+      persist();
+    },
+    moveColumn: (id, before) => {
+      set((s) => ({ columns: moveColumnState(s.columns, id, before) }));
       persist();
     },
     resetColumns: () => {
@@ -374,6 +469,7 @@ export const useUi = create<UiState>((set, get) => {
         dialog: null,
         externalAddRequest: null,
         externalAddComplete: null,
+        removeWithData: false,
       });
       complete?.();
     },
@@ -381,5 +477,7 @@ export const useUi = create<UiState>((set, get) => {
     closeContextMenu: () => set({ contextMenu: null }),
     openColumnMenu: (x, y) => set({ columnMenu: { x, y }, contextMenu: null }),
     closeColumnMenu: () => set({ columnMenu: null }),
+    toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+    requestRemoveData: () => set({ removeWithData: true }),
   };
 });

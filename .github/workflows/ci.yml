@@ -1,14 +1,22 @@
 # CI for rstorrent (C21).
 #
-# Three jobs, split by what they actually need:
+# Six jobs, split by what they actually need:
 #
 #   frontend — pure Node, so it runs on Linux where runners are fastest.
 #   crate    — `rtorrent-core`, the shared client layer, is Tauri-free and
 #              builds anywhere, so it gets fmt/clippy/tests on Linux (cheap and
 #              fast). A PR touching only crates/rtorrent gets Linux-speed feedback.
+#   e2e      — the web console driven by Playwright against the mock server. It
+#              needs the Rust binary and a browser, so it is its own Linux job.
 #   desktop  — the `rstorrent` Tauri app runs on macOS because that's where its
 #              webview and Keychain backend (`security-framework`, via `keyring`)
 #              are real; building it on Linux would test a config nobody ships.
+#   gpui-macos / gpui-windows
+#            — the native GPUI shell (`rstorrent-gpui`) on both platforms it
+#              ships for. It links the web server as a library, and the server
+#              embeds `dist-web` at compile time, so these build the web console
+#              first. On Windows this also exercises build.rs's resource step
+#              (icon + VERSIONINFO via rc.exe) and gpui's HLSL shaders (fxc.exe).
 #
 # Formatting is checked once, workspace-wide, in the (cheaper) crate job.
 #
@@ -91,6 +99,47 @@ jobs:
       - name: Build web UI
         run: npm ci && npm run build:web
 
+  e2e:
+    name: web console (Playwright against the mock server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      - run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # The binary embeds `dist-web` at compile time, so build it first; the
+      # suite's webServer then `cargo run`s the mock server.
+      - name: Build web UI
+        run: npm run build:web
+
+      - name: End-to-end tests
+        run: npx playwright test
+        env:
+          CI: true
+
+      - name: Upload the Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   desktop:
     name: desktop app (macOS — clippy, tests)
     runs-on: macos-latest
@@ -116,3 +165,66 @@ jobs:
       # docs/rtorrent-setup.md.
       - name: Tests
         run: cargo test -p rstorrent
+
+  gpui-macos:
+    name: GPUI app (macOS — clippy, tests)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `server/src/assets.rs` embeds ../dist-web at compile time, and the GPUI
+      # app links the server as a library.
+      - name: Build web UI
+        run: npm ci && npm run build:web
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      # No bundled rtorrent is staged here, so build.rs warns that the app will
+      # fall back to a system install; that is expected in CI.
+      - name: Clippy
+        run: cargo clippy -p rstorrent-gpui -p rtorrent-core --all-targets
+
+      - name: Tests
+        run: cargo test -p rstorrent-gpui -p rtorrent-core
+
+  gpui-windows:
+    name: GPUI app (Windows — clippy, tests)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # See gpui-macos: the server half embeds dist-web at compile time.
+      - name: Build web UI
+        run: npm ci && npm run build:web
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      - name: Clippy
+        run: cargo clippy -p rstorrent-gpui -p rtorrent-core --all-targets
+
+      - name: Tests
+        run: cargo test -p rstorrent-gpui -p rtorrent-core

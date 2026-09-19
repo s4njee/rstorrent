@@ -83,7 +83,9 @@ pub fn from_argv(argv: &[String]) -> Vec<String> {
 pub fn receive(app: &AppHandle, urls: Vec<String>) {
     // Queue first — never panic if state is missing (defense in depth).
     let Some(state) = app.try_state::<OpenRequestState>() else {
-        eprintln!("rstorrent: open request before OpenRequestState was installed; dropping {urls:?}");
+        eprintln!(
+            "rstorrent: open request before OpenRequestState was installed; dropping {urls:?}"
+        );
         return;
     };
     if let Some(urls) = state.receive(urls) {

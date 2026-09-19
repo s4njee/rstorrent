@@ -1,16 +1,45 @@
-/* 8px flat progress bar for the Done column; fill color is set inline per the
-   torrent's status (download cyan, seeding green, paused grey, stalled amber,
-   error red). */
+/*
+ * The Done cell's progress bar (design frame 1a): a 12px trough with the
+ * percentage centred over the whole bar.
+ *
+ * The label is absolutely positioned across the full width so it sits in the
+ * middle of the cell regardless of how far the fill has reached; the fill
+ * transitions its width over 300ms linear (the design's only motion).
+ */
+
+/* The detail panel's file rows run a 10px bar, where the table's is 12px. */
+.compact {
+  height: 10px;
+}
+.compact .label {
+  font-size: var(--fs-progress-label);
+}
+
 .track {
-  display: block;
-  height: 8px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 12px;
+  border-radius: var(--r-chip);
   background: var(--bg-track);
-  border-radius: 1px;
   overflow: hidden;
 }
+
 .fill {
-  display: block;
-  height: 100%;
-  border-radius: 1px;
-  transition: width 0.4s linear;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  transition: width var(--t-progress);
+}
+
+.label {
+  position: relative;
+  width: 100%;
+  text-align: center;
+  font-size: var(--fs-progress-label);
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }

@@ -29,11 +29,26 @@ pub struct Cached {
     pub at: Instant,
 }
 
+/// Cached delta between the last two snapshots (FND-02).
+#[derive(Clone)]
+pub struct CachedDelta {
+    pub etag: String,
+    pub body: Arc<[u8]>,
+    pub delta: Arc<rtorrent_core::types::SnapshotDelta>,
+    pub at: Instant,
+}
+
 pub struct AppState {
     pub config: Config,
     pub backend: Box<dyn RtorrentApi>,
     /// Latest serialized snapshot; `None` until the first successful poll.
     pub cache: RwLock<Option<Cached>>,
+    /// Latest delta (since previous snapshot); `None` until second poll.
+    pub delta_cache: RwLock<Option<CachedDelta>>,
+    /// Previous snapshot for delta computation.
+    pub prev_snapshot: RwLock<Option<Arc<Snapshot>>>,
+    /// Monotonic revision counter (FND-02).
+    pub revision: AtomicU64,
     pub conn: Mutex<ConnState>,
     /// hash → primary tracker host, filled by the slow poll.
     pub tracker_cache: Mutex<HashMap<String, String>>,
@@ -58,15 +73,49 @@ pub struct AppState {
     pub sessions: crate::auth::Sessions,
     /// Per-IP login rate limiter (WE5).
     pub rate: crate::auth::RateLimiter,
+    /// The server-owned interface preferences (theme, density, …).
+    pub ui: crate::settings::UiSettingsStore,
+    /// The effective login-password hash. `Config` holds the startup value; this
+    /// is the live one, so a password change takes effect without a restart.
+    pub password_hash: RwLock<Option<String>>,
+    /// Bounded global-rate history for the Stats route (WC8-S2).
+    pub history: Mutex<crate::history::RateHistory>,
+    /// Lazily built file-path index for library search (V3-12).
+    pub file_index: Mutex<rtorrent_core::file_index::FileIndex>,
+    /// Move-on-complete journal + live tasks (V3-14).
+    pub moves: Mutex<rtorrent_core::mover::MoveStore>,
+    /// Session-import status + cancel flag (V3-22 / LIB-09).
+    pub import_status: Mutex<crate::session::ImportStatus>,
+    pub import_cancel: std::sync::atomic::AtomicBool,
+    /// Queue edge memory (V3-17): manual resumes/pauses the scheduler must
+    /// not fight. The daemon is the source of truth; this only remembers
+    /// transitions between ticks.
+    pub queue_mem: Mutex<rtorrent_core::queue::QueueMemory>,
+    /// The move journal was recovered once after (re)start (V3-14).
+    pub moves_resumed: std::sync::atomic::AtomicBool,
+    /// When this server started, for the Stats route's uptime.
+    pub started: Instant,
 }
 
 impl AppState {
     pub fn new(config: Config, backend: Box<dyn RtorrentApi>) -> Self {
         let endpoint = crate::endpoint_label(&config.transport);
+        let ui = crate::settings::UiSettingsStore::beside(config.config_path.as_deref());
+        let password_hash = RwLock::new(config.password_hash.clone());
+        let sessions = match config.session_store_path() {
+            Some(path) => crate::auth::Sessions::with_store(path),
+            None => crate::auth::Sessions::default(),
+        };
+        let moves = Mutex::new(rtorrent_core::mover::MoveStore::load(
+            crate::moves::journal_path(config.config_path.as_deref()),
+        ));
         Self {
             config,
             backend,
             cache: RwLock::new(None),
+            delta_cache: RwLock::new(None),
+            prev_snapshot: RwLock::new(None),
+            revision: AtomicU64::new(0),
             conn: Mutex::new(ConnState {
                 phase: ConnPhase::Connecting,
                 endpoint,
@@ -83,9 +132,44 @@ impl AppState {
             repoll: Notify::new(),
             cache_updated: Notify::new(),
             poll_count: AtomicU64::new(0),
-            sessions: crate::auth::Sessions::default(),
+            sessions,
             rate: crate::auth::RateLimiter::default(),
+            ui,
+            password_hash,
+            history: Mutex::new(crate::history::RateHistory::default()),
+            file_index: Mutex::new(rtorrent_core::file_index::FileIndex::default()),
+            queue_mem: Mutex::new(rtorrent_core::queue::QueueMemory::default()),
+            moves,
+            moves_resumed: std::sync::atomic::AtomicBool::new(false),
+            import_status: Mutex::new(crate::session::ImportStatus::default()),
+            import_cancel: std::sync::atomic::AtomicBool::new(false),
+            started: Instant::now(),
         }
+    }
+
+    /// Record one global-rate sample for the Stats history.
+    pub fn record_rate_sample(&self, at_ms: i64, down: i64, up: i64) {
+        self.history.lock().unwrap().record(at_ms, down, up);
+    }
+
+    /// A snapshot of the rate history, oldest first.
+    pub fn rate_history(&self) -> Vec<crate::history::StatsSample> {
+        self.history.lock().unwrap().to_vec()
+    }
+
+    /// Seconds since this server started.
+    pub fn uptime_seconds(&self) -> i64 {
+        self.started.elapsed().as_secs() as i64
+    }
+
+    /// The live login-password hash (the changed one, not the startup value).
+    pub fn password_hash(&self) -> Option<String> {
+        self.password_hash.read().unwrap().clone()
+    }
+
+    /// Replace the live login-password hash after a verified change.
+    pub fn set_password_hash(&self, hash: String) {
+        *self.password_hash.write().unwrap() = Some(hash);
     }
 
     pub fn conn(&self) -> ConnState {

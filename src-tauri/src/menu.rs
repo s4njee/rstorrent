@@ -24,11 +24,13 @@ pub fn setup(app: &App) -> tauri::Result<()> {
     let add_magnet = MenuItemBuilder::with_id("menu:add-magnet", "Add Magnet Link…")
         .accelerator("CmdOrCtrl+Shift+O")
         .build(app)?;
+    let create_torrent = MenuItemBuilder::with_id("menu:create-torrent", "Create Torrent…")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
     let stats = MenuItemBuilder::with_id("menu:stats", "Statistics").build(app)?;
     let tune = MenuItemBuilder::with_id("menu:tune-network", "Tune for 1 Gbps…").build(app)?;
 
-    let start_daemon =
-        MenuItemBuilder::with_id("menu:start-daemon", "Start Daemon").build(app)?;
+    let start_daemon = MenuItemBuilder::with_id("menu:start-daemon", "Start Daemon").build(app)?;
     // Daemon lifecycle (D13): write the session, or shut the daemon down.
     let save_session = MenuItemBuilder::with_id("menu:save-session", "Save Session").build(app)?;
     let shutdown =
@@ -68,10 +70,11 @@ pub fn setup(app: &App) -> tauri::Result<()> {
             .quit()
             .build()?;
 
-        // Torrent menu: the add flows + statistics.
+        // Torrent menu: the add flows + creation + statistics.
         let torrent_menu = SubmenuBuilder::new(app, "Torrent")
             .item(&add_file)
             .item(&add_magnet)
+            .item(&create_torrent)
             .separator()
             .item(&stats)
             .item(&tune)
@@ -84,11 +87,12 @@ pub fn setup(app: &App) -> tauri::Result<()> {
 
     #[cfg(not(target_os = "macos"))]
     let menu = {
-        // File carries the add flows, Preferences and Exit — the Windows
+        // File carries the add flows, creation, Preferences and Exit — the Windows
         // convention, where there is no app-named menu to hold them.
         let file_menu = SubmenuBuilder::new(app, "File")
             .item(&add_file)
             .item(&add_magnet)
+            .item(&create_torrent)
             .separator()
             .item(&stats)
             .item(&tune)

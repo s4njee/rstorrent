@@ -25,7 +25,7 @@
   line-height: 1.5;
 }
 .message b {
-  color: #fff;
+  color: var(--text-primary);
 }
 .check {
   display: flex;

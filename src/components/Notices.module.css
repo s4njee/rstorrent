@@ -1,0 +1,126 @@
+/* Toast stack + the lost-connection banner. Tokens only. */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+  height: var(--h-toolbar);
+  padding: 0 var(--sp-5);
+  background: var(--danger-bg);
+  border-bottom: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  font-size: var(--fs-control);
+}
+
+.bannerDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--status-error);
+}
+
+.bannerText {
+  font-weight: 600;
+}
+
+.bannerEndpoint {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.bannerError {
+  color: var(--danger-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack {
+  position: fixed;
+  right: var(--sp-5);
+  bottom: calc(var(--h-statusbar) + var(--sp-5));
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  max-width: 420px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  min-width: 240px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-strong);
+  border-left-width: 3px;
+  border-radius: var(--r-card);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-menu);
+  font-size: var(--fs-control);
+  color: var(--text-body);
+}
+
+/* The left edge carries the severity, so the message itself stays readable. */
+.info {
+  border-left-color: var(--accent);
+}
+.warn {
+  border-left-color: var(--status-warn);
+}
+.error {
+  border-left-color: var(--status-error);
+}
+
+.toastBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.message {
+  color: var(--text-primary);
+}
+
+.detail {
+  color: var(--text-faint);
+  font-size: var(--fs-meta);
+  overflow-wrap: anywhere;
+}
+
+.close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text-ghost);
+  cursor: default;
+}
+.close:hover {
+  color: var(--text-body);
+  background: var(--bg-control);
+}
+
+.dismissAll {
+  padding: 2px var(--sp-3);
+  border: none;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text-faint);
+  font-size: var(--fs-meta);
+  cursor: default;
+}
+.dismissAll:hover {
+  color: var(--text-body);
+}

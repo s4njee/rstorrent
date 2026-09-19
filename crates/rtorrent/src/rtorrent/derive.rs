@@ -10,7 +10,7 @@
 //! time-window smoothing described in the plan is a refinement the poller can
 //! layer on top without changing this function's contract.
 
-use super::RawTorrent;
+use super::{error_kind, RawTorrent};
 use crate::types::{Status, TorrentDto};
 
 /// Classify a torrent's status from its raw flags.
@@ -71,6 +71,13 @@ pub fn to_dto(t: &RawTorrent, tracker_host: &str, named_limits: Option<(i64, i64
     } else {
         percent(t)
     };
+    let error_kind = if st == Status::Error {
+        error_kind::classify(&t.message)
+            .map(|k| k.as_str().to_string())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
     TorrentDto {
         hash: t.hash.clone(),
         name: t.name.clone(),
@@ -79,6 +86,7 @@ pub fn to_dto(t: &RawTorrent, tracker_host: &str, named_limits: Option<(i64, i64
         percent,
         status: st,
         status_msg: t.message.clone(),
+        error_kind: error_kind.clone(),
         seeds_connected: t.peers_complete.min(t.peers_connected),
         peers_connected: t.peers_connected,
         seeds_swarm: t.peers_complete,
@@ -88,6 +96,9 @@ pub fn to_dto(t: &RawTorrent, tracker_host: &str, named_limits: Option<(i64, i64
         eta_seconds: eta_seconds(t, st),
         ratio: ratio(t),
         label: t.label.clone(),
+        tags: t.tags.clone(),
+        force_start: t.force_start,
+        throttle_rule: t.throttle_rule.clone(),
         tracker_host: tracker_host.to_string(),
         save_path: if t.base_path.is_empty() {
             t.directory.clone()
@@ -101,6 +112,15 @@ pub fn to_dto(t: &RawTorrent, tracker_host: &str, named_limits: Option<(i64, i64
         up_rate_limit: named_limits.map(|limits| limits.1.saturating_mul(1024)),
         started_at: t.started_at,
         finished_at: t.finished_at,
+        peers_max: t.peers_max,
+        peers_min: t.peers_min,
+        uploads_max: t.uploads_max,
+        connection_type: t.connection_current.clone(),
+        added_by: t.added_by.clone(),
+        source_path: t.source_path.clone(),
+        added_at: t.added_at,
+        is_open: t.is_open,
+        is_active: t.is_active,
         // Native-view membership is filled in by the poller after to_dto (D12).
         views: Vec::new(),
     }
@@ -142,6 +162,15 @@ mod tests {
     }
 
     #[test]
+    fn force_start_passes_through_to_the_dto() {
+        let plain = to_dto(&raw(), "", None);
+        assert!(!plain.force_start);
+        let mut forced = raw();
+        forced.force_start = true;
+        assert!(to_dto(&forced, "", None).force_start);
+    }
+
+    #[test]
     fn downloading_when_incomplete_active_with_rate() {
         // e.g. Fedora — 67.4%, 8.4 MiB/s.
         let t = raw();
@@ -180,6 +209,26 @@ mod tests {
         t.is_active = false;
         assert_eq!(status(&t), Status::Paused);
         assert_eq!(eta_seconds(&t, Status::Paused), None);
+    }
+
+    #[test]
+    fn dto_carries_the_open_and_active_flags() {
+        // The console needs both: `paused` + open reads "Queued", `paused` +
+        // closed reads "Stopped".
+        let mut stopped = raw();
+        stopped.is_active = false;
+        stopped.is_open = false;
+        let dto = to_dto(&stopped, "tracker", None);
+        assert_eq!(dto.status, Status::Paused);
+        assert!(!dto.is_open);
+        assert!(!dto.is_active);
+
+        let mut queued = raw();
+        queued.is_active = false;
+        queued.is_open = true;
+        let dto = to_dto(&queued, "tracker", None);
+        assert_eq!(dto.status, Status::Paused);
+        assert!(dto.is_open);
     }
 
     #[test]
@@ -229,5 +278,18 @@ mod tests {
         assert_eq!(dto.throttle_name, "rstorrent_1");
         assert_eq!(dto.down_rate_limit, Some(512 * 1024));
         assert_eq!(dto.up_rate_limit, Some(0));
+    }
+
+    #[test]
+    fn dto_classifies_error_kind() {
+        let mut t = raw();
+        t.message = r#"Tracker: [Failure reason "unregistered torrent"]"#.into();
+        assert_eq!(to_dto(&t, "", None).error_kind, "unregistered");
+        t.message = "Storage error: [File chunk read error: No such file or directory]".into();
+        assert_eq!(to_dto(&t, "", None).error_kind, "missing_files");
+        t.message = "Could not create file: No space left on device".into();
+        assert_eq!(to_dto(&t, "", None).error_kind, "no_space");
+        t.message.clear();
+        assert_eq!(to_dto(&t, "", None).error_kind, "");
     }
 }

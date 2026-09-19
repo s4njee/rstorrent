@@ -1,0 +1,137 @@
+/* The unified add modal (WC6): segmented mode control, dropzone, magnet pane. */
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--bg-field);
+  align-self: flex-start;
+}
+
+.segment {
+  border: none;
+  border-radius: calc(var(--radius-control) - 1px);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-body);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.segment[aria-pressed="true"] {
+  background: var(--accent-tint);
+  color: var(--text-primary);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 78px;
+  resize: vertical;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--bg-field);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+.lineError {
+  color: var(--accent-red-soft, var(--accent-red));
+  font-size: var(--fs-meta);
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-height: 96px;
+  padding: var(--sp-4);
+  border: 1px dashed var(--border-control);
+  border-radius: var(--radius-card);
+  background: var(--bg-field);
+  color: var(--text-muted);
+  font-size: var(--fs-body);
+  text-align: center;
+  cursor: pointer;
+}
+
+.dropzone[data-drag="true"] {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--text-primary);
+}
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.queueItem {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-row);
+  border-radius: var(--radius-control);
+  background: var(--bg-row-alt);
+  font-size: var(--fs-body);
+}
+
+.queueName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.remove {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.remove:hover {
+  color: var(--accent-red);
+}
+
+/* Duplicate warning (V3-13): a non-blocking notice above the panes; an exact
+ * match also disables Add and offers "Show it" / "Merge trackers". */
+.duplicate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2, 6px);
+  padding: var(--sp-3);
+  border: 1px solid var(--status-warn);
+  border-radius: var(--radius-control);
+  background: var(--bg-row-alt);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+}
+
+.duplicateActions {
+  display: flex;
+  gap: var(--sp-3);
+}
+
+.duplicateAction {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-text, var(--accent));
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}

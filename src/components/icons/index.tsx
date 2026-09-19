@@ -38,6 +38,32 @@ export const AddIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const SearchIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="5.2" cy="5.2" r="3.7" />
+    <path d="M7.9 7.9 10.8 10.8" />
+  </Svg>
+);
+
+export const GearIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="6" cy="6" r="2.1" />
+    <path d="M6 1.2v1.5M6 9.3v1.5M1.2 6h1.5M9.3 6h1.5M2.6 2.6l1.1 1.1M8.3 8.3l1.1 1.1M9.4 2.6 8.3 3.7M3.7 8.3 2.6 9.4" />
+  </Svg>
+);
+
+export const StatsIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2 10V6M6 10V2M10 10V4" />
+  </Svg>
+);
+
+export const StopIcon = (p: IconProps) => (
+  <Svg {...p} strokeWidth={0} fill="currentColor">
+    <rect x="2" y="2" width="8" height="8" />
+  </Svg>
+);
+
 export const MagnetIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M2.5 1v5a3.5 3.5 0 0 0 7 0V1" />
@@ -127,5 +153,21 @@ export const CloseIcon = (p: IconProps) => (
 export const ChevronRight = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4.5 2.5 8 6l-3.5 3.5" />
+  </Svg>
+);
+
+export const CreateTorrentIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2 1.5h5l3 3V10.5H2z" />
+    <path d="M7 1.5v3h3" />
+    <path d="M4 7h4M6 5v4" />
+  </Svg>
+);
+
+export const SessionIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2 4.5h8v6H2z" />
+    <path d="M4 4.5V2.8h4v1.7" />
+    <path d="M5 7.2 6 6l1 1.2M6 6v3" />
   </Svg>
 );

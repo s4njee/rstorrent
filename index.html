@@ -3,10 +3,90 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Dark background is set before React mounts so there is no white flash
-         on launch (the whole app is the "dark ops" theme). -->
+    <!-- color-scheme and theme-color are set before React mounts so there is no
+         white flash on launch; the boot script below picks the actual theme. -->
     <meta name="color-scheme" content="dark" />
-    <title>rstorrent</title>
+    <meta name="theme-color" content="#101214" />
+    <title>Blackbird</title>
+    <!-- Operator defaults (server settings: ui.theme, ui.accent). Empty means
+         "use the built-in default"; the boot script ignores anything invalid. -->
+    <meta name="rstorrent-theme-default" content="" />
+    <meta name="rstorrent-accent-default" content="" />
+    <!-- Theme resolution before first paint, so there is no flash of the wrong
+         theme. src/theme/theme.ts re-runs the same resolution and then owns it. -->
+    <script>
+      (function () {
+        try {
+          var root = document.documentElement;
+          var t = null;
+          try {
+            t = localStorage.getItem("rstorrent.theme.v1");
+          } catch (e) {
+            /* private mode */
+          }
+          if (!t) {
+            var meta = document.querySelector(
+              'meta[name="rstorrent-theme-default"]',
+            );
+            t = (meta && meta.content) || "";
+          }
+          if (t === "system") {
+            t =
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          }
+          if (
+            ["dark", "light", "midnight", "contrast", "classic"].indexOf(t) < 0
+          ) {
+            t = "dark";
+          }
+          root.dataset.theme = t;
+          root.style.colorScheme =
+            t === "light" || t === "classic" ? "light" : "dark";
+          var d = null;
+          try {
+            d = localStorage.getItem("rstorrent.density.v1");
+          } catch (e2) {
+            /* private mode */
+          }
+          root.dataset.density = d === "comfortable" ? "comfortable" : "dense";
+          var accent = document.querySelector(
+            'meta[name="rstorrent-accent-default"]',
+          );
+          var hex = (accent && accent.content) || "";
+          if (/^#[0-9a-f]{6}$/i.test(hex))
+            root.style.setProperty("--accent", hex);
+        } catch (e) {
+          /* no storage: the app boot applies the defaults */
+        }
+      })();
+    </script>
+    <!-- Self-hosted IBM Plex Sans (public/fonts), preloaded so the UI's three
+         weights are ready at first paint. Fonts are always fetched in CORS
+         mode, hence crossorigin even same-origin. -->
+    <link
+      rel="preload"
+      href="/fonts/IBMPlexSans-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/IBMPlexSans-Medium.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/IBMPlexSans-SemiBold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
   </head>
 
   <body>

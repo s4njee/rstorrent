@@ -1,5 +1,12 @@
 # Handoff: rtorrent Web UI — "Dark Ops"
 
+> **Superseded (2026-09-15).** This Dark Ops web spec has been replaced by the
+> **rTorrent Console** design from `blackbird`. The port is planned in
+> [`../docs/web-console-plan.md`](../docs/web-console-plan.md), with stories in
+> [`../docs/web-console-tasks.md`](../docs/web-console-tasks.md); that design's
+> bundle lands at `design/web-console/` in WC0-S1, and `rTorrent Web UI.dc.html`
+> stays here as the record of what shipped.
+
 ## Overview
 A **browser-based web UI** for the `rtorrent` daemon (the ruTorrent/Flood category), sharing
 the "dark ops" visual language of the companion desktop design. Single-page app, full

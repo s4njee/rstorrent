@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { setTorrentLimits } from "../../ipc/commands";
+import { setConnectionLimits, setTorrentLimits } from "../../ipc/commands";
 import { useTorrents } from "../../store/torrents";
 import { useUi } from "../../store/ui";
 import { Button, ModalBase } from "./ModalBase";
@@ -23,6 +23,15 @@ export function RateLimitDialog() {
   const [up, setUp] = useState(() =>
     String(selected?.upRateLimit != null ? selected.upRateLimit / 1024 : 1024),
   );
+  const [peersMax, setPeersMax] = useState(() =>
+    String(selected?.peersMax ?? 0),
+  );
+  const [peersMin, setPeersMin] = useState(() =>
+    String(selected?.peersMin ?? 0),
+  );
+  const [uploadsMax, setUploadsMax] = useState(() =>
+    String(selected?.uploadsMax ?? 0),
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -34,7 +43,16 @@ export function RateLimitDialog() {
   const apply = async () => {
     const downKb = parse(down);
     const upKb = parse(up);
-    if (downKb == null || upKb == null) {
+    const maxPeers = parse(peersMax);
+    const minPeers = parse(peersMin);
+    const maxUploads = parse(uploadsMax);
+    if (
+      downKb == null ||
+      upKb == null ||
+      maxPeers == null ||
+      minPeers == null ||
+      maxUploads == null
+    ) {
       setError("enter whole numbers greater than or equal to zero");
       return;
     }
@@ -42,6 +60,11 @@ export function RateLimitDialog() {
     setError("");
     try {
       await setTorrentLimits([...selection], downKb, upKb);
+      await Promise.all(
+        [...selection].map((hash) =>
+          setConnectionLimits(hash, maxPeers, minPeers, maxUploads),
+        ),
+      );
       close();
     } catch (cause) {
       setError(String(cause));
@@ -97,6 +120,46 @@ export function RateLimitDialog() {
         </label>
         <div className={forms.meta}>
           0 means unlimited; setting both to 0 clears the torrent limit.
+        </div>
+        <div className={forms.section}>Connection limits</div>
+        <label className={forms.field}>
+          <span className={forms.fieldLabel}>max peers</span>
+          <input
+            className={forms.input}
+            type="number"
+            min="0"
+            step="1"
+            value={peersMax}
+            onChange={(event) => setPeersMax(event.currentTarget.value)}
+          />
+          <span className={forms.meta}>per torrent</span>
+        </label>
+        <label className={forms.field}>
+          <span className={forms.fieldLabel}>min peers</span>
+          <input
+            className={forms.input}
+            type="number"
+            min="0"
+            step="1"
+            value={peersMin}
+            onChange={(event) => setPeersMin(event.currentTarget.value)}
+          />
+          <span className={forms.meta}>per torrent</span>
+        </label>
+        <label className={forms.field}>
+          <span className={forms.fieldLabel}>upload slots</span>
+          <input
+            className={forms.input}
+            type="number"
+            min="0"
+            step="1"
+            value={uploadsMax}
+            onChange={(event) => setUploadsMax(event.currentTarget.value)}
+          />
+          <span className={forms.meta}>per torrent</span>
+        </label>
+        <div className={forms.meta}>
+          0 leaves each daemon default unchanged.
         </div>
         {error && <div className={forms.error}>{error}</div>}
       </div>

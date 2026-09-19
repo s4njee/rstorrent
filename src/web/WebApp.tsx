@@ -1,46 +1,91 @@
 /**
- * The web shell (WE2 + WE4).
+ * The web shell.
  *
- * Composes the web chrome — AppBar, ActionStrip, Footer, and the sidebar disk
- * card — around the *shared* components (FilterSidebar, TorrentTable, DetailTabs,
- * ContextMenu, DialogHost). The live-data wiring mirrors the desktop App, minus
- * the desktop-only channels (native menus, deep links, notifications). Browser
- * add flows (file picker, magnet clipboard, drag/drop, paste) land in WE4.
+ * Same chrome and layout as the desktop app — top bar, action toolbar, workspace
+ * (sidebar + table / detail panel / status bar) — with the browser-only additions:
+ * the account chip in the top bar (sign out) and the server-supplied display name.
+ * The live-data wiring mirrors the desktop App minus its native channels (menus,
+ * deep links, notifications).
  */
 
 import { useEffect, useState } from "react";
-import { onSnapshot, onDetail, onLog } from "../ipc/events";
-import { getLog, setDetailWatch } from "../ipc/commands";
+import { onDelta, onDetail, onLog, onMoves, onSnapshot } from "../ipc/events";
+import { getLog, getMoves, getSnapshot, setDetailWatch } from "../ipc/commands";
+import { useMoves } from "../store/moves";
 import { useTorrents } from "../store/torrents";
 import { useUi } from "../store/ui";
+import { daemonTabFor } from "../utils/panes";
 import { useDetail } from "../store/detail";
 import { useLog } from "../store/log";
+import { useSettings } from "../store/settings";
 import { useRateHistory } from "../store/rateHistory";
+import { useTransferHistory } from "../store/transferHistory";
 import { useKeyboardShortcuts } from "../hooks/useKeyboard";
 import { usePasteToAdd } from "../hooks/usePasteToAdd";
+import { useFileSearch } from "../hooks/useFileSearch";
 import { useWebDragDrop } from "../hooks/useWebDragDrop";
+import { TopBar } from "../components/shell/TopBar";
+import { ActionToolbar } from "../components/shell/ActionToolbar";
+import { StatusBar } from "../components/shell/StatusBar";
+import { Notices, LostConnectionBanner } from "../components/Notices";
 import { FilterSidebar } from "../components/sidebar/FilterSidebar";
+import { DiskCard } from "../components/sidebar/DiskCard";
 import { TorrentTable } from "../components/table/TorrentTable";
 import { DetailTabs } from "../components/details/DetailTabs";
 import { ContextMenu } from "../components/menu/ContextMenu";
 import { DialogHost } from "../components/dialogs/DialogHost";
-import { AppBar } from "./AppBar";
-import { ActionStrip } from "./ActionStrip";
-import { Footer } from "./Footer";
-import { DiskCard } from "./DiskCard";
 import { StatusDialog } from "./StatusDialog";
+import { SettingsPage } from "./SettingsPage";
+import { StatsPage } from "./StatsPage";
+import { navigate, useRoute } from "./router";
+import styles from "../App.module.css";
+
+/** The account chip: initials, opening the server/session dialog. */
+function AccountChip({
+  initials,
+  onClick,
+}: {
+  initials: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Server and session"
+      aria-label="Server and session"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 24,
+        height: 24,
+        flex: "none",
+        padding: 0,
+        border: "1px solid var(--border-control)",
+        borderRadius: "50%",
+        background: "var(--bg-control)",
+        color: "var(--text-secondary)",
+        fontSize: "var(--fs-chip)",
+        fontWeight: 600,
+        cursor: "default",
+      }}
+    >
+      {initials}
+    </button>
+  );
+}
 
 export function WebApp({ onSignOut }: { onSignOut: () => void }) {
+  const route = useRoute();
   const connection = useTorrents((s) => s.connection);
   const globals = useTorrents((s) => s.globals);
   const [displayName, setDisplayName] = useState("rt");
   const [statusOpen, setStatusOpen] = useState(false);
 
-  // Space pause/resume, Delete → remove confirm, arrows + modifiers for
-  // selection, ⌘/Ctrl-A select-all (`/` focus-search is handled in AppBar).
   useKeyboardShortcuts();
-  // WE4-S3: paste magnet/URL; DOM drag-drop of .torrent files / magnet text.
   usePasteToAdd();
+  useFileSearch();
   const dragOver = useWebDragDrop();
 
   // Live data channels (see App.tsx for the desktop counterpart).
@@ -49,16 +94,40 @@ export function WebApp({ onSignOut }: { onSignOut: () => void }) {
     const prune = useUi.getState().pruneSelection;
     const setDetail = useDetail.getState().setDetail;
     const recordRates = useRateHistory.getState().record;
+    const recordTransfer = useTransferHistory.getState().record;
     void getLog().then((entries) => useLog.getState().hydrate(entries));
+    void getMoves().then((moves) => useMoves.getState().set(moves));
+    // Server facts (incl. bandwidth rules for the precedence display).
+    void useSettings.getState().load().catch(() => {});
 
     const unsubs = [
       onSnapshot((s) => {
         applySnapshot(s);
         prune(new Set(s.torrents.map((t) => t.hash)));
         recordRates(s.torrents);
+        recordTransfer(s.globals);
+      }),
+      onDelta((d) => {
+        const ok = useTorrents.getState().applyDelta(d);
+        if (!ok) {
+          void getSnapshot().then((s) => {
+            if (s) {
+              applySnapshot(s);
+              prune(new Set(s.torrents.map((t) => t.hash)));
+              recordRates(s.torrents);
+              recordTransfer(s.globals);
+            }
+          });
+          return;
+        }
+        const torrents = useTorrents.getState().torrents;
+        prune(new Set(torrents.map((t) => t.hash)));
+        recordRates(torrents);
+        recordTransfer(d.globals);
       }),
       onDetail((d) => setDetail(d)),
       onLog((entry) => useLog.getState().append(entry)),
+      onMoves(() => useMoves.getState().refresh()),
     ];
     return () => unsubs.forEach((p) => void p.then((un) => un()));
   }, []);
@@ -83,60 +152,127 @@ export function WebApp({ onSignOut }: { onSignOut: () => void }) {
   const activeTab = useUi((s) => s.activeTab);
   useEffect(() => {
     const hash = selection.size === 1 ? [...selection][0] : null;
-    void setDetailWatch(hash, hash ? activeTab : null);
+    void setDetailWatch(hash, hash ? daemonTabFor(activeTab) : null);
   }, [selection, activeTab]);
 
   const connected = connection.phase === "connected";
+  const sidebarOpen = useUi((s) => s.sidebarOpen);
+  const savePath = useSettings((s) => s.settings?.defaultSavePath ?? null);
+  const initials = displayName.slice(0, 2).toLowerCase();
 
-  return (
-    <div style={S.app}>
-      <AppBar
-        displayName={displayName}
-        onOpenStatus={() => setStatusOpen(true)}
-      />
-      <div style={S.body}>
-        <FilterSidebar
-          footer={
-            <DiskCard
-              freeSpace={globals.freeSpace}
-              diskSize={globals.diskSize}
+  if (route === "/settings") {
+    return (
+      <div className={styles.app}>
+        <TopBar
+          account={
+            <AccountChip
+              initials={initials}
+              onClick={() => setStatusOpen(true)}
             />
           }
+          onSettings={() => navigate("/settings")}
+          onStats={() => navigate("/stats")}
         />
-        {connected ? (
-          <div style={S.main}>
-            <ActionStrip />
-            <div style={S.tableArea}>
-              <TorrentTable />
-            </div>
-            <DetailTabs />
-          </div>
-        ) : (
-          <div style={S.disconnected}>
-            <h2 style={{ margin: 0, fontWeight: 600 }}>
-              {connection.phase === "connecting"
-                ? "connecting to rtorrent…"
-                : "can't reach rtorrent"}
-            </h2>
-            <span style={{ color: "var(--text-dim)" }}>
-              {connection.endpoint}
-            </span>
-            {connection.error && (
-              <span style={{ color: "var(--accent-red)" }}>
-                {connection.error}
-              </span>
-            )}
-            {connection.retryInSeconds != null && (
-              <span style={{ color: "var(--text-dim)" }}>
-                retrying in {connection.retryInSeconds}s…
-              </span>
-            )}
-          </div>
+        <LostConnectionBanner />
+        <SettingsPage onBack={() => navigate("/")} />
+        {statusOpen && (
+          <StatusDialog
+            onClose={() => setStatusOpen(false)}
+            onSignOut={onSignOut}
+          />
         )}
+        <Notices />
       </div>
-      <Footer />
+    );
+  }
+
+  if (route === "/stats") {
+    return (
+      <div className={styles.app}>
+        <TopBar
+          account={
+            <AccountChip
+              initials={initials}
+              onClick={() => setStatusOpen(true)}
+            />
+          }
+          onSettings={() => navigate("/settings")}
+          onStats={() => navigate("/stats")}
+        />
+        <LostConnectionBanner />
+        <StatsPage onBack={() => navigate("/")} />
+        {statusOpen && (
+          <StatusDialog
+            onClose={() => setStatusOpen(false)}
+            onSignOut={onSignOut}
+          />
+        )}
+        <Notices />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={styles.app}
+      data-sidebar-open={sidebarOpen ? "" : undefined}
+    >
+      <TopBar
+        account={
+          <AccountChip
+            initials={initials}
+            onClick={() => setStatusOpen(true)}
+          />
+        }
+        onSettings={() => navigate("/settings")}
+        onStats={() => navigate("/stats")}
+      />
+      <LostConnectionBanner />
+      <ActionToolbar />
+      <div className={styles.workspace}>
+        <aside className={styles.sidebar}>
+          <FilterSidebar
+            footer={
+              <DiskCard
+                freeSpace={globals.freeSpace}
+                diskSize={globals.diskSize}
+                path={savePath}
+              />
+            }
+          />
+        </aside>
+        <div className={styles.main}>
+          {connected ? (
+            <>
+              <div className={styles.tableArea}>
+                <TorrentTable />
+              </div>
+              <DetailTabs />
+            </>
+          ) : (
+            <div className={styles.disconnected}>
+              <h2>
+                {connection.phase === "connecting"
+                  ? "connecting to rtorrent…"
+                  : "can't reach rtorrent"}
+              </h2>
+              <span className={styles.endpoint}>{connection.endpoint}</span>
+              {connection.error && (
+                <span className={styles.endpoint}>{connection.error}</span>
+              )}
+              {connection.retryInSeconds != null && (
+                <span className={styles.retry}>
+                  retrying in {connection.retryInSeconds}s…
+                </span>
+              )}
+            </div>
+          )}
+          <StatusBar />
+        </div>
+      </div>
       <ContextMenu />
       <DialogHost />
+      <Notices />
       {statusOpen && (
         <StatusDialog
           onClose={() => setStatusOpen(false)}
@@ -144,65 +280,10 @@ export function WebApp({ onSignOut }: { onSignOut: () => void }) {
         />
       )}
       {dragOver && (
-        <div style={S.dropOverlay}>
-          <div style={S.dropCard}>drop .torrent files to add</div>
+        <div className={styles.dropOverlay}>
+          <div className={styles.dropCard}>drop .torrent files to add</div>
         </div>
       )}
     </div>
   );
 }
-
-const S = {
-  app: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100vh",
-    minWidth: 1000,
-    background: "var(--bg-field)",
-    color: "var(--text-body)",
-    fontFamily: "var(--font-mono)",
-    fontSize: "var(--fs-base)",
-    position: "relative",
-  } as const,
-  dropOverlay: {
-    position: "absolute",
-    inset: 0,
-    zIndex: 50,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "color-mix(in srgb, var(--bg-app) 70%, transparent)",
-    pointerEvents: "none",
-  } as const,
-  dropCard: {
-    padding: "14px 22px",
-    borderRadius: 8,
-    border: "1px dashed var(--accent-cyan)",
-    background: "var(--bg-panel)",
-    color: "var(--text-body)",
-    fontSize: "var(--fs-base)",
-    fontWeight: 600,
-  } as const,
-  body: { display: "flex", flex: 1, minHeight: 0 } as const,
-  main: {
-    flex: 1,
-    minWidth: 0,
-    display: "flex",
-    flexDirection: "column",
-  } as const,
-  tableArea: {
-    flex: 1,
-    minHeight: 0,
-    display: "flex",
-    flexDirection: "column",
-  } as const,
-  disconnected: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    background: "var(--bg-app)",
-  } as const,
-};

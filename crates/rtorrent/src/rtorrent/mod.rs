@@ -14,6 +14,7 @@
 
 pub mod client;
 pub mod derive;
+pub mod error_kind;
 pub mod http;
 pub mod mock;
 pub mod scgi;
@@ -45,10 +46,85 @@ pub enum RtorrentError {
     /// A method returned data in an unexpected shape.
     #[error("unexpected response: {0}")]
     Unexpected(String),
+    /// The action is not available in this configuration — a local-filesystem
+    /// affordance pointed at a remote daemon, say. The message is user-facing.
+    #[error("{0}")]
+    Unsupported(String),
 }
 
 /// Convenience result alias for the rtorrent layer.
 pub type Result<T> = std::result::Result<T, RtorrentError>;
+
+/// Extract the conventional hexadecimal info-hash from a magnet URI.
+/// Magnets using a base32 `btih` remain valid to rtorrent but cannot be
+/// addressed by this small helper, so callers simply skip metadata in that
+/// uncommon case.
+pub fn magnet_hash(uri: &str) -> Option<String> {
+    let marker = "urn:btih:";
+    let start = uri.find(marker)? + marker.len();
+    let value = uri[start..].split(['&', '#']).next()?.trim();
+    if value.len() != 40 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(value.to_ascii_uppercase())
+}
+
+/// The display name from a magnet's `dn=` parameter, percent-decoded, or empty.
+#[must_use]
+pub fn magnet_name(uri: &str) -> String {
+    let marker = "dn=";
+    let Some(start) = uri.find(marker).map(|index| index + marker.len()) else {
+        return String::new();
+    };
+    let raw = uri[start..].split(['&', '#']).next().unwrap_or("").trim();
+    raw.replace('+', " ")
+}
+
+/// The `tr=` announce URLs in a magnet, in order.
+#[must_use]
+pub fn magnet_trackers(uri: &str) -> Vec<String> {
+    uri.split(['&', '?'])
+        .filter_map(|part| part.strip_prefix("tr="))
+        .map(|value| value.split('#').next().unwrap_or(value).to_owned())
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{magnet_hash, magnet_name, magnet_trackers};
+
+    #[test]
+    fn extracts_hex_info_hash_from_magnet() {
+        assert_eq!(
+            magnet_hash("magnet:?xt=urn:btih:abcdef0123456789abcdef0123456789abcdef01&dn=test"),
+            Some("ABCDEF0123456789ABCDEF0123456789ABCDEF01".into())
+        );
+    }
+
+    #[test]
+    fn ignores_non_hex_or_malformed_magnets() {
+        assert_eq!(magnet_hash("magnet:?xt=urn:btih:short"), None);
+        assert_eq!(
+            magnet_hash("magnet:?xt=urn:btih:ABCDEFGHIJKLMNOPQRSTUVWX123456"),
+            None
+        );
+        assert_eq!(magnet_hash("https://example.test/file.torrent"), None);
+    }
+
+    #[test]
+    fn parses_a_magnets_name_and_trackers() {
+        let uri = "magnet:?xt=urn:btih:abcdef0123456789abcdef0123456789abcdef01\
+                   &dn=My+Show&tr=udp%3A%2F%2Ft1%2Fannounce&tr=http://t2/announce#frag";
+        assert_eq!(magnet_name(uri), "My Show");
+        assert_eq!(
+            magnet_trackers(uri),
+            vec!["udp%3A%2F%2Ft1%2Fannounce", "http://t2/announce"]
+        );
+        assert_eq!(magnet_name("magnet:?xt=urn:btih:aa"), "");
+        assert!(magnet_trackers("magnet:?xt=urn:btih:aa").is_empty());
+    }
+}
 
 /// Raw per-torrent fields as fetched by `d.multicall2`. This is a faithful,
 /// *underived* view of the daemon state; [`derive`] turns it into a
@@ -98,6 +174,32 @@ pub struct RawTorrent {
     /// (which resets when the daemon reloads its session) this is persisted in
     /// the resume file, so it's the durable "since" for the Started column (D4).
     pub started_at: i64,
+    /// Per-torrent connection caps (D3); zero is the daemon's default.
+    pub peers_max: i64,
+    pub peers_min: i64,
+    pub uploads_max: i64,
+    /// Current connection type (`seed`, `leech`, or `initial_seed`) (D5).
+    pub connection_current: String,
+    /// Sticky app metadata stored through `d.custom` (D6).
+    pub added_by: String,
+    pub source_path: String,
+    pub added_at: i64,
+    /// Client-managed tags (V3-10), stored in `d.custom=tags`.
+    pub tags: Vec<String>,
+    /// Intended final directory recorded at add time when the torrent was
+    /// routed through the incomplete dir (V3-14, `d.custom=final_dir`).
+    /// Empty when no move is owed. Consumed (cleared) by the move.
+    pub final_dir: String,
+    /// Force-start (V3-17 / QUE-01): exempt from the client queue scheduler,
+    /// stored in `d.custom=force_start` (`"1"`).
+    pub force_start: bool,
+    /// Client-side queue sequence (V3-17 / QUE-02), stored in
+    /// `d.custom=queue_pos`. `None` = never positioned (sorts as 0).
+    pub queue_pos: Option<i64>,
+    /// Bandwidth-rule marker (V3-18 / QUE-04): the id of the rule managing
+    /// this torrent's throttle, in `d.custom=throttle_rule`. Empty = none;
+    /// a throttle with no marker is a manual override.
+    pub throttle_rule: String,
 }
 
 /// Raw global counters fetched alongside the torrent list each poll.
@@ -195,6 +297,10 @@ pub trait RtorrentApi: Send + Sync {
 
     async fn start(&self, hashes: &[String]) -> Result<()>;
     async fn stop(&self, hashes: &[String]) -> Result<()>;
+    /// Stop transferring but stay loaded, so the torrent keeps its peers and
+    /// resumes without a reannounce. Distinct from [`Self::stop`], which closes
+    /// the torrent in the daemon; the console's Pause/Stop are these two.
+    async fn pause(&self, hashes: &[String]) -> Result<()>;
     async fn recheck(&self, hashes: &[String]) -> Result<()>;
     async fn erase(&self, hashes: &[String]) -> Result<()>;
 
@@ -204,9 +310,22 @@ pub trait RtorrentApi: Send + Sync {
     async fn load_magnet(&self, uri: &str, opts: LoadOptions) -> Result<()>;
 
     async fn set_label(&self, hashes: &[String], label: &str) -> Result<()>;
+    /// Replace the tags on each hash. An empty list clears them (V3-10). Tags are
+    /// normalised (`crate::tags::normalise`) before they are written.
+    async fn set_tags(&self, hashes: &[String], tags: &[String]) -> Result<()>;
     async fn set_directory(&self, hash: &str, path: &str) -> Result<()>;
     async fn set_priority(&self, hash: &str, priority: i64) -> Result<()>;
     async fn set_file_priority(&self, hash: &str, index: usize, priority: i64) -> Result<()>;
+    async fn set_connection_limits(
+        &self,
+        hash: &str,
+        peers_max: i64,
+        peers_min: i64,
+        uploads_max: i64,
+    ) -> Result<()>;
+    async fn set_super_seeding(&self, hash: &str, enabled: bool) -> Result<()>;
+    /// Persist app-owned metadata using rtorrent's multi-key custom namespace.
+    async fn set_custom_metadata(&self, hash: &str, values: &[(&str, &str)]) -> Result<()>;
 
     /// Define or update both directions of a named throttle (rates in KiB/s,
     /// zero = unlimited). rtorrent requires rate arguments to be strings.
@@ -239,6 +358,18 @@ pub trait RtorrentApi: Send + Sync {
     /// the daemon accepted.
     async fn apply_config_str(&self, directives: &[(&str, &str)]) -> Result<usize>;
 
+    /// Read global config variables, one value per key, in order. `None` for a
+    /// key this build does not expose — an unavailable key is reported, never an
+    /// empty string masquerading as a value. Reading a variable is calling it
+    /// with no arguments, which is how the daemon exposes them.
+    async fn config_get(&self, keys: &[&str]) -> Result<Vec<Option<String>>>;
+
+    /// Write one global config value by its variable name, so a settings save can
+    /// report a per-key outcome rather than a batch count. Numeric values go to
+    /// `<key>.set` as an integer; everything else as a string. The listen port
+    /// range is special-cased for the setter rtorrent renamed across versions.
+    async fn config_set(&self, key: &str, value: &str) -> Result<()>;
+
     /// Enable or disable the DHT.
     async fn set_dht(&self, enabled: bool) -> Result<()>;
 
@@ -251,6 +382,13 @@ pub trait RtorrentApi: Send + Sync {
 
     /// What the daemon reports about itself, for the health panel (D16).
     async fn daemon_health(&self) -> Result<crate::types::DaemonHealth>;
+
+    /// Free bytes on the destination volume for one torrent
+    /// (`d.free_diskspace`, V3-14 preflight). `None` when this build does not
+    /// expose it. Default: unknown, so implementers opt in.
+    async fn free_diskspace(&self, _hash: &str) -> Result<Option<i64>> {
+        Ok(None)
+    }
 
     /// Ask the daemon to write its session now (`session.save`) (D13).
     async fn save_session(&self) -> Result<()>;

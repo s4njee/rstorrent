@@ -22,22 +22,35 @@ import {
   clearHttpPassword,
   hasHttpPassword,
   rssDownload,
+  rssExportSeen,
   rssFetch,
+  rssImportSeen,
+  rssTest,
   setHttpPassword,
   testConnection,
+  type RssTestRow,
 } from "../../ipc/commands";
 import type {
+  BandwidthRule,
+  CollisionPolicy,
   ConnectionProfile,
   EncryptionMode,
   FeedItem,
   LabelDefault,
+  MoveRule,
   RssFeed,
   RssRule,
+  SchedWindow,
   Settings,
+  TempOverride,
   Transport,
-  TurtleSchedule,
   WatchFolder,
 } from "../../ipc/types";
+import {
+  formatTransition,
+  importLegacy,
+  nextChange,
+} from "../../utils/schedule";
 import { credentialStoreName, isWindows } from "../../platform";
 import { ModalBase, Button } from "./ModalBase";
 import { Checkbox } from "./Checkbox";
@@ -102,9 +115,9 @@ export function PreferencesDialog() {
 
   // Ask (only) whether a password is on file for this endpoint, to drive the
   // "saved" hint. Re-runs when the endpoint identity changes.
-  const httpUrl = draft?.transport.kind === "http" ? draft.transport.url : "";
+  const httpUrl = draft?.transport?.kind === "http" ? draft.transport.url : "";
   const httpUser =
-    draft?.transport.kind === "http" ? draft.transport.username : "";
+    draft?.transport?.kind === "http" ? draft.transport.username : "";
   useEffect(() => {
     if (!httpUrl) {
       setPasswordSaved(false);
@@ -351,13 +364,37 @@ export function PreferencesDialog() {
                     patch({ maxActiveDownloads })
                   }
                 />
+                <NumberRow
+                  label="Max active uploads"
+                  value={draft.maxActiveUploads}
+                  onChange={(maxActiveUploads) =>
+                    patch({ maxActiveUploads })
+                  }
+                />
+                <NumberRow
+                  label="Max active torrents"
+                  value={draft.maxActiveTorrents}
+                  onChange={(maxActiveTorrents) =>
+                    patch({ maxActiveTorrents })
+                  }
+                />
+                <NumberRow
+                  label="Ignore slow below (KiB/s)"
+                  value={draft.queueSlowLimitKbs}
+                  onChange={(queueSlowLimitKbs) =>
+                    patch({ queueSlowLimitKbs })
+                  }
+                />
                 <span className={forms.meta}>
-                  0 = no queue. Otherwise the app keeps the highest-priority N
-                  downloads running and starts/stops the rest to match.
+                  0 = no limit. Held-back torrents pause loaded and read
+                  "Queued"; force-started torrents and ones slower than the
+                  floor are never held back and never counted.
                 </span>
               </Group>
 
               <TurtleGroup draft={draft} patch={patch} />
+              <SchedulerGroup draft={draft} patch={patch} />
+              <BandwidthRulesGroup draft={draft} patch={patch} />
             </>
           )}
 
@@ -789,8 +826,8 @@ function timeToMin(t: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-/** Downloads pane: default path, run-on-complete (C13), watch folders (C12),
- *  per-label default save paths (C11). */
+/** Downloads pane: default path, incomplete dir + move rules (V3-14),
+ *  run-on-complete (C13), watch folders (C12), per-label defaults (C11). */
 function DownloadsSection({
   draft,
   patch,
@@ -817,6 +854,12 @@ function DownloadsSection({
         idx === i ? { ...d, ...next } : d,
       ),
     });
+  const setRule = (i: number, next: Partial<MoveRule>) =>
+    patch({
+      moveRules: draft.moveRules.map((r, idx) =>
+        idx === i ? { ...r, ...next } : r,
+      ),
+    });
 
   return (
     <>
@@ -830,6 +873,7 @@ function DownloadsSection({
             value={draft.defaultSavePath}
             onChange={(e) => patch({ defaultSavePath: e.currentTarget.value })}
             spellCheck={false}
+            aria-label="Default save path"
           />
           <button className={forms.browse} onClick={() => void browse()}>
             Browse…
@@ -852,6 +896,131 @@ function DownloadsSection({
           Runs on this machine, directly (no shell). Tokens: %N name · %F save
           path · %H hash. Point it at a script for pipes or redirects.
         </span>
+      </Group>
+
+      <Group title="Incomplete Torrents + Move on Complete">
+        <span className={forms.fieldLabel} style={{ width: "auto" }}>
+          Keep incomplete torrents in
+        </span>
+        <div className={forms.field}>
+          <input
+            className={forms.input}
+            value={draft.incompleteDir}
+            onChange={(e) => patch({ incompleteDir: e.currentTarget.value })}
+            placeholder="(disabled — downloads go straight to their save path)"
+            spellCheck={false}
+          />
+          <button
+            className={forms.browse}
+            onClick={() => void pickInto((d) => patch({ incompleteDir: d }))}
+          >
+            Browse…
+          </button>
+        </div>
+        <span className={forms.meta}>
+          New downloads land here and move home on completion (recorded per
+          torrent, crash-safe, local daemons only). Empty disables it.
+        </span>
+        <span className={forms.fieldLabel} style={{ width: "auto" }}>
+          When the destination is taken
+        </span>
+        <select
+          className={forms.input}
+          style={{ maxWidth: 280 }}
+          value={draft.collisionPolicy}
+          aria-label="When the move destination is taken"
+          onChange={(e) =>
+            patch({ collisionPolicy: e.currentTarget.value as CollisionPolicy })
+          }
+        >
+          <option value="error">Refuse the move (keep seeding in place)</option>
+          <option value="auto-rename">Rename with (1), (2), …</option>
+        </select>
+      </Group>
+
+      <Group title="Move-on-Complete Rules">
+        {draft.moveRules.length === 0 && (
+          <span className={forms.meta}>
+            No rules — completions move to their recorded save path (or stay
+            put). First matching tag wins, then label.
+          </span>
+        )}
+        {draft.moveRules.map((r, i) => (
+          <div className={forms.field} key={i}>
+            <select
+              className={forms.input}
+              style={{ maxWidth: 96 }}
+              value={r.tag != null ? "tag" : "label"}
+              aria-label="Rule matches a tag or a label"
+              onChange={(e) => {
+                const kind = e.currentTarget.value;
+                setRule(
+                  i,
+                  kind === "tag"
+                    ? { tag: r.tag ?? r.label ?? "", label: undefined }
+                    : { label: r.label ?? r.tag ?? "", tag: undefined },
+                );
+              }}
+            >
+              <option value="tag">tag</option>
+              <option value="label">label</option>
+            </select>
+            <input
+              className={forms.input}
+              style={{ maxWidth: 140 }}
+              value={r.tag ?? r.label ?? ""}
+              onChange={(e) =>
+                setRule(
+                  i,
+                  r.tag != null
+                    ? { tag: e.currentTarget.value }
+                    : { label: e.currentTarget.value },
+                )
+              }
+              placeholder={r.tag != null ? "tag" : "label"}
+              spellCheck={false}
+            />
+            <input
+              className={forms.input}
+              value={r.destination}
+              onChange={(e) => setRule(i, { destination: e.currentTarget.value })}
+              placeholder="destination"
+              aria-label="Rule destination"
+              spellCheck={false}
+            />
+            <button
+              className={forms.browse}
+              onClick={() =>
+                void pickInto((dir) => setRule(i, { destination: dir }))
+              }
+            >
+              Browse…
+            </button>
+            <button
+              className={styles.removeOverride}
+              title="Remove rule"
+              aria-label="Remove move rule"
+              onClick={() =>
+                patch({ moveRules: draft.moveRules.filter((_, idx) => idx !== i) })
+              }
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          className={styles.addOverride}
+          onClick={() =>
+            patch({
+              moveRules: [
+                ...draft.moveRules,
+                { tag: "", destination: "" },
+              ],
+            })
+          }
+        >
+          + Add move rule
+        </button>
       </Group>
 
       <Group title="Watch Folders (auto-add; takes effect on restart)">
@@ -1020,16 +1189,6 @@ function TurtleGroup({
   draft: Settings;
   patch: (p: Partial<Settings>) => void;
 }) {
-  const sch = draft.turtleSchedule;
-  const setSch = (next: Partial<TurtleSchedule>) =>
-    patch({ turtleSchedule: { ...sch, ...next } });
-  const toggleDay = (d: number) =>
-    setSch({
-      days: sch.days.includes(d)
-        ? sch.days.filter((x) => x !== d)
-        : [...sch.days, d].sort((a, b) => a - b),
-    });
-
   return (
     <Group title="Turtle Mode (alternative limits, KiB/s)">
       <NumberRow
@@ -1047,13 +1206,139 @@ function TurtleGroup({
         onChange={(turtleEnabled) => patch({ turtleEnabled })}
         label="Turtle mode on now (manual)"
       />
-      <Checkbox
-        checked={sch.enabled}
-        onChange={(enabled) => setSch({ enabled })}
-        label="Engage automatically on a daily schedule"
-      />
-      {sch.enabled && (
-        <>
+      <span className={forms.meta}>
+        The manual toggle applies these rates whenever no pause window covers
+        the clock.
+      </span>
+    </Group>
+  );
+}
+
+/** Weekly scheduler grid (V3-18 / QUE-05). */
+function SchedulerGroup({
+  draft,
+  patch,
+}: {
+  draft: Settings;
+  patch: (p: Partial<Settings>) => void;
+}) {
+  const grid = draft.schedule.windows;
+  const setGrid = (windows: SchedWindow[]) =>
+    patch({ schedule: { ...draft.schedule, windows } });
+  const setWindow = (i: number, next: Partial<SchedWindow>) =>
+    setGrid(grid.map((w, idx) => (idx === i ? { ...w, ...next } : w)));
+  const toggleDay = (i: number, d: number) => {
+    const days = grid[i].days.includes(d)
+      ? grid[i].days.filter((x) => x !== d)
+      : [...grid[i].days, d].sort((a, b) => a - b);
+    setWindow(i, { days });
+  };
+
+  const now = new Date();
+  const weekday = now.getDay();
+  const minute = now.getHours() * 60 + now.getMinutes();
+  const nowMs = now.getTime();
+  const manual = draft.turtleEnabled
+    ? { downKb: draft.turtleDownKb, upKb: draft.turtleUpKb }
+    : null;
+  const over = draft.schedule.tempOverride;
+  const overLive = over != null && over.untilMs > nowMs;
+  const change = nextChange(grid, overLive ? over : null, manual, weekday, minute, nowMs);
+  const legacyActive =
+    grid.length === 0 && draft.turtleSchedule.enabled;
+
+  const setOverride = (next: TempOverride | null) =>
+    patch({ schedule: { ...draft.schedule, tempOverride: next } });
+  const overMinutes =
+    over != null ? Math.max(0, Math.round((over.untilMs - nowMs) / 60000)) : 30;
+
+  return (
+    <Group title="Weekly Scheduler">
+      {legacyActive && (
+        <span className={forms.meta}>
+          Showing the imported turtle window (
+          {minToTime(draft.turtleSchedule.startMin)}–
+          {minToTime(draft.turtleSchedule.endMin)}).{" "}
+          <button
+            type="button"
+            className={styles.addOverride}
+            onClick={() =>
+              patch({
+                schedule: {
+                  ...draft.schedule,
+                  windows: importLegacy(
+                    true,
+                    draft.turtleSchedule.startMin,
+                    draft.turtleSchedule.endMin,
+                    draft.turtleSchedule.days,
+                    draft.turtleDownKb,
+                    draft.turtleUpKb,
+                  ),
+                },
+                turtleSchedule: { ...draft.turtleSchedule, enabled: false },
+              })
+            }
+          >
+            Import as editable windows
+          </button>
+        </span>
+      )}
+      {grid.length === 0 && !legacyActive && (
+        <span className={forms.meta}>
+          No windows — limits follow the manual toggle and the globals. First
+          matching window wins; pause beats limits.
+        </span>
+      )}
+      {grid.map((w, i) => (
+        <div key={i} style={rowCard}>
+          <div className={forms.field}>
+            <select
+              className={forms.input}
+              style={{ maxWidth: 110 }}
+              value={w.pause ? "pause" : "limit"}
+              aria-label="Window mode"
+              onChange={(e) =>
+                setWindow(i, { pause: e.currentTarget.value === "pause" })
+              }
+            >
+              <option value="limit">Limit</option>
+              <option value="pause">Pause</option>
+            </select>
+            {!w.pause && (
+              <>
+                <input
+                  className={forms.input}
+                  style={{ maxWidth: 80 }}
+                  value={w.downKb}
+                  onChange={(e) =>
+                    setWindow(i, {
+                      downKb: Number(e.currentTarget.value) || 0,
+                    })
+                  }
+                  inputMode="numeric"
+                  aria-label="Window download cap KiB/s"
+                />
+                <input
+                  className={forms.input}
+                  style={{ maxWidth: 80 }}
+                  value={w.upKb}
+                  onChange={(e) =>
+                    setWindow(i, { upKb: Number(e.currentTarget.value) || 0 })
+                  }
+                  inputMode="numeric"
+                  aria-label="Window upload cap KiB/s"
+                />
+              </>
+            )}
+            <button
+              className={styles.removeOverride}
+              title="Remove window"
+              aria-label="Remove schedule window"
+              onClick={() => setGrid(grid.filter((_, idx) => idx !== i))}
+            >
+              ×
+            </button>
+          </div>
           <div className={forms.field}>
             <span className={forms.fieldLabel} style={{ width: 64 }}>
               From
@@ -1061,20 +1346,20 @@ function TurtleGroup({
             <input
               className={forms.input}
               type="time"
-              aria-label="Turtle schedule start"
-              value={minToTime(sch.startMin)}
+              aria-label="Window start"
+              value={minToTime(w.startMin)}
               onChange={(e) =>
-                setSch({ startMin: timeToMin(e.currentTarget.value) })
+                setWindow(i, { startMin: timeToMin(e.currentTarget.value) })
               }
             />
             <span style={{ margin: "0 6px" }}>to</span>
             <input
               className={forms.input}
               type="time"
-              aria-label="Turtle schedule end"
-              value={minToTime(sch.endMin)}
+              aria-label="Window end"
+              value={minToTime(w.endMin)}
               onChange={(e) =>
-                setSch({ endMin: timeToMin(e.currentTarget.value) })
+                setWindow(i, { endMin: timeToMin(e.currentTarget.value) })
               }
             />
           </div>
@@ -1083,7 +1368,7 @@ function TurtleGroup({
               Days
             </span>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {DAY_LABELS.map((label, i) => (
+              {DAY_LABELS.map((label, d) => (
                 <label
                   key={label}
                   style={{
@@ -1095,19 +1380,94 @@ function TurtleGroup({
                 >
                   <input
                     type="checkbox"
-                    checked={sch.days.length === 0 || sch.days.includes(i)}
-                    onChange={() => toggleDay(i)}
+                    checked={w.days.length === 0 || w.days.includes(d)}
+                    onChange={() => toggleDay(i, d)}
                   />
                   {label}
                 </label>
               ))}
             </div>
           </div>
-          <span className={forms.meta}>
-            No days selected = every day. An end time earlier than the start
-            wraps past midnight.
-          </span>
-        </>
+        </div>
+      ))}
+      <button
+        className={styles.addOverride}
+        onClick={() =>
+          setGrid([
+            ...grid,
+            {
+              days: [],
+              startMin: 1320,
+              endMin: 360,
+              pause: false,
+              downKb: 0,
+              upKb: 0,
+            },
+          ])
+        }
+      >
+        + Add window
+      </button>
+      <span className={forms.meta}>
+        No days selected = every day. An end time earlier than the start wraps
+        past midnight. Wall-clock time, so daylight-saving shifts need no
+        configuration.
+      </span>
+      <div className={forms.field}>
+        <span className={forms.fieldLabel} style={{ width: 64 }}>
+          Override
+        </span>
+        <select
+          className={forms.input}
+          style={{ maxWidth: 130 }}
+          value={overLive ? (over.pause ? "pause" : "limit") : "off"}
+          aria-label="Temporary override mode"
+          onChange={(e) => {
+            const mode = e.currentTarget.value;
+            if (mode === "off") {
+              setOverride(null);
+            } else {
+              setOverride({
+                pause: mode === "pause",
+                downKb: over?.downKb ?? 0,
+                upKb: over?.upKb ?? 0,
+                untilMs: Date.now() + overMinutes * 60000,
+              });
+            }
+          }}
+        >
+          <option value="off">Off</option>
+          <option value="pause">Pause for…</option>
+          <option value="limit">Limit for…</option>
+        </select>
+        <input
+          className={forms.input}
+          style={{ maxWidth: 70 }}
+          value={overMinutes}
+          onChange={(e) => {
+            const minutes = Math.max(1, Number(e.currentTarget.value) || 0);
+            if (overLive && over) {
+              setOverride({ ...over, untilMs: Date.now() + minutes * 60000 });
+            } else {
+              setOverride({
+                pause: true,
+                downKb: 0,
+                upKb: 0,
+                untilMs: Date.now() + minutes * 60000,
+              });
+            }
+          }}
+          inputMode="numeric"
+          aria-label="Override minutes"
+        />
+        <span className={forms.meta}>min</span>
+      </div>
+      {change ? (
+        <span className={forms.meta}>
+          Next change: {formatTransition(change)}.
+        </span>
+      ) : (
+        <span className={forms.meta}>No scheduled changes coming up.</span>
       )}
     </Group>
   );
@@ -1118,6 +1478,213 @@ let rssIdCounter = 0;
 function rssId(prefix: string): string {
   rssIdCounter += 1;
   return `${prefix}_${Date.now().toString(36)}_${rssIdCounter}`;
+}
+
+/** One rule's test report: every item with its verdict and first miss reason. */
+function TestReportView({
+  report,
+}: {
+  report: {
+    feedName: string;
+    rows: RssTestRow[];
+    loading: boolean;
+    error: string | null;
+  };
+}) {
+  if (report.loading) {
+    return <span className={forms.meta}>testing…</span>;
+  }
+  if (report.error) {
+    return <span className={forms.error}>{report.error}</span>;
+  }
+  const hits = report.rows.filter((r) => r.matched).length;
+  return (
+    <div>
+      <span className={forms.meta}>
+        {report.feedName}: {hits} of {report.rows.length} match.
+      </span>
+      {report.rows.slice(0, 12).map((row) => {
+        const miss = row.clauses.find((c) => !c.passed);
+        return (
+          <div key={row.guid} className={forms.meta}>
+            {row.matched ? "✓" : "✗"} {row.title}
+            {!row.matched && miss && (
+              <span>
+                {" "}
+                — {miss.label}: {miss.detail}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      {report.rows.length > 12 && (
+        <span className={forms.meta}>
+          …and {report.rows.length - 12} more
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Bandwidth rules (V3-18 / QUE-04): named rate profiles by tag/label. */
+function BandwidthRulesGroup({
+  draft,
+  patch,
+}: {
+  draft: Settings;
+  patch: (p: Partial<Settings>) => void;
+}) {
+  const setRule = (i: number, next: Partial<BandwidthRule>) =>
+    patch({
+      bandwidthRules: draft.bandwidthRules.map((r, idx) =>
+        idx === i ? { ...r, ...next } : r,
+      ),
+    });
+  return (
+    <Group title="Bandwidth Rules (KiB/s)">
+      {draft.bandwidthRules.length === 0 && (
+        <span className={forms.meta}>
+          No rules — every torrent follows turtle/global. First matching tag
+          wins, then label; hand-set limits always win over rules.
+        </span>
+      )}
+      {draft.bandwidthRules.map((r, i) => (
+        <div key={r.id || i} style={rowCard}>
+          <div className={forms.field}>
+            <select
+              className={forms.input}
+              style={{ maxWidth: 92 }}
+              value={r.tag != null ? "tag" : "label"}
+              aria-label="Rule matches a tag or a label"
+              onChange={(e) =>
+                setRule(
+                  i,
+                  e.currentTarget.value === "tag"
+                    ? { tag: r.tag ?? r.label ?? "", label: undefined }
+                    : { label: r.label ?? r.tag ?? "", tag: undefined },
+                )
+              }
+            >
+              <option value="tag">tag</option>
+              <option value="label">label</option>
+            </select>
+            <input
+              className={forms.input}
+              style={{ maxWidth: 140 }}
+              value={r.tag ?? r.label ?? ""}
+              onChange={(e) =>
+                setRule(
+                  i,
+                  r.tag != null
+                    ? { tag: e.currentTarget.value }
+                    : { label: e.currentTarget.value },
+                )
+              }
+              placeholder={r.tag != null ? "tag" : "label"}
+              spellCheck={false}
+            />
+            <button
+              className={styles.removeOverride}
+              title="Remove rule"
+              aria-label="Remove bandwidth rule"
+              onClick={() =>
+                patch({
+                  bandwidthRules: draft.bandwidthRules.filter(
+                    (_, idx) => idx !== i,
+                  ),
+                })
+              }
+            >
+              ×
+            </button>
+          </div>
+          <div className={forms.field}>
+            <span className={forms.fieldLabel} style={{ width: 64 }}>
+              Down
+            </span>
+            <input
+              className={forms.input}
+              style={{ maxWidth: 90 }}
+              value={r.downKb}
+              onChange={(e) =>
+                setRule(i, { downKb: Number(e.currentTarget.value) || 0 })
+              }
+              inputMode="numeric"
+              aria-label="Download cap KiB/s"
+            />
+            <span className={forms.fieldLabel} style={{ width: 48 }}>
+              Up
+            </span>
+            <input
+              className={forms.input}
+              style={{ maxWidth: 90 }}
+              value={r.upKb}
+              onChange={(e) =>
+                setRule(i, { upKb: Number(e.currentTarget.value) || 0 })
+              }
+              inputMode="numeric"
+              aria-label="Upload cap KiB/s"
+            />
+          </div>
+          <div className={forms.field}>
+            <span className={forms.fieldLabel} style={{ width: 64 }}>
+              Peers
+            </span>
+            <input
+              className={forms.input}
+              style={{ maxWidth: 70 }}
+              value={r.peersMax ?? 0}
+              onChange={(e) =>
+                setRule(i, { peersMax: Number(e.currentTarget.value) || 0 })
+              }
+              inputMode="numeric"
+              aria-label="Max peers"
+            />
+            <input
+              className={forms.input}
+              style={{ maxWidth: 70 }}
+              value={r.peersMin ?? 0}
+              onChange={(e) =>
+                setRule(i, { peersMin: Number(e.currentTarget.value) || 0 })
+              }
+              inputMode="numeric"
+              aria-label="Min peers"
+            />
+            <span className={forms.fieldLabel} style={{ width: 48 }}>
+              Slots
+            </span>
+            <input
+              className={forms.input}
+              style={{ maxWidth: 70 }}
+              value={r.uploadsMax ?? 0}
+              onChange={(e) =>
+                setRule(i, { uploadsMax: Number(e.currentTarget.value) || 0 })
+              }
+              inputMode="numeric"
+              aria-label="Upload slots"
+            />
+          </div>
+          <span className={forms.meta}>
+            0 = unlimited rates, daemon-default caps. Applied on the next poll;
+            deleting a rule returns its torrents to global limits.
+          </span>
+        </div>
+      ))}
+      <button
+        className={styles.addOverride}
+        onClick={() =>
+          patch({
+            bandwidthRules: [
+              ...draft.bandwidthRules,
+              { id: rssId("bw"), tag: "", downKb: 0, upKb: 0 },
+            ],
+          })
+        }
+      >
+        + Add bandwidth rule
+      </button>
+    </Group>
+  );
 }
 
 /** RSS pane (B11): poll interval, feeds (with live preview), auto-download rules. */
@@ -1136,6 +1703,14 @@ function RssSection({
     loading: boolean;
     error: string | null;
   } | null>(null);
+  const [testReport, setTestReport] = useState<{
+    ruleId: string;
+    feedName: string;
+    rows: RssTestRow[];
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+  const [seenMsg, setSeenMsg] = useState<string | null>(null);
 
   const setFeed = (i: number, next: Partial<RssFeed>) =>
     patch({
@@ -1165,6 +1740,78 @@ function RssSection({
     }
   };
 
+  /** Test one rule against its feed (its own, else the first enabled one),
+   *  with per-clause verdicts. */
+  const testRule = async (i: number) => {
+    const rule = draft.rssRules[i];
+    if (!rule) return;
+    const feed = draft.rssFeeds.find((f) => f.id === rule.feedId && f.enabled)
+      ?? draft.rssFeeds.find((f) => f.enabled);
+    if (!feed) {
+      setTestReport({
+        ruleId: rule.id,
+        feedName: "",
+        rows: [],
+        loading: false,
+        error: "no enabled feed to test against",
+      });
+      return;
+    }
+    setTestReport({
+      ruleId: rule.id,
+      feedName: feed.name || feed.url,
+      rows: [],
+      loading: true,
+      error: null,
+    });
+    try {
+      const rows = await rssTest(rule, feed.url);
+      setTestReport({
+        ruleId: rule.id,
+        feedName: feed.name || feed.url,
+        rows,
+        loading: false,
+        error: null,
+      });
+    } catch (e) {
+      setTestReport({
+        ruleId: rule.id,
+        feedName: feed.name || feed.url,
+        rows: [],
+        loading: false,
+        error: String(e),
+      });
+    }
+  };
+
+  const exportSeen = async () => {
+    try {
+      const json = await rssExportSeen();
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "rss_seen.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      setSeenMsg(
+        `exported ${JSON.parse(json).length} remembered download(s)`,
+      );
+    } catch (e) {
+      setSeenMsg(`export failed: ${String(e)}`);
+    }
+  };
+
+  const importSeen = async (file: File) => {
+    try {
+      const json = await file.text();
+      const added = await rssImportSeen(json);
+      setSeenMsg(`imported ${added} new remembered download(s)`);
+    } catch (e) {
+      setSeenMsg(`import failed: ${String(e)}`);
+    }
+  };
+
   return (
     <>
       <Group title="RSS">
@@ -1174,9 +1821,33 @@ function RssSection({
           onChange={(rssPollMinutes) => patch({ rssPollMinutes })}
         />
         <span className={forms.meta}>
-          How often to check feeds and auto-add rule matches. 0 disables
-          background polling (Preview and Download still work).
+          How often to check feeds and auto-add rule matches. Rules with
+          their own interval keep their own cadence. 0 disables background
+          polling (Preview, Test and Download still work).
         </span>
+        <div className={forms.field}>
+          <button
+            type="button"
+            className={styles.addOverride}
+            onClick={() => void exportSeen()}
+          >
+            Export seen-set
+          </button>
+          <label className={styles.addOverride} style={{ cursor: "pointer" }}>
+            Import seen-set
+            <input
+              type="file"
+              accept="application/json"
+              hidden
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                if (file) void importSeen(file);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+          {seenMsg && <span className={forms.meta}>{seenMsg}</span>}
+        </div>
       </Group>
 
       <Group title="Feeds">
@@ -1236,7 +1907,7 @@ function RssSection({
                 {preview.error && (
                   <span
                     className={forms.meta}
-                    style={{ color: "var(--accent-red-soft, #ea6962)" }}
+                    style={{ color: "var(--accent-red-soft)" }}
                   >
                     {preview.error}
                   </span>
@@ -1371,6 +2042,106 @@ function RssSection({
             </div>
             <div className={forms.field}>
               <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Regex
+              </span>
+              <input
+                className={forms.input}
+                value={r.regexMatch ?? ""}
+                onChange={(e) =>
+                  setRule(i, { regexMatch: e.currentTarget.value })
+                }
+                placeholder="optional, e.g. ^Show\.S0[12]"
+                spellCheck={false}
+              />
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Seasons
+              </span>
+              <input
+                className={forms.input}
+                style={{ maxWidth: 110 }}
+                value={r.seasonRange ?? ""}
+                onChange={(e) =>
+                  setRule(i, { seasonRange: e.currentTarget.value })
+                }
+                placeholder="e.g. 1-3"
+                spellCheck={false}
+              />
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Episodes
+              </span>
+              <input
+                className={forms.input}
+                style={{ maxWidth: 110 }}
+                value={r.episodeRange ?? ""}
+                onChange={(e) =>
+                  setRule(i, { episodeRange: e.currentTarget.value })
+                }
+                placeholder="e.g. 4-12"
+                spellCheck={false}
+              />
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Size MiB
+              </span>
+              <input
+                className={forms.input}
+                style={{ maxWidth: 90 }}
+                value={r.minSizeMb ?? 0}
+                onChange={(e) =>
+                  setRule(i, { minSizeMb: Number(e.currentTarget.value) || 0 })
+                }
+                inputMode="numeric"
+                aria-label="Minimum size MiB"
+              />
+              <span style={{ margin: "0 6px" }}>–</span>
+              <input
+                className={forms.input}
+                style={{ maxWidth: 90 }}
+                value={r.maxSizeMb ?? 0}
+                onChange={(e) =>
+                  setRule(i, { maxSizeMb: Number(e.currentTarget.value) || 0 })
+                }
+                inputMode="numeric"
+                aria-label="Maximum size MiB"
+              />
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Prefer
+              </span>
+              <input
+                className={forms.input}
+                style={{ maxWidth: 110 }}
+                value={r.preferQuality ?? ""}
+                onChange={(e) =>
+                  setRule(i, { preferQuality: e.currentTarget.value })
+                }
+                placeholder="e.g. 1080p"
+                spellCheck={false}
+              />
+              <label
+                style={{
+                  display: "flex",
+                  gap: 3,
+                  alignItems: "center",
+                  fontSize: 11,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={r.smartEpisode ?? false}
+                  onChange={(e) =>
+                    setRule(i, { smartEpisode: e.currentTarget.checked })
+                  }
+                />
+                Smart episode
+              </label>
+            </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
                 Label
               </span>
               <input
@@ -1395,6 +2166,81 @@ function RssSection({
                 spellCheck={false}
               />
             </div>
+            <div className={forms.field}>
+              <span className={forms.fieldLabel} style={{ width: 64 }}>
+                Tags
+              </span>
+              <input
+                className={forms.input}
+                value={(r.tags ?? []).join(", ")}
+                onChange={(e) =>
+                  setRule(i, {
+                    tags: e.currentTarget.value
+                      .split(",")
+                      .map((t) => t.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="(none)"
+                spellCheck={false}
+              />
+            </div>
+            <div className={forms.field}>
+              <label
+                style={{
+                  display: "flex",
+                  gap: 3,
+                  alignItems: "center",
+                  fontSize: 11,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={r.start ?? true}
+                  onChange={(e) => setRule(i, { start: e.currentTarget.checked })}
+                />
+                Start on add
+              </label>
+              <label
+                style={{
+                  display: "flex",
+                  gap: 3,
+                  alignItems: "center",
+                  fontSize: 11,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={r.topOfQueue ?? false}
+                  onChange={(e) =>
+                    setRule(i, { topOfQueue: e.currentTarget.checked })
+                  }
+                />
+                Top of queue
+              </label>
+              <span className={forms.fieldLabel} style={{ width: 90 }}>
+                Every (min)
+              </span>
+              <input
+                className={forms.input}
+                style={{ maxWidth: 70 }}
+                value={r.pollMinutes ?? 0}
+                onChange={(e) =>
+                  setRule(i, { pollMinutes: Number(e.currentTarget.value) || 0 })
+                }
+                inputMode="numeric"
+                aria-label="Rule poll interval minutes, 0 means global"
+              />
+              <button
+                className={styles.addOverride}
+                onClick={() => void testRule(i)}
+              >
+                Test
+              </button>
+            </div>
+            {testReport?.ruleId === r.id && (
+              <TestReportView report={testReport} />
+            )}
           </div>
         ))}
         <datalist id="rss-known-labels">
@@ -1415,8 +2261,19 @@ function RssSection({
                   feedId: "",
                   mustContain: "",
                   mustNotContain: "",
+                  regexMatch: "",
+                  seasonRange: "",
+                  episodeRange: "",
+                  minSizeMb: 0,
+                  maxSizeMb: 0,
+                  preferQuality: "",
+                  smartEpisode: false,
                   label: "",
+                  tags: [],
                   savePath: "",
+                  start: true,
+                  topOfQueue: false,
+                  pollMinutes: 0,
                 },
               ],
             })

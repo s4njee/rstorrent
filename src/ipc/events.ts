@@ -10,11 +10,16 @@
  */
 
 import { backend, type UnlistenFn } from "./backend";
-import type { Snapshot, DetailPayload, LogEntry } from "./types";
+import type { Snapshot, SnapshotDelta, DetailPayload, LogEntry } from "./types";
 
-/** Full app state, emitted on every fast poll (~1s). */
+/** Full app state, emitted periodically and on reconnect (~1s or on delta miss). */
 export function onSnapshot(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
   return backend().listen<Snapshot>("state://snapshot", cb);
+}
+
+/** Incremental delta since `baseRevision`; applied via `applyDelta` (FND-02). */
+export function onDelta(cb: (d: SnapshotDelta) => void): Promise<UnlistenFn> {
+  return backend().listen<SnapshotDelta>("state://delta", cb);
 }
 
 /** Detail-tab data for the selected torrent, emitted ~2s while a tab is open. */
@@ -25,6 +30,11 @@ export function onDetail(cb: (d: DetailPayload) => void): Promise<UnlistenFn> {
 /** A single appended log line. */
 export function onLog(cb: (l: LogEntry) => void): Promise<UnlistenFn> {
   return backend().listen<LogEntry>("log://append", cb);
+}
+
+/** Move-on-complete statuses changed — a nudge; refetch via `getMoves`. */
+export function onMoves(cb: () => void): Promise<UnlistenFn> {
+  return backend().listen<void>("moves://update", cb);
 }
 
 /** A native-menu item was clicked (payload is the action id, e.g. "prefs"). */

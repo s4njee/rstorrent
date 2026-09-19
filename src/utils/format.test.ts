@@ -38,7 +38,7 @@ describe("formatCountdown / formatAgo (tracker times)", () => {
   const nowSec = now / 1000;
 
   it("counts down to a future announce", () => {
-    expect(formatCountdown(nowSec + 720, now)).toBe("in 12m0s");
+    expect(formatCountdown(nowSec + 720, now)).toBe("in 12m 00s");
   });
   it("shows — for an unset or overdue next announce", () => {
     expect(formatCountdown(0, now)).toBe("—");
@@ -46,7 +46,7 @@ describe("formatCountdown / formatAgo (tracker times)", () => {
     expect(formatCountdown(nowSec - 100, now)).toBe("—");
   });
   it("shows elapsed time since the last announce", () => {
-    expect(formatAgo(nowSec - 240, now)).toBe("4m0s ago");
+    expect(formatAgo(nowSec - 240, now)).toBe("4m 00s ago");
     expect(formatAgo(0, now)).toBe("—");
   });
 });
@@ -77,18 +77,22 @@ describe("formatRate", () => {
 
 describe("formatDuration / formatEta", () => {
   it("matches design ETA strings", () => {
-    expect(formatDuration(252)).toBe("4m12s");
-    expect(formatDuration(820)).toBe("13m40s");
-    expect(formatDuration(148)).toBe("2m28s");
+    // The design's durations: minutes pair with seconds, hours with minutes,
+    // and the second field is zero-padded.
+    expect(formatDuration(252)).toBe("4m 12s");
+    expect(formatDuration(820)).toBe("13m 40s");
+    expect(formatDuration(148)).toBe("2m 28s");
     expect(formatDuration(45)).toBe("45s");
-    expect(formatDuration(3723)).toBe("1h2m");
+    expect(formatDuration(3723)).toBe("1h 02m");
+    // Past a day the design switches to `2d 04h`.
+    expect(formatDuration(2 * 86_400 + 4 * 3600)).toBe("2d 04h");
   });
   it("chooses infinity/dash by status when eta is null", () => {
     expect(formatEta(null, "seeding")).toBe("∞");
     expect(formatEta(null, "stalled")).toBe("∞");
     expect(formatEta(null, "paused")).toBe("—");
     expect(formatEta(null, "error")).toBe("—");
-    expect(formatEta(252, "downloading")).toBe("4m12s");
+    expect(formatEta(252, "downloading")).toBe("4m 12s");
   });
 });
 

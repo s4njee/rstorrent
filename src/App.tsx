@@ -4,24 +4,32 @@
  * On mount it subscribes to the Rust push events (`state://snapshot`,
  * `state://detail`) and keeps selection pruned to existing torrents. A separate
  * effect steers the backend detail poll based on the current selection + tab.
+ *
+ * The window is the console's layout: top bar, action toolbar, workspace
+ * (sidebar + main column of table / detail panel / status bar), with notices and
+ * the connection banner over it.
  */
 
 import { useEffect } from "react";
 import {
-  onSnapshot,
+  onDelta,
   onDetail,
   onLog,
   onMenuAction,
+  onMoves,
   onNotificationClick,
   onOpenRequests,
+  onSnapshot,
 } from "./ipc/events";
 import {
-  setDetailWatch,
   getLog,
+  getMoves,
+  getSnapshot,
   retryConnection,
-  takeOpenRequests,
   saveSession,
+  setDetailWatch,
   startDaemon,
+  takeOpenRequests,
 } from "./ipc/commands";
 import { parseOpenRequests } from "./externalOpen";
 import { enqueueAddSources } from "./addQueue";
@@ -30,15 +38,19 @@ import { useDragDrop } from "./hooks/useDragDrop";
 import { usePasteToAdd } from "./hooks/usePasteToAdd";
 import { useTorrents } from "./store/torrents";
 import { useUi } from "./store/ui";
+import { daemonTabFor } from "./utils/panes";
 import { useDetail } from "./store/detail";
 import { useSettings } from "./store/settings";
 import { useLog } from "./store/log";
+import { useMoves } from "./store/moves";
 import { useRateHistory } from "./store/rateHistory";
-import { TitleBar } from "./components/shell/TitleBar";
-import { Toolbar } from "./components/shell/Toolbar";
+import { useTransferHistory } from "./store/transferHistory";
+import { TopBar } from "./components/shell/TopBar";
+import { ActionToolbar } from "./components/shell/ActionToolbar";
 import { StatusBar } from "./components/shell/StatusBar";
-import { SelectionBar } from "./components/shell/SelectionBar";
+import { Notices, LostConnectionBanner } from "./components/Notices";
 import { FilterSidebar } from "./components/sidebar/FilterSidebar";
+import { DiskCard } from "./components/sidebar/DiskCard";
 import { TorrentTable } from "./components/table/TorrentTable";
 import { DetailTabs } from "./components/details/DetailTabs";
 import { DialogHost } from "./components/dialogs/DialogHost";
@@ -68,17 +80,41 @@ export default function App() {
     const prune = useUi.getState().pruneSelection;
     const setDetail = useDetail.getState().setDetail;
     const recordRates = useRateHistory.getState().record;
+    const recordTransfer = useTransferHistory.getState().record;
     // Hydrate the log from the ring buffer, then keep it live.
     void getLog().then((entries) => useLog.getState().hydrate(entries));
+    // Hydrate move statuses, then keep them live on the moves nudge.
+    void getMoves().then((moves) => useMoves.getState().set(moves));
 
     const unsubs = [
       onSnapshot((s) => {
         applySnapshot(s);
         prune(new Set(s.torrents.map((t) => t.hash)));
         recordRates(s.torrents);
+        recordTransfer(s.globals);
+      }),
+      onDelta((d) => {
+        const ok = useTorrents.getState().applyDelta(d);
+        if (!ok) {
+          // Missed revision — heal via full snapshot.
+          void getSnapshot().then((s) => {
+            if (s) {
+              applySnapshot(s);
+              prune(new Set(s.torrents.map((t) => t.hash)));
+              recordRates(s.torrents);
+              recordTransfer(s.globals);
+            }
+          });
+          return;
+        }
+        const torrents = useTorrents.getState().torrents;
+        prune(new Set(torrents.map((t) => t.hash)));
+        recordRates(torrents);
+        recordTransfer(d.globals);
       }),
       onDetail((d) => setDetail(d)),
       onLog((entry) => useLog.getState().append(entry)),
+      onMoves(() => useMoves.getState().refresh()),
       // Native menu items: most open a dialog; the daemon actions are handled
       // directly (save runs now, shutdown asks for confirmation first).
       onMenuAction((action) => {
@@ -97,21 +133,23 @@ export default function App() {
               | "prefs"
               | "add-file"
               | "add-magnet"
+              | "create-torrent"
               | "stats"
               | "tune-network"
-              | "shutdown",
+              | "shutdown"
+              | "set-location",
           );
       }),
       onNotificationClick((hash) => {
         const ui = useUi.getState();
         ui.closeDialog();
-        ui.setFilter(null);
+        ui.clearFacets();
         ui.setSearch("");
         ui.select(hash);
         requestAnimationFrame(() => {
-          document
-            .getElementById(`torrent-row-${hash}`)
-            ?.scrollIntoView({ block: "nearest" });
+          window.dispatchEvent(
+            new CustomEvent("scrollToTorrent", { detail: hash }),
+          );
         });
       }),
     ];
@@ -156,69 +194,94 @@ export default function App() {
   const activeTab = useUi((s) => s.activeTab);
   useEffect(() => {
     const hash = selection.size === 1 ? [...selection][0] : null;
-    void setDetailWatch(hash, hash ? activeTab : null);
+    void setDetailWatch(hash, hash ? daemonTabFor(activeTab) : null);
   }, [selection, activeTab]);
 
   const connected = connection.phase === "connected";
+  const sidebarOpen = useUi((s) => s.sidebarOpen);
+  const globals = useTorrents((s) => s.globals);
+  const savePath = useSettings((s) => s.settings?.defaultSavePath ?? null);
 
   return (
-    <div className={styles.app}>
-      <TitleBar />
-      <Toolbar />
-      <div className={styles.body}>
-        <FilterSidebar />
-        {connected ? (
-          <TorrentTable />
-        ) : (
-          <div className={styles.disconnected}>
-            <h2>
-              {connection.phase === "connecting"
-                ? "connecting to rtorrent…"
-                : "can't reach rtorrent"}
-            </h2>
-            <span className={styles.endpoint}>{connection.endpoint}</span>
-            {connection.error && (
-              <span className={styles.endpoint}>{connection.error}</span>
-            )}
-            {connection.retryInSeconds != null && (
-              <span className={styles.retry}>
-                retrying in {connection.retryInSeconds}s…
-              </span>
-            )}
-            {connection.phase === "disconnected" && (
-              <>
-                <div className={styles.actions}>
-                  <button
-                    onClick={() =>
-                      void startDaemon()
-                        .then(() => void retryConnection())
-                        .catch(() => {})
-                    }
-                  >
-                    Start rtorrent
-                  </button>
-                  <button onClick={() => void retryConnection()}>
-                    Retry now
-                  </button>
-                  <button onClick={() => useUi.getState().openDialog("prefs")}>
-                    Open Preferences
-                  </button>
-                </div>
-                <details className={styles.hint}>
-                  <summary>rtorrent not running? Show setup snippet</summary>
-                  <pre>{RTORRENT_RC_SNIPPET}</pre>
-                </details>
-              </>
-            )}
-          </div>
-        )}
+    <div
+      className={styles.app}
+      data-sidebar-open={sidebarOpen ? "" : undefined}
+    >
+      <TopBar trafficLights />
+      <LostConnectionBanner />
+      <ActionToolbar />
+      <div className={styles.workspace}>
+        <aside className={styles.sidebar}>
+          <FilterSidebar
+            footer={
+              <DiskCard
+                freeSpace={globals.freeSpace}
+                diskSize={globals.diskSize}
+                path={savePath}
+              />
+            }
+          />
+        </aside>
+        <div className={styles.main}>
+          {connected ? (
+            <>
+              <div className={styles.tableArea}>
+                <TorrentTable />
+              </div>
+              <DetailTabs />
+            </>
+          ) : (
+            <div className={styles.disconnected}>
+              <h2>
+                {connection.phase === "connecting"
+                  ? "connecting to rtorrent…"
+                  : "can't reach rtorrent"}
+              </h2>
+              <span className={styles.endpoint}>{connection.endpoint}</span>
+              {connection.error && (
+                <span className={styles.endpoint}>{connection.error}</span>
+              )}
+              {connection.retryInSeconds != null && (
+                <span className={styles.retry}>
+                  retrying in {connection.retryInSeconds}s…
+                </span>
+              )}
+              {connection.phase === "disconnected" && (
+                <>
+                  <div className={styles.actions}>
+                    <button
+                      onClick={() =>
+                        void startDaemon()
+                          .then(() => void retryConnection())
+                          .catch(() => {})
+                      }
+                    >
+                      Start rtorrent
+                    </button>
+                    <button onClick={() => void retryConnection()}>
+                      Retry now
+                    </button>
+                    <button
+                      onClick={() => useUi.getState().openDialog("prefs")}
+                    >
+                      Open Preferences
+                    </button>
+                  </div>
+                  <details className={styles.hint}>
+                    <summary>rtorrent not running? Show setup snippet</summary>
+                    <pre>{RTORRENT_RC_SNIPPET}</pre>
+                  </details>
+                </>
+              )}
+            </div>
+          )}
+          <StatusBar />
+        </div>
       </div>
-      <SelectionBar />
-      <DetailTabs />
-      <StatusBar />
       <ContextMenu />
       <ColumnMenu />
       <DialogHost />
+      <Notices />
       {dragOver && (
         <div className={styles.dropOverlay}>
           <div className={styles.dropCard}>drop .torrent files to add</div>

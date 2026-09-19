@@ -125,3 +125,35 @@ pub fn free_space(daemon_path: &str) -> Option<i64> {
         None
     }
 }
+
+/// Move a torrent's on-disk data from `from_daemon_base_path` into `to_daemon_dir`.
+///
+/// Handles path translation between daemon namespace and local host namespace
+/// (including WSL translation on Windows). Returns the new daemon-shaped base path.
+pub fn move_torrent_data(
+    from_daemon_base_path: &str,
+    to_daemon_dir: &str,
+) -> Result<String, String> {
+    if from_daemon_base_path.is_empty() {
+        return Ok(to_daemon_dir.to_string());
+    }
+    let local_src = resolve(from_daemon_base_path)?;
+    let local_dst_dir = resolve(to_daemon_dir)?;
+
+    rtorrent_core::fs::move_torrent_data(&local_src, &local_dst_dir)?;
+
+    let item_name = std::path::Path::new(from_daemon_base_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    if item_name.is_empty() {
+        Ok(to_daemon_dir.to_string())
+    } else {
+        Ok(format!(
+            "{}/{}",
+            to_daemon_dir.trim_end_matches('/'),
+            item_name
+        ))
+    }
+}

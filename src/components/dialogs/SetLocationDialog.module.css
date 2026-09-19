@@ -1,0 +1,19 @@
+/* SetLocationDialog: dark-ops layout for target description, path picker, and move-data checkbox */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.message {
+  color: var(--text-primary);
+  font-size: var(--fs-title);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message b {
+  color: var(--text-primary);
+}

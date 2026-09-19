@@ -37,6 +37,12 @@ Sizes: S ≤ 2 h, M ≤ half day, L ≈ day, XL = needs breaking down.
   sidebar · D13 session controls (Daemon menu: save / shut down) · D16 daemon
   health tab in Statistics · B11 RSS feeds + auto-download rules (new RSS pane +
   background engine). **Deferred:** C22 (delta snapshots).
+- **v2.x "bundled daemon"** — the macOS `.app` ships its own rtorrent
+  **0.15.7** (rtorrent + libtorrent, built by `tools/build-rtorrent-macos.sh`)
+  as a relocatable `Resources/binaries/rtorrent/`. **Daemon → Start Daemon**
+  prefers it over a system install and writes a starter `~/.rtorrent.rc` when
+  none exists; port-range writes try both the pre-0.16.20 `network.port_range.set`
+  and the renamed `network.listen.port.range.set`. Carries PLT-02.
 
 Still open from v1 close-out (tasks.md): `E13-S2` virtualization, `E13-S4`
 accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
@@ -59,19 +65,30 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
   `load.normal` (handles both magnet links and `.torrent` URLs), deduped
   against a capped, persisted seen-set (`rss_seen.json`). RSS 2.0 + Atom parsing
   (quick-xml) prefers a torrent `<enclosure>` over a plain `<link>`. Shipped
-  v2.0.
-- [ ] **B12 · Move data on Set location** (L) — build with C10.
-- [ ] **B13 · Torrent creation** (L).
+  v2.0. Extended by V3-23 (regex, episode ranges, sizes, quality/smart-episode,
+  tags/start/top per rule, per-rule intervals, explained test previews,
+  seen export/import, first GPUI runner).
+- [x] **B12 · Move data on Set location** (L) — "Set location…" in the context
+  menu opens a dedicated `SetLocationDialog` with a path picker and an optional
+  "Move files to new location" checkbox (default on for local/co-located daemons).
+  Moving data safely performs an atomic same-volume rename or cross-volume
+  copy+verify+erase before updating rtorrent's directory (stop→move→set→conditional-restart).
+  Collision protection and missing file safety included. Shipped.
+- [x] **B13 · Torrent creation** (L) — create `.torrent` files from single files
+  or folders via the `CreateTorrentDialog` (`⌘N` / Toolbar / Menu). Supports
+  automatic optimal piece-length calculation (or manual power-of-two selection),
+  multi-tier tracker announce URLs, private torrent flag (BEP 27), custom comments,
+  source tags, and immediate seeding via rtorrent backend `load_raw`. Shipped.
 - [x] **B14 · Scheduler / turtle limits** (M) — turtle mode: alternative
   down/up limits with a manual toggle (🐢 in the status bar) and an optional
   daily schedule (start/end time + weekdays, overnight-wrap aware). The poller
   computes the effective limits each tick from `chrono::Local` and pushes them
   on change; it now owns global-limit application, so limits also survive a
   daemon restart. Shipped v1.7. (Deep choke-group scheduling stays D14/icebox.)
-- [x] **B16 · Peer actions** (S) — right-click a peer in the Peers tab to Snub
-  (`p.snubbed.set`), Disconnect (`p.disconnect`), or Ban (`p.banned.set` +
-  disconnect). Targets the peer by `HASH:p<p.id>`. Shipped with C16 (v1.6).
-- [ ] **B17 · Menu-bar item + dock menu** (M).
+- [x] **B17 · Menu-bar item + dock menu** (M) — persistent system tray icon
+  with live speed metrics (title/tooltip), left-click window toggle/focus,
+  quick-action tray menu (Show/Hide, Add File/Magnet, Create Torrent,
+  Resume/Pause All, Turtle Mode toggle, Preferences, Quit), and poller state updates. Shipped.
 - [~] **B19 · Web UI** (L) — **in progress.** A self-hosted `rstorrent-web` axum
   server (in the workspace) serves the shared React UI over an HTTP backend:
   live table, filters, detail tabs, mutations, upload/magnet adds (WE4),
@@ -79,14 +96,27 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
   (WE2-S8), Playwright suite (WE6-S1), seedbox perf (WE6-S3). See
   `design/tasks.md` (epics WE0–WE6) and [docs/web-setup.md](docs/web-setup.md).
 - [ ] **B18 · Windows/Linux** (XL) · **B20 · l10n** (M) · **B21 · Import from
-  other clients** (M) · **B22 · Light theme** (S) — icebox.
-- [ ] **C5 · Label rename in sidebar** (S).
-- [ ] **C8 · Availability overlay on pieces bar** (M) — `d.chunks_seen` confirmed.
+  other clients** (M, landed as V3-22) · **B22 · Light theme** (S) — icebox.
+- [x] **C5 · Label rename in sidebar** (S) — right-click a sidebar label:
+  "Rename label…" (inline edit) or "Remove label"; both rewrite the label
+  across every torrent carrying it via the existing `set_label` command, and
+  the active filter retargets/clears so the view doesn't strand. Shipped
+  (commit `89bec38`).
+- [x] **C8 · Availability overlay on pieces bar** (M) — `d.chunks_seen`
+  confirmed. A slim canvas under the pieces bar (`AvailabilityBar`) decodes the
+  per-chunk peer-count bytes (violet, brighter = more peers; bare track = a
+  stretch that could stall), captioned with the peer range + distributed
+  copies; hidden when there's no swarm (`availability` empty/on one seed).
+  Shipped (commit `25fd405`).
 - [x] **C9 · Max-active-downloads queue** (M) — Preferences → Speed → Queue.
   The poller keeps the highest-priority N incomplete torrents active and
   starts/stops the rest each tick (errored/hash-checking torrents excluded).
-  0 = off. Shipped v1.7.
-- [ ] **C10 · Move-on-complete** (L).
+  0 = off. Shipped v1.7. Superseded by V3-17 (uploads + total caps, slow
+  exemption, force-start, holds pause instead of stop).
+- [x] **C10 · Move-on-complete** (L) — landed as V3-14 (backlog-v3): incomplete
+  dir routing on every add path, recorded `final_dir` intent, journalised
+  executor (stop → preflight → copy → set → resume) in all three pollers,
+  progress/cancel/retry UI and Downloads prefs. Shipped v2.3.
 - [x] **C11 · Per-label defaults** (M) — per-label default save paths
   (Preferences → Downloads); the Add dialog pre-fills the save path when the
   typed label matches, and watch-folder adds resolve folder → label default →
@@ -101,19 +131,25 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 - [x] **C14 · Auto-remove at seed goal** (S) — seed-goal action Stop / Remove /
   Remove-with-data (Preferences → BitTorrent), extending the poller's seed-goal
   handling; Remove-with-data trashes files for a local daemon. Shipped v1.7.
-- [ ] **C15 · Per-file progress bars** (S) — fold into D6.
+- [x] **C15 · Per-file progress bars** (S) — the Content tab now renders an
+  8 px status-colored bar for every file, driven by rtorrent's completed/total
+  chunk counters and refreshed with the active detail poll. Empty files report
+  100%; progress is clamped for safe rendering. Shipped with D2.
 - [x] **C16 · Richer peer info** (S) — the Peers-tab Flags column now folds in
   `p.is_encrypted`/`p.is_incoming`/`p.is_obfuscated`/`p.is_preferred`/
   `p.is_unwanted` as E·I·O·P·U (legend in the column tooltip). Shipped with B16
   (v1.6).
-- [ ] **C17 · Global transfer graph + history** (M).
+- [x] **C17 · Global transfer graph + history** (M) — Statistics now has a
+  History tab with a live download/upload SVG graph, current and peak rates,
+  sample age, and a clear-history action. The frontend keeps a bounded
+  30-minute session ring buffer from global snapshot rates. Shipped.
 - [x] **C18 · Announce countdown in Trackers** (S) — Next column shows
   "in 12m" from `t.activity_time_next`; Last column shows "4m ago" from
   `t.success_time_last`. A next-announce in the past (failing/overdue tracker)
   renders "—" rather than a misleading "115s ago". Landed with D18.
 - [ ] **C19 · Quick Look / open from Content** (M) · **C20 · Start rtorrent
   from the app** (L) · **C22 · Delta snapshots** (M) · **C23 · Session
-  export/import** (S) · **C24 · Homebrew cask** (S) · **C25 · Log tab
+  export/import** (S, landed as V3-22) · **C24 · Homebrew cask** (S) · **C25 · Log tab
   upgrades** (S).
 
 ---
@@ -122,20 +158,21 @@ accessibility, `E13-S5` QA-checklist run, `E14-S2` signing + clean-account QA.
 
 The biggest functional gaps against qBittorrent, all with confirmed methods.
 
-- [ ] **D1 · Force recheck** (S) — `d.check_hash`. Context menu + ⌥⌘R.
-  Progress is observable (`d.chunks_hashed`, `d.is_hash_checking`) → D19 shows
-  it. The single most-missed action in the current menu.
+- [x] **D1 · Force recheck** (S) — `d.check_hash`. Context menu + ⌥⌘R.
+  Progress is observable (`d.chunks_hashed`, `d.is_hash_checking`) in the
+  existing checking status/progress presentation.
 
-- [ ] **D2 · Per-file priorities** (M) — `f.priority.set` (0 = skip,
+- [x] **D2 · Per-file priorities** (M) — `f.priority.set` (0 = skip,
   1 = normal, 2 = high) on the Content tab: click-to-cycle cell plus
   multi-select context menu (Skip / Normal / High). Skip is the headline —
-  "don't download the sample folder" is table stakes. Absorbs C15 (progress
-  bars in the same pass). After changing priorities call
-  `d.update_priorities` (present) so rtorrent re-plans the download.
+  "don't download the sample folder" is table stakes. Includes nested folder
+  aggregates and absorbs C15 (progress bars in the same pass). After changing
+  priorities call `d.update_priorities` (present) so rtorrent re-plans the
+  download.
 
-- [ ] **D3 · Per-torrent connection limits** (S) — `d.peers_max.set`,
+- [x] **D3 · Per-torrent connection limits** (S) — `d.peers_max.set`,
   `d.peers_min.set`, `d.uploads_max.set` in the existing per-torrent limits
-  dialog (RateLimitDialog grows a second section). Read side into General.
+  dialog, with the read side shown in General.
 
 - [x] **D4 · Started / Finished columns** (S) — `d.timestamp.started` +
   `d.timestamp.finished` as optional sortable columns (both default-hidden,
@@ -145,18 +182,18 @@ The biggest functional gaps against qBittorrent, all with confirmed methods.
   in the resume file and survive. A durable added-date waits for D6 (sticky
   `d.custom` metadata).
 
-- [ ] **D5 · Super seeding** (S) — initial-seed connection type via
+- [x] **D5 · Super seeding** (S) — initial-seed connection type via
   `d.connection_current.set = "initial_seed"` (readable via
   `d.connection_current`; `d.connection_seed` is the *default*-type getter and
   has no setter — verified against the method list).
   Checkbox in the per-torrent menu for complete torrents; badge in General.
   Niche but cheap, and rtorrent is one of the few clients that does it well.
 
-- [ ] **D6 · Sticky per-torrent metadata** (M) — `d.custom.set`/`d.custom`
+- [x] **D6 · Sticky per-torrent metadata** (M) — `d.custom.set`/`d.custom`
   (multi-key, distinct from custom1..5): record `added_by` (file / magnet /
   watch / RSS), original source path, and add-time. Survives restarts in the
-  session, syncs to any other client reading the session. Feeds D4's Added
-  column on daemons where `d.load_date` resets, and C23's export.
+  session, is read into General, and syncs to any other client reading the
+  session.
 
 ---
 
@@ -238,11 +275,15 @@ confirmed present; each is a labeled control with the daemon default shown.
   Dropped `t.latest_new_peers`/`sum_peers` for now — Seeds/Leeches already
   cover swarm size and the row was getting wide.
 
-- [ ] **D19 · Error taxonomy** (M) — classify `d.message` (tracker timeout vs
+- [x] **D19 · Error taxonomy** (M) — classify `d.message` (tracker timeout vs
   unregistered vs storage error vs missing files) into distinct statuses and
   sidebar buckets, instead of one generic "trk error". The CachyOS episode
   showed the value; a missing-data error deserves different affordances
-  (recheck/relocate) than a dead tracker (reannounce/remove tracker).
+  (recheck/relocate) than a dead tracker (reannounce/remove tracker). Shipped:
+  `rtorrent/error_kind` classifier (8 buckets: unregistered, tracker_timeout,
+  tracker_error, missing_files, no_space, permission, disk_error, other) → DTO
+  `errorKind`, table Status labels, sidebar Error-kind buckets, and General-tab
+  affordance hints.
 
 ---
 

@@ -1,0 +1,68 @@
+/*
+ * Sidebar disk footer (design frame 1a).
+ *
+ * Caption, figures and a 4px pressure bar. The fill's colour is the whole point
+ * — accent while there is room, warning near the edge, error when a download is
+ * about to fail.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-card);
+  background: var(--bg-row-alt);
+}
+
+.path {
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--fs-meta);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-track);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+/* Pressure levels: the fill and its label move together. */
+.warn {
+  color: var(--status-warn);
+}
+.fill.warn {
+  background: var(--status-warn);
+}
+
+.full {
+  color: var(--status-error);
+}
+.fill.full {
+  background: var(--status-error);
+}
+
+.free {
+  font-size: var(--fs-meta);
+  color: var(--text-fainter);
+  font-variant-numeric: tabular-nums;
+}

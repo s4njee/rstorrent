@@ -9,12 +9,15 @@
  */
 
 import { useMemo, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useUi } from "../../store/ui";
 import { useTorrents } from "../../store/torrents";
 import * as actions from "../../actions";
 import { capabilities } from "../../ipc/backend";
-import { setLabel, setLocation, setTorrentLimits } from "../../ipc/commands";
+import {
+  setLabel,
+  setSuperSeeding,
+  setTorrentLimits,
+} from "../../ipc/commands";
 import {
   PlayIcon,
   PauseIcon,
@@ -56,6 +59,17 @@ export function ContextMenu() {
   const singlePrivate =
     single !== null &&
     (torrents.find((t) => t.hash === single)?.isPrivate ?? false);
+  const singleTorrent =
+    single === null ? null : (torrents.find((t) => t.hash === single) ?? null);
+  const canSuperSeed = singleTorrent !== null && singleTorrent.percent >= 100;
+  const superSeeding = singleTorrent?.connectionType === "initial_seed";
+  // Force-start check reads the selection: mixed selections show unchecked
+  // and switch on (mirroring the backend toggle).
+  const forceStarted =
+    hashes.length > 0 &&
+    hashes.every(
+      (h) => torrents.find((t) => t.hash === h)?.forceStart === true,
+    );
 
   // Clamp so the menu stays within the window.
   const x = Math.min(menu.x, window.innerWidth - 220);
@@ -76,22 +90,6 @@ export function ContextMenu() {
       void setTorrentLimits(hashes, downKb, upKb).catch(() => {
         // The Rust command records the failure in the app log.
       });
-    }
-    close();
-  };
-
-  const chooseLocation = async () => {
-    // Desktop opens a native folder picker; the browser has none, so it prompts
-    // for a path on the daemon host.
-    let dir: string | null = null;
-    if (capabilities().nativeDialogs) {
-      const picked = await open({ directory: true });
-      dir = typeof picked === "string" ? picked : null;
-    } else {
-      dir = window.prompt("New location (a path on the daemon host):");
-    }
-    if (dir) {
-      for (const h of hashes) void setLocation(h, dir);
     }
     close();
   };
@@ -131,6 +129,32 @@ export function ContextMenu() {
         </div>
 
         <div className={styles.sep} />
+
+        <div
+          className={`${styles.item} ${canSuperSeed ? "" : styles.disabled}`}
+          title={
+            canSuperSeed
+              ? "Use rtorrent initial-seed connection mode"
+              : "only complete torrents can use super-seeding"
+          }
+          onClick={() => {
+            if (!single || !canSuperSeed) return;
+            close();
+            void setSuperSeeding(single, !superSeeding).catch(() => {});
+          }}
+        >
+          <span className={styles.icon}>{superSeeding ? "✓" : ""}</span>
+          Super-seeding
+        </div>
+
+        <div
+          className={styles.item}
+          title="Exempt from the client queue scheduler (stays running past the caps)"
+          onClick={() => run(() => actions.toggleForceStart(hashes))}
+        >
+          <span className={styles.icon}>{forceStarted ? "✓" : ""}</span>
+          Force start
+        </div>
 
         <div
           className={styles.item}
@@ -198,6 +222,16 @@ export function ContextMenu() {
 
         <div
           className={styles.item}
+          onClick={() => run(() => openDialog("set-tags"))}
+        >
+          <span className={styles.icon}>
+            <LabelIcon size={12} />
+          </span>
+          Edit tags…
+        </div>
+
+        <div
+          className={styles.item}
           onMouseEnter={() => setRateOpen(true)}
           onMouseLeave={() => setRateOpen(false)}
         >
@@ -243,7 +277,13 @@ export function ContextMenu() {
           )}
         </div>
 
-        <div className={styles.item} onClick={() => void chooseLocation()}>
+        <div
+          className={styles.item}
+          onClick={() => {
+            close();
+            openDialog("set-location");
+          }}
+        >
           <span className={styles.icon}>
             <FolderIcon size={12} />
           </span>

@@ -13,16 +13,9 @@
   /* Web table rows are 25px (the desktop's are 23px). */
   --row-height: 25px;
 
-  /* Table row hover (web design/README.md; the desktop table has no hover). */
-  --bg-row-hover: #1a2026;
-
-  /* Sidebar disk card. */
-  --radius-card: 6px;
-
   /* The web app bar / action strip / footer metrics (design/README.md). */
   --appbar-height: 46px;
   --footer-height: 26px;
-  --sidebar-width: 186px;
 
   /* The web 12-column grid template: Name · Size · Done · Status · S · P ·
      Down · Up · ETA · Ratio · Label · Tracker. */

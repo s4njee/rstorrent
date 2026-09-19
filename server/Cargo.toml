@@ -8,6 +8,12 @@ edition = "2021"
 name = "rstorrent-web"
 path = "src/main.rs"
 
+# The serveable half, so a host can run the web UI inside itself instead of
+# spawning this binary (the desktop app does; see `serve`).
+[lib]
+name = "rstorrent_web"
+path = "src/lib.rs"
+
 [dependencies]
 # The shared, Tauri-free rtorrent client layer (SCGI/HTTP, XML-RPC, DTOs, mock,
 # snapshot assembly, .torrent parsing).
@@ -16,7 +22,7 @@ rtorrent-core = { path = "../crates/rtorrent" }
 # --- HTTP server ---
 axum = { version = "0.8", features = ["multipart"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "compression-gzip", "set-header", "trace"] }
+tower-http = { version = "0.6", features = ["fs", "compression-gzip", "set-header", "trace", "timeout"] }
 
 # --- Async runtime ---
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "signal"] }
@@ -29,6 +35,8 @@ toml = "0.8"
 # --- Auth (password hashing; sessions land in WE5) ---
 # `std` pulls in getrandom so `OsRng` is available for per-hash salts.
 argon2 = { version = "0.5", features = ["std"] }
+# Session tokens are stored hashed (WEB-05), so a store leak is not a login.
+sha2 = "0.10"
 
 # --- Embedded SPA assets ---
 rust-embed = "8"
@@ -52,3 +60,5 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time"
 # Drives the router in-process for handler tests without binding a socket.
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+tempfile = "3"
+

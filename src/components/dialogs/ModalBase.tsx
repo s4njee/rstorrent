@@ -87,9 +87,14 @@ export function ModalBase({
         <div className={styles.header}>
           <span className={styles.title}>{title}</span>
           <span className={styles.grow} />
-          <span className={styles.close} onClick={onCancel} aria-label="Close">
+          <button
+            type="button"
+            className={styles.close}
+            onClick={onCancel}
+            aria-label="Close"
+          >
             <CloseIcon size={11} />
-          </span>
+          </button>
         </div>
         <div className={styles.body} style={noPad ? { padding: 0 } : undefined}>
           {children}

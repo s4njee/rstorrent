@@ -28,17 +28,19 @@ mod hooks;
 mod localfs;
 mod log;
 mod menu;
+mod moves;
 mod network_prefs;
 mod notifications;
 mod open_requests;
 mod poller;
 mod rss;
 mod rtorrent_rc;
+mod session;
 mod settings;
 mod state;
 mod stats;
 mod throttles;
-mod turtle;
+mod tray;
 mod watcher;
 #[cfg(target_os = "windows")]
 mod wsl;
@@ -113,6 +115,9 @@ pub fn run() {
             // Install the native menubar (forwards to the frontend via events).
             menu::setup(app)?;
 
+            // Install the system tray icon and macOS dock menu.
+            tray::setup(app)?;
+
             // Kick off the polling loops that keep the UI live.
             poller::spawn(app.handle().clone(), app_state.clone());
             // Start the RSS auto-add poller (idles cheaply if unconfigured).
@@ -124,9 +129,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::take_open_requests,
             commands::read_torrent_metadata,
+            commands::create_torrent,
             commands::add_torrent,
             commands::start,
             commands::stop,
+            commands::pause,
             commands::recheck,
             commands::force_reannounce,
             commands::add_tracker,
@@ -137,12 +144,15 @@ pub fn run() {
             commands::set_torrent_limits,
             commands::set_location,
             commands::queue_move,
+            commands::toggle_force_start,
             commands::copy_magnet,
             commands::open_destination,
             commands::ban_peer,
             commands::snub_peer,
             commands::disconnect_peer,
             commands::set_file_priority,
+            commands::set_connection_limits,
+            commands::set_super_seeding,
             commands::get_settings,
             commands::apply_settings,
             commands::set_turtle,
@@ -153,6 +163,7 @@ pub fn run() {
             commands::has_http_password,
             commands::clear_http_password,
             commands::retry_connection,
+            commands::get_snapshot,
             commands::set_detail_watch,
             commands::get_log,
             commands::get_statistics,
@@ -162,6 +173,19 @@ pub fn run() {
             commands::shutdown_daemon,
             commands::rss_fetch,
             commands::rss_download,
+            commands::rss_test,
+            commands::rss_export_seen,
+            commands::rss_import_seen,
+            commands::export_session,
+            commands::export_session_text,
+            commands::validate_session,
+            commands::import_session,
+            commands::scan_foreign,
+            commands::import_status,
+            commands::cancel_import,
+            commands::get_moves,
+            commands::cancel_move,
+            commands::retry_move,
         ])
         .build(tauri::generate_context!())
         .expect("error while building rstorrent");

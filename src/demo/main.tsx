@@ -70,7 +70,7 @@ if (screen === "smart") {
       sortColumn: "name",
       sortDir: "asc",
       filter: null,
-      activeTab: "general",
+      activeTab: "transfer",
       columns: "",
       smartFilters: [
         { id: "sf_demo", name: "Blender 4K", tracker: "tracker.blender.org" },

@@ -1,6 +1,6 @@
 /**
  * Render smoke for the web shell: proves the shell composes and renders the
- * shared components (app bar, filter sidebar, footer, disk card) without a
+ * shared chrome (top bar, action toolbar, filter sidebar, status bar) without a
  * render-time crash — e.g. a component reaching for a Tauri API in the browser.
  *
  * This is not a visual/layout check (that's the manual parity pass), and it does
@@ -35,15 +35,22 @@ beforeEach(() => {
 describe("WebApp render smoke", () => {
   it("renders the shell chrome without throwing", () => {
     const html = renderToString(<WebApp onSignOut={() => {}} />);
-    // App bar wordmark, settings control, filter sidebar, and footer all render.
-    expect(html).toContain("rtorrent");
-    expect(html).toContain('title="Status"');
+    // The shared console chrome: the mark and wordmark, rates, filter, the
+    // toolbar's verbs, the sidebar's groups, and the status bar.
+    expect(html).toContain("Blackbird");
+    expect(html).toContain('src="/blackbird.jpg"');
+    expect(html).toContain("Filter torrents");
+    expect(html).toContain("Add torrent");
+    expect(html).toContain("Force recheck");
+    expect(html).toContain("Priority ↑");
     expect(html).toContain("Status"); // sidebar status group
-    expect(html).toContain("dht:"); // footer
+    expect(html).toContain("selected ·"); // toolbar readout
   });
 
   it("shows the connecting state before the first snapshot", () => {
     const html = renderToString(<WebApp onSignOut={() => {}} />);
     expect(html).toContain("connecting to rtorrent");
+    // …and explains it in the banner above the toolbar, not just the card.
+    expect(html).toContain("Connecting to rTorrent");
   });
 });

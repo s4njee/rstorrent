@@ -21,8 +21,10 @@ export function RemoveDialog() {
   const selection = useUi((s) => s.selection);
   const torrents = useTorrents((s) => s.torrents);
   const settings = useSettings((s) => s.settings);
+  // ⇧Delete asks for the data too; plain Delete leaves the box alone.
+  const requestedDeleteData = useUi((s) => s.removeWithData);
 
-  const [deleteData, setDeleteData] = useState(false);
+  const [deleteData, setDeleteData] = useState(requestedDeleteData);
 
   const selected = torrents.filter((t) => selection.has(t.hash));
   const totalSize = selected.reduce((sum, t) => sum + t.size, 0);
@@ -85,6 +87,12 @@ export function RemoveDialog() {
             />
             Also delete downloaded files ({formatBytes(totalSize)})
           </label>
+          {deleteData && canDeleteData && selected.length > 0 && (
+            <div className={styles.message}>
+              Data will be moved to the Trash from:{" "}
+              <b>{selected.map((t) => t.savePath).join(", ")}</b>
+            </div>
+          )}
         </div>
       </div>
     </ModalBase>

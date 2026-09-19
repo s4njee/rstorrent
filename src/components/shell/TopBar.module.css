@@ -1,0 +1,194 @@
+/*
+ * Top bar (design frame 1a): 44px, chrome surface, bottom border.
+ *
+ * Left → right: logo mark, wordmark, divider, global rates, sparkline, spacer,
+ * filter field, primary Add, settings icon.
+ */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex: none;
+  height: var(--h-topbar);
+  padding: 0 var(--sp-5);
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* macOS: the window's traffic lights float over this bar, and the whole strip
+ * drags the window. The gutter keeps the mark clear of the lights. */
+.bar[data-desktop] {
+  padding-left: 78px;
+}
+
+/* The mark: blackbird's own image, cropped square and rounded to the chip
+   radius, as blackbird renders it. */
+.logo {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: block;
+  border-radius: var(--r-chip);
+  object-fit: cover;
+}
+
+.wordmark {
+  font-size: var(--fs-app-name);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.divider {
+  width: 1px;
+  height: 22px;
+  flex: none;
+  background: var(--border-default);
+}
+
+.rates {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  flex: none;
+  font-size: var(--fs-control);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rateDown,
+.rateUp {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.rateGlyph {
+  font-size: 8px;
+}
+
+.rateDown {
+  color: var(--accent);
+}
+
+.rateUp {
+  color: var(--rate-up);
+}
+
+.spark {
+  /* The handoff's sparkline box: 170×26. */
+  width: 170px;
+  height: 26px;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.spark svg {
+  display: block;
+}
+
+.sparkDown,
+.sparkUp {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.sparkDown {
+  stroke: var(--accent);
+}
+
+.sparkUp {
+  stroke: var(--rate-up);
+}
+
+.grow {
+  flex: 1;
+  min-width: var(--sp-5);
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 240px;
+  height: var(--h-button);
+  flex: none;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
+  color: var(--text-ghost);
+  font-size: var(--fs-control);
+}
+
+.filter:focus-within {
+  border-color: var(--focus-ring);
+}
+
+.filter input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  /* The field has no outline of its own; the wrapper shows the focus instead,
+     so keyboard users still see where they are. */
+  outline: none;
+  color: var(--text-body);
+  font: inherit;
+}
+.filter:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--focus-ring);
+}
+
+.filter input::placeholder {
+  color: var(--text-ghost);
+}
+
+.primary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-button);
+  flex: none;
+  padding: 0 var(--sp-5);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-control);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: var(--fs-control);
+  font-weight: 600;
+  cursor: default;
+}
+.primary:hover {
+  background: var(--accent-text);
+  border-color: var(--accent-text);
+}
+
+.iconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: var(--h-button);
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text-muted);
+  cursor: default;
+}
+.iconButton:hover {
+  color: var(--text-primary);
+  background: var(--bg-control);
+}

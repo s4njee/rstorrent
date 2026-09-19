@@ -1,11 +1,12 @@
 /**
  * Status modal (WE5-S3) — the settings-icon target. Read-only: daemon
- * version/endpoint/health and the server version, plus a Sign out button. Full
- * web preferences are v2 (there are no browser-side settings yet).
+ * version/endpoint/health and the server version, plus Sign out and the
+ * "sign out everywhere" control (WEB-05).
  */
 
 import { useEffect, useState } from "react";
 import { useTorrents } from "../store/torrents";
+import { webRevokeAllSessions } from "../ipc/web";
 
 interface Health {
   server: { version: string; displayName: string };
@@ -69,6 +70,14 @@ export function StatusDialog({
           ))}
         </div>
         <div style={S.footer}>
+          <button
+            style={S.signout}
+            onClick={() => {
+              void webRevokeAllSessions().finally(onSignOut);
+            }}
+          >
+            Sign out everywhere
+          </button>
           <button style={S.signout} onClick={onSignOut}>
             Sign out
           </button>
@@ -82,7 +91,7 @@ const S = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.5)",
+    background: "var(--scrim)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -90,10 +99,9 @@ const S = {
   } as const,
   modal: {
     width: 380,
-    background: "var(--bg-panel)",
+    background: "var(--bg-chrome)",
     border: "1px solid var(--border-mid)",
     borderRadius: 8,
-    fontFamily: "var(--font-mono)",
     color: "var(--text-body)",
   } as const,
   header: {
@@ -138,6 +146,7 @@ const S = {
     borderTop: "1px solid var(--border-black)",
     display: "flex",
     justifyContent: "flex-end",
+    gap: 8,
   } as const,
   signout: {
     padding: "5px 12px",

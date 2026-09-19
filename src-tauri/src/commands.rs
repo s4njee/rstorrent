@@ -9,15 +9,16 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, State};
 
 use crate::ipc::{
-    AddOptions, AddSource, DaemonHealth, DetailTab, FeedItem, LogLevel, Settings, Statistics,
-    TorrentMeta, Transport,
+    AddOptions, AddSource, CreateTorrentParams, CreateTorrentResult, DaemonHealth, DetailTab,
+    FeedItem, LogLevel, Settings, Statistics, TorrentMeta, Transport,
 };
 use crate::open_requests::OpenRequestState;
-use crate::rtorrent::{client::RpcClient, LoadOptions, RtorrentApi, RtorrentError};
+use crate::rtorrent::{client::RpcClient, magnet_hash, LoadOptions, RtorrentApi, RtorrentError};
 use crate::settings;
 use crate::state::AppState;
 use crate::throttles;
@@ -31,13 +32,12 @@ fn e(err: impl std::fmt::Display) -> String {
     err.to_string()
 }
 
-/// Convert the dialog options into backend load options.
-fn load_opts(opts: &AddOptions) -> LoadOptions {
+/// Convert the dialog options into backend load options, loading into
+/// `directory` (already routed through the incomplete dir and expressed in
+/// the daemon's namespace by the caller).
+fn load_opts(opts: &AddOptions, directory: String) -> LoadOptions {
     LoadOptions {
-        // The save path may have come from a native picker, so it needs to be
-        // expressed in the daemon's namespace before it crosses the wire.
-        directory: crate::localfs::to_daemon_path(&opts.save_path)
-            .unwrap_or_else(|_| opts.save_path.clone()),
+        directory,
         label: opts.label.clone(),
         start: opts.start,
         top_of_queue: opts.top_of_queue,
@@ -45,9 +45,162 @@ fn load_opts(opts: &AddOptions) -> LoadOptions {
     }
 }
 
+/// Record a routed download's final directory (`d.custom=final_dir`, V3-14)
+/// so the completion move knows where home is. Best-effort like the other
+/// add metadata: callers log a warning and continue on failure.
+pub(crate) async fn persist_final_dir(
+    backend: &dyn RtorrentApi,
+    hash: &str,
+    final_dir: Option<&str>,
+) -> Result<(), String> {
+    let Some(final_dir) = final_dir.filter(|d| !d.trim().is_empty()) else {
+        return Ok(());
+    };
+    backend
+        .set_custom_metadata(hash, &[(rtorrent_core::complete::FINAL_DIR_KEY, final_dir)])
+        .await
+        .map_err(e)
+}
+
+/// Persist provenance in rtorrent's session-backed custom namespace. Metadata
+/// failure must not make a successful add look like a failed add, so callers
+/// log it as a warning and continue.
+pub(crate) async fn persist_add_metadata(
+    backend: &dyn RtorrentApi,
+    hash: &str,
+    added_by: &str,
+    source_path: &str,
+) -> Result<(), String> {
+    let added_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(e)?
+        .as_secs()
+        .to_string();
+    backend
+        .set_custom_metadata(
+            hash,
+            &[
+                ("added_by", added_by),
+                ("source_path", source_path),
+                ("added_at", &added_at),
+            ],
+        )
+        .await
+        .map_err(e)
+}
+
 #[tauri::command]
 pub fn read_torrent_metadata(path: String) -> Result<TorrentMeta, String> {
     torrent_file::read_metadata(&path)
+}
+
+#[tauri::command]
+pub async fn create_torrent(
+    app: AppHandle,
+    state: St<'_>,
+    params: CreateTorrentParams,
+) -> Result<CreateTorrentResult, String> {
+    let resolved_src = crate::localfs::resolve(&params.source_path)?;
+    if !resolved_src.exists() {
+        return Err(format!(
+            "source path does not exist: {}",
+            params.source_path
+        ));
+    }
+
+    let opts = rtorrent_core::types::CreateTorrentOptions {
+        source_path: resolved_src.clone(),
+        piece_length: params.piece_length,
+        trackers: params.trackers,
+        is_private: params.is_private,
+        comment: params.comment,
+        source: params.source,
+        created_by: Some("rstorrent".into()),
+    };
+
+    let (torrent, bytes) = rtorrent_core::torrent_file::create_torrent(opts)?;
+
+    let output_path = if let Some(ref out) = params.output_path {
+        if !out.trim().is_empty() {
+            let resolved_out = crate::localfs::resolve(out)?;
+            if let Some(parent) = resolved_out.parent() {
+                if !parent.as_os_str().is_empty() && !parent.exists() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+            }
+            std::fs::write(&resolved_out, &bytes)
+                .map_err(|e| format!("could not write .torrent file: {e}"))?;
+            Some(out.clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let name = torrent.name.clone();
+    let info_hash = torrent.info_hash().to_uppercase();
+    let total_size = torrent.length;
+    let piece_length = torrent.piece_length;
+    let piece_count = torrent.pieces.len() as i64;
+    let is_private = torrent.is_private();
+
+    if params.start_seeding {
+        let parent_dir = resolved_src
+            .parent()
+            .unwrap_or(&resolved_src)
+            .to_string_lossy()
+            .into_owned();
+        let daemon_dir = crate::localfs::to_daemon_path(&parent_dir)?;
+
+        let load_opts = rtorrent_core::rtorrent::LoadOptions {
+            start: true,
+            directory: daemon_dir,
+            label: String::new(),
+            top_of_queue: false,
+            unselected_indexes: Vec::new(),
+        };
+
+        state
+            .backend()
+            .load_raw(bytes, load_opts)
+            .await
+            .map_err(e)?;
+        if let Err(err) =
+            persist_add_metadata(&*state.backend(), &info_hash, "file", &params.source_path).await
+        {
+            state.log(
+                &app,
+                LogLevel::Warn,
+                format!("could not persist add metadata: {err}"),
+                Some(info_hash.clone()),
+            );
+        }
+        state.log(
+            &app,
+            LogLevel::Info,
+            format!("created torrent '{name}' and started seeding"),
+            Some(info_hash.clone()),
+        );
+        state.repoll.notify_one();
+    } else {
+        state.log(
+            &app,
+            LogLevel::Info,
+            format!("created torrent '{name}' ({info_hash})"),
+            Some(info_hash.clone()),
+        );
+    }
+
+    Ok(CreateTorrentResult {
+        name,
+        info_hash,
+        total_size,
+        piece_length,
+        piece_count,
+        output_path,
+        is_private,
+    })
 }
 
 /// Drain file/deep-link requests retained while the frontend was loading.
@@ -65,11 +218,34 @@ pub async fn add_torrent(
     opts: AddOptions,
 ) -> Result<(), String> {
     let backend = state.backend();
-    let load = load_opts(&opts);
+    // Route through the incomplete dir when configured (V3-14); the final
+    // directory is recorded so the completion move knows where home is.
+    let (directory, final_dir) = settings::route_new_download(&state.settings(), &opts.save_path);
+    let load = load_opts(&opts, directory);
     match source {
         AddSource::File { path } => {
+            let meta = torrent_file::read_metadata(&path).map_err(e)?;
             let bytes = std::fs::read(&path).map_err(e)?;
             backend.load_raw(bytes, load).await.map_err(e)?;
+            if let Err(err) =
+                persist_final_dir(&*backend, &meta.info_hash, final_dir.as_deref()).await
+            {
+                state.log(
+                    &app,
+                    LogLevel::Warn,
+                    format!("could not persist final directory: {err}"),
+                    Some(meta.info_hash.clone()),
+                );
+            }
+            if let Err(err) = persist_add_metadata(&*backend, &meta.info_hash, "file", &path).await
+            {
+                state.log(
+                    &app,
+                    LogLevel::Warn,
+                    format!("could not persist add metadata: {err}"),
+                    Some(meta.info_hash.clone()),
+                );
+            }
             state.log(
                 &app,
                 LogLevel::Info,
@@ -98,9 +274,95 @@ pub async fn add_torrent(
         }
         AddSource::Magnet { uri } => {
             backend.load_magnet(&uri, load).await.map_err(e)?;
+            if let Some(hash) = magnet_hash(&uri) {
+                if let Err(err) = persist_final_dir(&*backend, &hash, final_dir.as_deref()).await {
+                    state.log(
+                        &app,
+                        LogLevel::Warn,
+                        format!("could not persist final directory: {err}"),
+                        Some(hash.clone()),
+                    );
+                }
+                if let Err(err) = persist_add_metadata(&*backend, &hash, "magnet", &uri).await {
+                    state.log(
+                        &app,
+                        LogLevel::Warn,
+                        format!("could not persist add metadata: {err}"),
+                        Some(hash),
+                    );
+                }
+            }
             state.log(&app, LogLevel::Info, "added magnet", None);
         }
     }
+    state.repoll.notify_one();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_connection_limits(
+    app: AppHandle,
+    state: St<'_>,
+    hash: String,
+    peers_max: i64,
+    peers_min: i64,
+    uploads_max: i64,
+) -> Result<(), String> {
+    if peers_max < 0 || peers_min < 0 || uploads_max < 0 {
+        return Err("connection limits must be zero or greater".into());
+    }
+    state
+        .backend()
+        .set_connection_limits(&hash, peers_max, peers_min, uploads_max)
+        .await
+        .map_err(e)?;
+    // Hand-set caps opt out of bandwidth rules too (V3-18 precedence).
+    let _ = state
+        .backend()
+        .set_custom_metadata(&hash, &[(rtorrent_core::bandwidth::RULE_KEY, "")])
+        .await;
+    state.log(
+        &app,
+        LogLevel::Info,
+        "updated per-torrent connection limits",
+        Some(hash),
+    );
+    state.repoll.notify_one();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_super_seeding(
+    app: AppHandle,
+    state: St<'_>,
+    hash: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let rows = state.backend().list_snapshot().await.map_err(e)?;
+    let Some(torrent) = rows
+        .into_iter()
+        .find(|t| t.hash.eq_ignore_ascii_case(&hash))
+    else {
+        return Err("torrent not found".into());
+    };
+    if !torrent.complete {
+        return Err("super-seeding is only available for complete torrents".into());
+    }
+    state
+        .backend()
+        .set_super_seeding(&hash, enabled)
+        .await
+        .map_err(e)?;
+    state.log(
+        &app,
+        LogLevel::Info,
+        if enabled {
+            "enabled super-seeding"
+        } else {
+            "disabled super-seeding"
+        },
+        Some(hash),
+    );
     state.repoll.notify_one();
     Ok(())
 }
@@ -121,6 +383,19 @@ pub async fn start(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Result
 #[tauri::command]
 pub async fn stop(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Result<(), String> {
     state.backend().stop(&hashes).await.map_err(e)?;
+    state.log(
+        &app,
+        LogLevel::Info,
+        format!("paused {} torrent(s)", hashes.len()),
+        None,
+    );
+    state.repoll.notify_one();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn pause(app: AppHandle, state: St<'_>, hashes: Vec<String>) -> Result<(), String> {
+    state.backend().pause(&hashes).await.map_err(e)?;
     state.log(
         &app,
         LogLevel::Info,
@@ -378,6 +653,12 @@ pub async fn set_torrent_limits(
             format!("cleared rate limit for {} torrent(s)", hashes.len()),
             None,
         );
+        // Hand-cleared limits opt out of bandwidth rules too (V3-18).
+        for h in &hashes {
+            let _ = backend
+                .set_custom_metadata(h, &[(rtorrent_core::bandwidth::RULE_KEY, "")])
+                .await;
+        }
         state.repoll.notify_one();
         return Ok(());
     }
@@ -450,6 +731,13 @@ pub async fn set_torrent_limits(
             return Err(e(error));
         }
     }
+    // A hand-set limit is a torrent override (V3-18 precedence): drop any
+    // bandwidth-rule marker so the rule engine keeps its hands off.
+    for h in &hashes {
+        let _ = backend
+            .set_custom_metadata(h, &[(rtorrent_core::bandwidth::RULE_KEY, "")])
+            .await;
+    }
     state.log(
         &app,
         LogLevel::Info,
@@ -469,23 +757,90 @@ pub async fn set_location(
     state: St<'_>,
     hash: String,
     path: String,
+    move_data: Option<bool>,
 ) -> Result<(), String> {
-    // rtorrent requires the torrent be closed to move its directory; stop →
-    // set → start restores the prior running state. Data is NOT moved (v1).
     let path = crate::localfs::to_daemon_path(&path)?;
     let backend = state.backend();
+    let local = settings::is_localhost(&state.settings().transport);
+    let should_move = move_data.unwrap_or(true) && local;
+
+    // Check torrent status to preserve active/stopped state and obtain base path.
+    let snapshot = backend.list_snapshot().await.map_err(e)?;
+    let torrent = snapshot.iter().find(|t| t.hash.eq_ignore_ascii_case(&hash));
+    let was_active = torrent.map(|t| t.is_active).unwrap_or(false);
+    let old_base_path = torrent.map(|t| t.base_path.clone()).unwrap_or_default();
+
     let one = std::slice::from_ref(&hash);
-    backend.stop(one).await.map_err(e)?;
+    if was_active {
+        backend.stop(one).await.map_err(e)?;
+    }
+
+    if should_move && !old_base_path.is_empty() {
+        if let Err(err) = crate::localfs::move_torrent_data(&old_base_path, &path) {
+            if was_active {
+                let _ = backend.start(one).await;
+            }
+            return Err(e(err));
+        }
+    }
+
     backend.set_directory(&hash, &path).await.map_err(e)?;
-    backend.start(one).await.map_err(e)?;
-    state.log(
-        &app,
-        LogLevel::Warn,
-        format!("set location to {path} (files not moved)"),
-        Some(hash),
-    );
+
+    // A manual move wins over automation: drop any recorded final_dir so a
+    // later completion does not drag the torrent back (V3-14).
+    let _ = backend
+        .set_custom_metadata(&hash, &[(rtorrent_core::complete::FINAL_DIR_KEY, "")])
+        .await;
+
+    if was_active {
+        backend.start(one).await.map_err(e)?;
+    }
+
+    let (level, msg) = if should_move {
+        (
+            LogLevel::Info,
+            format!("set location to {path} (moved data)"),
+        )
+    } else {
+        (
+            LogLevel::Info,
+            format!("set location to {path} (files not moved)"),
+        )
+    };
+    state.log(&app, level, msg, Some(hash));
     state.repoll.notify_one();
     Ok(())
+}
+
+/// Live move-on-complete statuses (V3-14) for the status pill / moves dialog.
+#[tauri::command]
+pub fn get_moves(state: St<'_>) -> Vec<rtorrent_core::mover::MoveStatus> {
+    state.moves.lock().unwrap().snapshot()
+}
+
+/// Cancel a running move by op id (or torrent hash). The torrent resumes in
+/// place; the journal keeps a terminal Cancelled entry until retried.
+#[tauri::command]
+pub fn cancel_move(state: St<'_>, id: String) -> bool {
+    state.moves.lock().unwrap().cancel(&id)
+}
+
+/// Drop a Failed/Cancelled entry so the next tick re-plans from daemon
+/// truth. Returns false when there is nothing retryable for the hash.
+#[tauri::command]
+pub fn retry_move(state: St<'_>, hash: String) -> bool {
+    let retried = {
+        let mut moves = state.moves.lock().unwrap();
+        let retried = moves.retry(&hash);
+        if retried {
+            let _ = moves.save();
+        }
+        retried
+    };
+    if retried {
+        state.repoll.notify_one();
+    }
+    retried
 }
 
 #[tauri::command]
@@ -495,23 +850,72 @@ pub async fn queue_move(
     hashes: Vec<String>,
     direction: String,
 ) -> Result<(), String> {
-    // rtorrent has no true queue order; we nudge d.priority within 0..=3.
+    // rtorrent has no true queue order: reorder swaps whole (priority,
+    // queue_pos) pairs with the neighbour, so a torrent takes exactly the
+    // rank above/below it (QUE-02). Top/bottom pin the daemon's max/min band
+    // with an extreme sequence value.
+    let dir = match direction.as_str() {
+        "top" => rtorrent_core::queue::MoveDir::Top,
+        "up" => rtorrent_core::queue::MoveDir::Up,
+        "down" => rtorrent_core::queue::MoveDir::Down,
+        "bottom" => rtorrent_core::queue::MoveDir::Bottom,
+        _ => return Err("direction must be top, up, down or bottom".into()),
+    };
     let backend = state.backend();
     let rows = backend.list_snapshot().await.map_err(e)?;
-    for h in &hashes {
-        if let Some(t) = rows.iter().find(|t| &t.hash == h) {
-            let next = if direction == "up" {
-                (t.priority + 1).min(3)
-            } else {
-                (t.priority - 1).max(0)
-            };
-            backend.set_priority(h, next).await.map_err(e)?;
-        }
+    let plan = rtorrent_core::queue::plan_reorder(&rows, &hashes, dir);
+    for reorder in &plan {
+        backend
+            .set_priority(&reorder.hash, reorder.priority)
+            .await
+            .map_err(e)?;
+        backend
+            .set_custom_metadata(
+                &reorder.hash,
+                &[(
+                    rtorrent_core::queue::POS_KEY,
+                    &rtorrent_core::queue::format_pos(reorder.pos),
+                )],
+            )
+            .await
+            .map_err(e)?;
     }
     state.log(
         &app,
         LogLevel::Info,
-        format!("reordered {} torrent(s)", hashes.len()),
+        format!("reordered {} torrent(s)", plan.len()),
+        None,
+    );
+    state.repoll.notify_one();
+    Ok(())
+}
+
+/// Toggle force-start (V3-17 / QUE-01) on the selection: mixed selections
+/// switch on, uniformly forced selections switch off. Forced torrents are
+/// exempt from the client queue scheduler.
+#[tauri::command]
+pub async fn toggle_force_start(
+    app: AppHandle,
+    state: St<'_>,
+    hashes: Vec<String>,
+) -> Result<(), String> {
+    let backend = state.backend();
+    let rows = backend.list_snapshot().await.map_err(e)?;
+    let value = rtorrent_core::queue::force_toggle_value(&rows, &hashes);
+    for h in &hashes {
+        backend
+            .set_custom_metadata(h, &[(rtorrent_core::queue::FORCE_KEY, value)])
+            .await
+            .map_err(e)?;
+    }
+    state.log(
+        &app,
+        LogLevel::Info,
+        if value == "1" {
+            format!("force-started {} torrent(s)", hashes.len())
+        } else {
+            format!("force-start cleared on {} torrent(s)", hashes.len())
+        },
         None,
     );
     state.repoll.notify_one();
@@ -633,7 +1037,35 @@ pub async fn apply_settings(
     // The save path is the daemon's, so a picker result has to be translated;
     // the watch folder is ours and stays a native path.
     next.default_save_path = crate::localfs::to_daemon_path(&next.default_save_path)?;
+    if !next.incomplete_dir.trim().is_empty() {
+        next.incomplete_dir = crate::localfs::to_daemon_path(&next.incomplete_dir)?;
+    }
+    let old_rules = state.settings().bandwidth_rules.clone();
     let saved = state.update_settings(next.clone());
+    // Reprofiled bandwidth rules (V3-18) must re-adopt at the new rates: the
+    // steady tick would otherwise keep the stale definition. Clearing the
+    // markers drops affected torrents back to clean, and the next tick
+    // adopts them fresh.
+    let changed = rtorrent_core::bandwidth::changed_rule_ids(&old_rules, &saved.bandwidth_rules);
+    if !changed.is_empty() {
+        let backend = state.backend();
+        let app = app.clone();
+        let state = state.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            if let Ok(rows) = backend.list_snapshot().await {
+                for t in rows
+                    .iter()
+                    .filter(|t| changed.iter().any(|id| id == &t.throttle_rule))
+                {
+                    let _ = backend
+                        .set_custom_metadata(&t.hash, &[(rtorrent_core::bandwidth::RULE_KEY, "")])
+                        .await;
+                }
+            }
+            state.log(&app, LogLevel::Info, "bandwidth rules updated", None);
+            state.repoll.notify_one();
+        });
+    }
     // Push daemon-affecting changes to rtorrent (best-effort; some may need a
     // restart to take effect on older builds).
     let backend = state.backend();
@@ -808,6 +1240,11 @@ pub fn retry_connection(state: St<'_>) {
 }
 
 #[tauri::command]
+pub fn get_snapshot(state: St<'_>) -> Option<crate::ipc::Snapshot> {
+    state.snapshot()
+}
+
+#[tauri::command]
 pub fn set_detail_watch(state: St<'_>, hash: Option<String>, tab: Option<DetailTab>) {
     {
         let mut w = state.detail_watch.lock().unwrap();
@@ -872,10 +1309,14 @@ pub async fn start_daemon(app: AppHandle, state: St<'_>) -> Result<String, Strin
         return Err("start is only available for a local daemon".into());
     }
     let transport = state.settings().transport.clone();
-    let msg = tokio::task::spawn_blocking(move || crate::daemon_start::start(transport))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e)?;
+    // `AppHandle` is `Send + 'static`, and `start` needs it to find the runtime
+    // this build ships (Resources/binaries/rtorrent).
+    let app_for_start = app.clone();
+    let started =
+        tokio::task::spawn_blocking(move || crate::daemon_start::start(&app_for_start, transport))
+            .await
+            .map_err(|e| e.to_string())?;
+    let msg = started?;
     state.log(&app, LogLevel::Info, msg.clone(), None);
     state.repoll.notify_one();
     Ok(msg)
@@ -896,6 +1337,138 @@ pub async fn rss_fetch(url: String) -> Result<Vec<FeedItem>, String> {
     crate::rss::fetch(&url).await
 }
 
+/// Test one rule against a live feed (V3-23): every item with its
+/// clause-by-clause verdict, so the preview explains each match and miss.
+#[tauri::command]
+pub async fn rss_test(
+    rule: rtorrent_core::rss::Rule,
+    url: String,
+) -> Result<Vec<crate::rss::RssTestRow>, String> {
+    crate::rss::test_rule(&rule, &url).await
+}
+
+/// Export the seen-set as JSON for backup or another machine (V3-23).
+#[tauri::command]
+pub fn rss_export_seen(state: St<'_>) -> String {
+    crate::rss::export_seen(state.inner())
+}
+
+/// Import guids into the seen-set; returns how many were new (V3-23).
+#[tauri::command]
+pub fn rss_import_seen(state: St<'_>, json: String) -> usize {
+    let added = crate::rss::import_seen(state.inner(), &json);
+    state.repoll.notify_one();
+    added
+}
+
+/// Build the manifest and return its text (V3-22 / LIB-09): hashes,
+/// re-addable sources, trackers, labels/tags, paths, priorities, limits and
+/// client metadata. Never credentials. The dialog saves the text (native
+/// save dialog on desktop, blob download on web).
+#[tauri::command]
+pub async fn export_session_text(app: AppHandle, state: St<'_>) -> Result<String, String> {
+    crate::session::export_text(&app, &state).await
+}
+
+/// Export the session manifest to a file (V3-22 / LIB-09): hashes,
+/// re-addable sources, trackers, labels/tags, paths, priorities, limits and
+/// client metadata. Never credentials.
+#[tauri::command]
+pub async fn export_session(
+    app: AppHandle,
+    state: St<'_>,
+    path: String,
+) -> Result<rtorrent_core::session::ExportReport, String> {
+    crate::session::export_to(&app, &state, std::path::Path::new(&path)).await
+}
+
+/// Dry-run validation + restore preview for a manifest (V3-22). Takes either
+/// a file `path` (desktop native picker) or `manifest_text` (web upload /
+/// paste / foreign-scan result) — exactly one.
+#[tauri::command]
+pub async fn validate_session(
+    state: St<'_>,
+    path: Option<String>,
+    selected: Option<Vec<String>>,
+    remap_from: Option<String>,
+    remap_to: Option<String>,
+    manifest_text: Option<String>,
+) -> Result<rtorrent_core::session::ValidationDto, String> {
+    let remaps = match (remap_from, remap_to) {
+        (Some(from), Some(to)) if !from.trim().is_empty() => {
+            vec![(from, to)]
+        }
+        _ => Vec::new(),
+    };
+    let selected = selected.map(|hashes| hashes.into_iter().collect());
+    crate::session::preview(
+        &state,
+        path.as_deref(),
+        manifest_text.as_deref(),
+        selected,
+        remaps,
+    )
+    .await
+}
+
+/// Import a manifest as a detached, journalised job (V3-22): torrents are
+/// added stopped, rechecked and resumed. Takes either a file `path` or
+/// `manifest_text`. Returns immediately; poll `import_status` for progress.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri maps one param per invoke field.
+pub fn import_session(
+    app: AppHandle,
+    state: St<'_>,
+    path: Option<String>,
+    selected: Option<Vec<String>>,
+    remap_from: Option<String>,
+    remap_to: Option<String>,
+    resume: Option<bool>,
+    manifest_text: Option<String>,
+) -> Result<(), String> {
+    let remaps = match (remap_from, remap_to) {
+        (Some(from), Some(to)) if !from.trim().is_empty() => {
+            vec![(from, to)]
+        }
+        _ => Vec::new(),
+    };
+    let selected = selected.map(|hashes| hashes.into_iter().collect());
+    crate::session::start_import(
+        &app,
+        &state,
+        path.as_deref(),
+        manifest_text.as_deref(),
+        selected,
+        remaps,
+        resume.unwrap_or(false),
+    )
+}
+
+/// Scan qBittorrent (`BT_backup`) or Transmission (config dir / `resume/`)
+/// resume data into a portable manifest (V3-22 / LIB-10). Read-only; the
+/// returned `manifest_text` flows through the normal validate → import path.
+#[tauri::command]
+pub fn scan_foreign(
+    client: String,
+    dir: String,
+) -> Result<rtorrent_core::foreign::ScanReport, String> {
+    crate::session::scan_foreign(&client, &dir)
+}
+
+/// Live import status for the dialog to poll.
+#[tauri::command]
+pub fn import_status(state: St<'_>) -> crate::session::ImportStatus {
+    state.import_status.lock().unwrap().clone()
+}
+
+/// Cancel a running import after the current torrent finishes its step.
+#[tauri::command]
+pub fn cancel_import(state: St<'_>) {
+    state
+        .import_cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Manually add one feed item (the RSS preview's Download button) (B11).
 #[tauri::command]
 pub async fn rss_download(
@@ -911,7 +1484,7 @@ pub async fn rss_download(
     } else {
         save_path
     };
-    let directory = crate::localfs::to_daemon_path(&resolved).unwrap_or(resolved);
+    let (directory, final_dir) = settings::route_new_download(&settings, &resolved);
     let opts = LoadOptions {
         directory,
         label,
@@ -919,7 +1492,26 @@ pub async fn rss_download(
         top_of_queue: false,
         unselected_indexes: vec![],
     };
-    state.backend().load_magnet(&link, opts).await.map_err(e)?;
+    let backend = state.backend();
+    backend.load_magnet(&link, opts).await.map_err(e)?;
+    if let Some(hash) = magnet_hash(&link) {
+        if let Err(err) = persist_final_dir(&*backend, &hash, final_dir.as_deref()).await {
+            state.log(
+                &app,
+                LogLevel::Warn,
+                format!("could not persist final directory: {err}"),
+                Some(hash.clone()),
+            );
+        }
+        if let Err(err) = persist_add_metadata(&*backend, &hash, "rss", &link).await {
+            state.log(
+                &app,
+                LogLevel::Warn,
+                format!("could not persist RSS add metadata: {err}"),
+                Some(hash),
+            );
+        }
+    }
     state.log(&app, LogLevel::Info, "added from RSS", None);
     state.repoll.notify_one();
     Ok(())

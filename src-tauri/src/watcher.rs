@@ -106,14 +106,15 @@ async fn process_dir(app: &AppHandle, state: &Arc<AppState>, dir: &Path, folder:
     let backend = state.backend();
 
     // Resolve the save path once per scan: the folder override, else the label
-    // default (C11), else the global default. Translate to the daemon namespace
-    // (a WSL daemon can't open a Windows path).
+    // default (C11), else the global default. Route through the incomplete
+    // dir when configured (V3-14). Paths are translated to the daemon
+    // namespace (a WSL daemon can't open a Windows path).
     let resolved = if folder.save_path.is_empty() {
         settings::save_path_for_label(&settings, &folder.label)
     } else {
         folder.save_path.clone()
     };
-    let directory = crate::localfs::to_daemon_path(&resolved).unwrap_or(resolved);
+    let (directory, final_dir) = settings::route_new_download(&settings, &resolved);
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -124,9 +125,9 @@ async fn process_dir(app: &AppHandle, state: &Arc<AppState>, dir: &Path, folder:
         let path_str = path.to_string_lossy().to_string();
 
         // Validate before loading; a partial write just fails and is retried.
-        if torrent_file::read_metadata(&path_str).is_err() {
+        let Ok(meta) = torrent_file::read_metadata(&path_str) else {
             continue;
-        }
+        };
         let Ok(bytes) = std::fs::read(&path) else {
             continue;
         };
@@ -140,6 +141,35 @@ async fn process_dir(app: &AppHandle, state: &Arc<AppState>, dir: &Path, folder:
         };
         match backend.load_raw(bytes, opts).await {
             Ok(_) => {
+                if let Err(err) = crate::commands::persist_add_metadata(
+                    &*backend,
+                    &meta.info_hash,
+                    "watch",
+                    &path_str,
+                )
+                .await
+                {
+                    state.log(
+                        app,
+                        LogLevel::Warn,
+                        format!("watch: could not persist add metadata: {err}"),
+                        Some(meta.info_hash.clone()),
+                    );
+                }
+                if let Err(err) = crate::commands::persist_final_dir(
+                    &*backend,
+                    &meta.info_hash,
+                    final_dir.as_deref(),
+                )
+                .await
+                {
+                    state.log(
+                        app,
+                        LogLevel::Warn,
+                        format!("watch: could not persist final directory: {err}"),
+                        Some(meta.info_hash.clone()),
+                    );
+                }
                 // Rename so it isn't picked up again.
                 let loaded = PathBuf::from(format!("{path_str}.loaded"));
                 let _ = std::fs::rename(&path, &loaded);

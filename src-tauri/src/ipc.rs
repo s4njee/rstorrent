@@ -17,9 +17,9 @@ use serde::{Deserialize, Serialize};
 // add/torrent metadata, transport, daemon health). Single source of truth in the
 // crate; both hosts serialize these exact structs.
 pub use rtorrent_core::types::{
-    AddOptions, AddSource, ConnPhase, ConnState, DaemonHealth, DetailPayload, DetailTab, FileNode,
-    GlobalStats, LogEntry, LogLevel, PeerRow, PieceInfo, Snapshot, Status, TorrentDto, TorrentMeta,
-    TrackerRow, Transport,
+    AddOptions, AddSource, ConnPhase, ConnState, CreateTorrentParams, CreateTorrentResult,
+    DaemonHealth, DetailPayload, DetailTab, FileNode, GlobalStats, LogEntry, LogLevel, PeerRow,
+    PieceInfo, Snapshot, SnapshotDelta, Status, TorrentDto, TorrentMeta, TrackerRow, Transport,
 };
 
 /// A saved, named daemon connection (B10). The active connection is whichever
@@ -123,9 +123,36 @@ pub struct Settings {
     /// (C9). 0 = unlimited (no queue management).
     #[serde(default)]
     pub max_active_downloads: i64,
+    /// Keep at most this many finished torrents seeding (V3-17 / QUE-01).
+    /// 0 = unlimited.
+    #[serde(default)]
+    pub max_active_uploads: i64,
+    /// Keep at most this many torrents active in total (V3-17 / QUE-01).
+    /// 0 = unlimited.
+    #[serde(default)]
+    pub max_active_torrents: i64,
+    /// Torrents slower than this (down + up, KiB/s) are left alone entirely:
+    /// never held back, never counted (V3-17 / QUE-01). 0 = disabled.
+    #[serde(default)]
+    pub queue_slow_limit_kbs: i64,
     /// Per-label default save paths (C11).
     #[serde(default)]
     pub label_defaults: Vec<LabelDefault>,
+    /// "Keep incomplete torrents in" (V3-14 / LIB-08): new downloads land
+    /// here and move home on completion. Empty = disabled.
+    #[serde(default)]
+    pub incomplete_dir: String,
+    /// Destination rules for completed data, by tag or label (V3-14 /
+    /// LIB-07). Evaluated before `label_defaults`; empty = no rule moves.
+    #[serde(default)]
+    pub move_rules: Vec<rtorrent_core::complete::MoveRule>,
+    /// Named bandwidth profiles applied by tag/label (V3-18 / QUE-04).
+    /// First matching tag wins, then label. Empty = no rule shaping.
+    #[serde(default)]
+    pub bandwidth_rules: Vec<rtorrent_core::bandwidth::BandwidthRule>,
+    /// What to do when a move destination is already taken (V3-14).
+    #[serde(default)]
+    pub collision_policy: rtorrent_core::complete::CollisionPolicy,
     /// Watched folders for auto-add (C12). Supersedes [`Self::watch_folder`],
     /// which is migrated into this list on load.
     #[serde(default)]
@@ -151,6 +178,10 @@ pub struct Settings {
     /// Optional daily schedule that auto-engages turtle mode (B14).
     #[serde(default)]
     pub turtle_schedule: TurtleSchedule,
+    /// Weekly scheduler grid (V3-18 / QUE-05). Non-empty wins over the
+    /// legacy single window; empty falls back to it without rewriting it.
+    #[serde(default)]
+    pub schedule: rtorrent_core::schedule::Schedule,
 
     /// Saved daemon connections (B10). The active one is mirrored in `transport`.
     #[serde(default)]
@@ -260,56 +291,14 @@ pub struct TurtleSchedule {
     pub days: Vec<u8>,
 }
 
-/// An RSS/Atom feed polled for auto-add (B11).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RssFeed {
-    pub id: String,
-    pub name: String,
-    pub url: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-}
-
-/// An auto-download rule: items whose title matches are added (B11).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RssRule {
-    pub id: String,
-    pub name: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Feed id this rule applies to; empty = every feed.
-    #[serde(default)]
-    pub feed_id: String,
-    /// Whitespace-separated tokens that must *all* appear in the title
-    /// (case-insensitive). Empty matches everything.
-    #[serde(default)]
-    pub must_contain: String,
-    /// Whitespace-separated tokens; if *any* appears, the item is skipped.
-    #[serde(default)]
-    pub must_not_contain: String,
-    #[serde(default)]
-    pub label: String,
-    #[serde(default)]
-    pub save_path: String,
-}
-
+/// An RSS/Atom feed polled for auto-add (B11). Shape lives in the shared
+/// core so every shell plans against the same document.
+pub use rtorrent_core::rss::Feed as RssFeed;
 /// One parsed feed entry (B11), shown in the RSS preview and matched by rules.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeedItem {
-    pub title: String,
-    /// The download URL: a magnet link or a `.torrent` URL (enclosure preferred).
-    pub link: String,
-    /// Stable identity for dedup (`guid`/`id`, or the link as a fallback).
-    pub guid: String,
-    pub pub_date: String,
-}
-
-fn default_true() -> bool {
-    true
-}
+pub use rtorrent_core::rss::FeedItem;
+/// An auto-download rule: items whose title matches are added (B11, extended
+/// by V3-23). See [`rtorrent_core::rss::Rule`].
+pub use rtorrent_core::rss::Rule as RssRule;
 
 fn default_rss_poll_minutes() -> i64 {
     15

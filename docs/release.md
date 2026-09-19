@@ -4,11 +4,18 @@
 
 ```sh
 npm install
+tools/build-rtorrent-macos.sh   # stage the bundled rtorrent + its dylibs
 npm run tauri build
 ```
 
-This runs `vite build` (frontend → `dist/`) then compiles the Rust binary in
-release mode and bundles it. Outputs land in
+The first macOS step builds the daemon the app ships and stages it in
+`src-tauri/binaries/rtorrent/`, which `tauri.conf.json` copies into the `.app`'s
+Resources. Skip it and the app still builds, but it falls back to a system
+rtorrent instead of the bundled 0.15.7 (see [rtorrent-setup.md](rtorrent-setup.md)).
+Builds are cached per tag; `RTORRENT_FORCE_REBUILD=1` rebuilds from scratch.
+
+`tauri build` then runs `vite build` (frontend → `dist/`), compiles the Rust
+binary in release mode, and bundles it. Outputs land in
 `src-tauri/target/release/bundle/`:
 
 - `macos/rstorrent.app` — the application bundle
@@ -48,6 +55,12 @@ notarized build you need an Apple Developer ID certificate. With one installed:
 
 See the Tauri macOS distribution guide for the current variable names and the
 hardened-runtime entitlements if you add capabilities that require them.
+
+The bundled rtorrent and its dylibs are ad-hoc signed by
+`tools/build-rtorrent-macos.sh`. When signing with a real identity, make sure
+Tauri re-signs them too (they are nested code under `Contents/Resources`); under
+the hardened runtime, loading them may additionally need the
+`com.apple.security.cs.disable-library-validation` entitlement.
 
 None of this is required for local development or the mock/live testing flows.
 

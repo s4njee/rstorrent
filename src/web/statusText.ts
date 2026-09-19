@@ -11,22 +11,44 @@
 
 import type { Status } from "../ipc/types";
 
-/** Keywords that mark a storage/disk failure in rtorrent's `d.message`. */
-const DISK_HINTS = [
-  "storage",
-  "disk",
-  "no space",
-  "permission",
-  "directory",
-  "file",
-];
-
-/** The Status-column text for a torrent. */
-export function webStatusLabel(status: Status, statusMsg: string): string {
+/** The Status-column text for a torrent — D19 taxonomy aware.
+ *  Prefers the classified `errorKind` when present; falls back to the
+ *  pre-D19 substring heuristic for older payloads / demo fixtures. */
+export function webStatusLabel(
+  status: Status,
+  statusMsg: string,
+  errorKind?: string,
+): string {
   if (status !== "error") return status;
+  if (errorKind) {
+    switch (errorKind) {
+      case "unregistered":
+        return "unregistered";
+      case "tracker_timeout":
+        return "timeout";
+      case "tracker_error":
+        return "trk error";
+      case "missing_files":
+        return "missing files";
+      case "no_space":
+        return "no space";
+      case "permission":
+        return "permission";
+      case "disk_error":
+        return "disk error";
+      default:
+        return "error";
+    }
+  }
   const msg = statusMsg.toLowerCase();
+  const DISK_HINTS = [
+    "storage",
+    "disk",
+    "no space",
+    "permission",
+    "directory",
+    "file",
+  ];
   if (DISK_HINTS.some((h) => msg.includes(h))) return "disk error";
-  // Tracker problems are by far the common case; treat them as the default
-  // error kind unless the message clearly points at storage.
   return "trk error";
 }

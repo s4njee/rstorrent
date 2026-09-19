@@ -17,31 +17,43 @@ use crate::types::{FileNode, PeerRow, PieceInfo, TrackerRow, Transport};
 /// The per-download commands fetched by `d.multicall2`, in column order. The
 /// indices here must match the `row[i]` reads in [`row_to_raw`].
 const LIST_COMMANDS: &[&str] = &[
-    "d.hash=",               // 0
-    "d.name=",               // 1
-    "d.size_bytes=",         // 2
-    "d.bytes_done=",         // 3
-    "d.complete=",           // 4
-    "d.is_active=",          // 5
-    "d.is_open=",            // 6
-    "d.hashing=",            // 7
-    "d.message=",            // 8
-    "d.down.rate=",          // 9
-    "d.up.rate=",            // 10
-    "d.ratio=",              // 11
-    "d.custom1=",            // 12
-    "d.directory=",          // 13
-    "d.base_path=",          // 14
-    "d.peers_complete=",     // 15
-    "d.peers_accounted=",    // 16
-    "d.peers_connected=",    // 17
-    "d.priority=",           // 18
-    "d.is_private=",         // 19
-    "d.throttle_name=",      // 20
-    "d.timestamp.finished=", // 21
-    "d.chunks_hashed=",      // 22  hash-check progress (D17)
-    "d.size_chunks=",        // 23  total chunks — denominator for 22
-    "d.timestamp.started=",  // 24  durable first-started time (D4)
+    "d.hash=",                // 0
+    "d.name=",                // 1
+    "d.size_bytes=",          // 2
+    "d.bytes_done=",          // 3
+    "d.complete=",            // 4
+    "d.is_active=",           // 5
+    "d.is_open=",             // 6
+    "d.hashing=",             // 7
+    "d.message=",             // 8
+    "d.down.rate=",           // 9
+    "d.up.rate=",             // 10
+    "d.ratio=",               // 11
+    "d.custom1=",             // 12
+    "d.directory=",           // 13
+    "d.base_path=",           // 14
+    "d.peers_complete=",      // 15
+    "d.peers_accounted=",     // 16
+    "d.peers_connected=",     // 17
+    "d.priority=",            // 18
+    "d.is_private=",          // 19
+    "d.throttle_name=",       // 20
+    "d.timestamp.finished=",  // 21
+    "d.chunks_hashed=",       // 22  hash-check progress (D17)
+    "d.size_chunks=",         // 23  total chunks — denominator for 22
+    "d.timestamp.started=",   // 24  durable first-started time (D4)
+    "d.peers_max=",           // 25  per-torrent cap (D3)
+    "d.peers_min=",           // 26  per-torrent floor (D3)
+    "d.uploads_max=",         // 27  per-torrent upload slots (D3)
+    "d.connection_current=",  // 28  current connection type (D5)
+    "d.custom=added_by",      // 29  sticky add provenance (D6)
+    "d.custom=source_path",   // 30  original source path/URI (D6)
+    "d.custom=added_at",      // 31  Unix seconds at add time (D6)
+    "d.custom=tags",          // 32  client-managed tags (V3-10)
+    "d.custom=final_dir",     // 33  intended final dir for move-on-complete (V3-14)
+    "d.custom=force_start",   // 34  queue exemption flag (V3-17 / QUE-01)
+    "d.custom=queue_pos",     // 35  client-side queue sequence (V3-17 / QUE-02)
+    "d.custom=throttle_rule", // 36  bandwidth-rule marker (V3-18 / QUE-04)
 ];
 
 /// rtorrent client that talks to a live daemon, local (SCGI) or remote (HTTP).
@@ -244,6 +256,29 @@ fn peer_target(hash: &str, peer_id: &str) -> String {
     format!("{hash}:p{peer_id}")
 }
 
+/// Convert rtorrent's completed/total chunk counters into a safe UI percent.
+/// A zero-chunk file is an empty file and therefore complete.
+fn file_progress(completed_chunks: i64, size_chunks: i64) -> f64 {
+    if size_chunks <= 0 {
+        return 100.0;
+    }
+    (completed_chunks.max(0) as f64 / size_chunks as f64 * 100.0).clamp(0.0, 100.0)
+}
+
+/// Render a daemon config value as the string a settings surface shows:
+/// integers as decimals, strings verbatim, bytes as UTF-8. An array or struct is
+/// not a config value, so it reads as unavailable rather than as JSON.
+fn value_as_string(value: Value) -> Option<String> {
+    match value {
+        Value::Int(number) => Some(number.to_string()),
+        Value::Bool(flag) => Some(u8::from(flag).to_string()),
+        Value::Double(number) => Some(number.to_string()),
+        Value::Str(text) => Some(text),
+        Value::Bytes(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+        Value::Array(_) | Value::Struct(_) => None,
+    }
+}
+
 fn tracker_insert_call(hash: &str, group: i64, url: &str) -> (&'static str, Vec<Value>) {
     (
         "d.tracker.insert",
@@ -336,6 +371,18 @@ fn row_to_raw(row: &[Value]) -> RawTorrent {
         chunks_hashed: n(22),
         size_chunks: n(23),
         started_at: n(24),
+        peers_max: n(25),
+        peers_min: n(26),
+        uploads_max: n(27),
+        connection_current: s(28),
+        added_by: s(29),
+        source_path: s(30),
+        added_at: n(31),
+        tags: crate::tags::parse(&s(32)),
+        final_dir: s(33),
+        force_start: s(34).trim() == "1",
+        queue_pos: crate::queue::parse_pos(&s(35)),
+        throttle_rule: s(36),
     }
 }
 
@@ -628,12 +675,15 @@ impl RtorrentApi for RpcClient {
             .filter_map(Value::as_array)
             .map(|r| {
                 let done = r.get(3).and_then(Value::as_i64).unwrap_or(0);
-                let total = r.get(4).and_then(Value::as_i64).unwrap_or(0).max(1);
+                let total = r.get(4).and_then(Value::as_i64).unwrap_or(0);
                 FileNode {
                     path: r.first().and_then(Value::as_str).unwrap_or("").to_string(),
                     size: r.get(1).and_then(Value::as_i64).unwrap_or(0),
                     priority: r.get(2).and_then(Value::as_i64).unwrap_or(1),
-                    progress: done as f64 / total as f64 * 100.0,
+                    // Empty files have no chunks but are already complete. A
+                    // normal file's progress is chunk-based because that is
+                    // the granularity rtorrent exposes for `f.*` rows.
+                    progress: file_progress(done, total),
                     is_dir: false,
                 }
             })
@@ -695,6 +745,10 @@ impl RtorrentApi for RpcClient {
         self.batch_hashes("d.stop", hashes).await
     }
 
+    async fn pause(&self, hashes: &[String]) -> Result<()> {
+        self.batch_hashes("d.pause", hashes).await
+    }
+
     async fn recheck(&self, hashes: &[String]) -> Result<()> {
         self.batch_hashes("d.check_hash", hashes).await
     }
@@ -741,6 +795,28 @@ impl RtorrentApi for RpcClient {
         Ok(())
     }
 
+    async fn set_tags(&self, hashes: &[String], tags: &[String]) -> Result<()> {
+        // Normalise once; the same wire string goes to every hash.
+        let encoded = crate::tags::encode(&crate::tags::normalise(tags));
+        let calls: Vec<(&str, Vec<Value>)> = hashes
+            .iter()
+            .map(|h| {
+                (
+                    "d.custom.set",
+                    vec![
+                        Value::Str(h.clone()),
+                        Value::Str(crate::tags::CUSTOM_KEY.into()),
+                        Value::Str(encoded.clone()),
+                    ],
+                )
+            })
+            .collect();
+        for r in self.multicall(&calls).await? {
+            r?;
+        }
+        Ok(())
+    }
+
     async fn set_directory(&self, hash: &str, path: &str) -> Result<()> {
         self.call(
             "d.directory.set",
@@ -748,6 +824,17 @@ impl RtorrentApi for RpcClient {
         )
         .await
         .map(|_| ())
+    }
+
+    async fn free_diskspace(&self, hash: &str) -> Result<Option<i64>> {
+        match self
+            .call("d.free_diskspace", &[Value::Str(hash.into())])
+            .await?
+        {
+            Value::Int(free) => Ok(Some(free)),
+            Value::Str(raw) => Ok(raw.trim().parse::<i64>().ok()),
+            _ => Ok(None),
+        }
     }
 
     async fn set_priority(&self, hash: &str, priority: i64) -> Result<()> {
@@ -775,6 +862,65 @@ impl RtorrentApi for RpcClient {
         ];
         for r in self.multicall(&calls).await? {
             r?;
+        }
+        Ok(())
+    }
+
+    async fn set_connection_limits(
+        &self,
+        hash: &str,
+        peers_max: i64,
+        peers_min: i64,
+        uploads_max: i64,
+    ) -> Result<()> {
+        let target = Value::Str(hash.into());
+        for result in self
+            .multicall(&[
+                (
+                    "d.peers_max.set",
+                    vec![target.clone(), Value::Int(peers_max)],
+                ),
+                (
+                    "d.peers_min.set",
+                    vec![target.clone(), Value::Int(peers_min)],
+                ),
+                ("d.uploads_max.set", vec![target, Value::Int(uploads_max)]),
+            ])
+            .await?
+        {
+            result?;
+        }
+        Ok(())
+    }
+
+    async fn set_super_seeding(&self, hash: &str, enabled: bool) -> Result<()> {
+        self.call(
+            "d.connection_current.set",
+            &[
+                Value::Str(hash.into()),
+                Value::Str(if enabled { "initial_seed" } else { "seed" }.into()),
+            ],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn set_custom_metadata(&self, hash: &str, values: &[(&str, &str)]) -> Result<()> {
+        let calls: Vec<(&str, Vec<Value>)> = values
+            .iter()
+            .map(|(key, value)| {
+                (
+                    "d.custom.set",
+                    vec![
+                        Value::Str(hash.into()),
+                        Value::Str((*key).into()),
+                        Value::Str((*value).into()),
+                    ],
+                )
+            })
+            .collect();
+        for result in self.multicall(&calls).await? {
+            result?;
         }
         Ok(())
     }
@@ -816,15 +962,25 @@ impl RtorrentApi for RpcClient {
     }
 
     async fn set_port_range(&self, range: &str) -> Result<()> {
-        // rtorrent 0.16.20 renamed this to network.listen.port.range.set; the
-        // old name only exists behind the `-D` legacy-flag and is absent from
-        // stock builds, so a config line that used it now fails at startup.
-        self.call(
-            "network.listen.port.range.set",
-            &[Value::Str(String::new()), Value::Str(range.into())],
-        )
-        .await
-        .map(|_| ())
+        // rtorrent 0.16.20 renamed this to network.listen.port.range.set and
+        // dropped the old name from stock builds (it survives only behind the
+        // `-D` legacy flag). The app bundles 0.15.7, which knows only the old
+        // name, so try the modern spelling first and fall back for older
+        // daemons — the reverse would fault every time on the bundled build.
+        let args = [Value::Str(String::new()), Value::Str(range.into())];
+        match self.call("network.listen.port.range.set", &args).await {
+            Ok(_) => Ok(()),
+            // Only an unknown-method fault is worth retrying under the old
+            // name; a transport error or a bad range would just fail again, and
+            // its message is the more useful one to surface.
+            Err(err @ RtorrentError::Fault { .. }) => {
+                match self.call("network.port_range.set", &args).await {
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(err),
+                }
+            }
+            Err(err) => Err(err),
+        }
     }
 
     async fn apply_config(&self, directives: &[(&str, i64)]) -> Result<usize> {
@@ -858,6 +1014,38 @@ impl RtorrentApi for RpcClient {
             .collect();
         let results = self.multicall(&calls).await?;
         Ok(results.iter().filter(|r| r.is_ok()).count())
+    }
+
+    async fn config_get(&self, keys: &[&str]) -> Result<Vec<Option<String>>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        // A variable reads back by being called with no arguments. A key the
+        // build does not know comes back as a per-call fault, which maps to
+        // `None` rather than sinking the whole batch.
+        let calls: Vec<(&str, Vec<Value>)> = keys.iter().map(|key| (*key, vec![])).collect();
+        let results = self.multicall(&calls).await?;
+        Ok(results
+            .into_iter()
+            .map(|result| result.ok().and_then(value_as_string))
+            .collect())
+    }
+
+    async fn config_set(&self, key: &str, value: &str) -> Result<()> {
+        // The listen port range is the one key whose setter rtorrent renamed
+        // (`network.port_range.set` → `network.listen.port.range.set` in
+        // 0.16.20); reuse the version-aware path rather than guessing here.
+        if matches!(key, "network.port_range" | "network.listen.port.range") {
+            return self.set_port_range(value).await;
+        }
+        let setter = format!("{key}.set");
+        let argument = match value.parse::<i64>() {
+            Ok(number) => Value::Int(number),
+            Err(_) => Value::Str(value.to_string()),
+        };
+        self.call(&setter, &[Value::Str(String::new()), argument])
+            .await
+            .map(|_| ())
     }
 
     async fn set_dht(&self, enabled: bool) -> Result<()> {
@@ -1055,6 +1243,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn config_values_render_as_strings_and_absences_as_none() {
+        assert_eq!(value_as_string(Value::Int(6881)).as_deref(), Some("6881"));
+        assert_eq!(
+            value_as_string(Value::Str("auto".into())).as_deref(),
+            Some("auto")
+        );
+        // An empty string is a real value (a cleared proxy), not an absence.
+        assert_eq!(
+            value_as_string(Value::Str(String::new())).as_deref(),
+            Some("")
+        );
+        assert_eq!(value_as_string(Value::Bool(true)).as_deref(), Some("1"));
+        assert_eq!(value_as_string(Value::Array(vec![])), None);
+        assert_eq!(value_as_string(Value::Struct(vec![])), None);
+    }
+
+    #[test]
     fn host_of_strips_scheme_port_and_path() {
         assert_eq!(
             host_of("udp://tracker.example.org:6969/announce"),
@@ -1078,6 +1283,46 @@ mod tests {
         assert_eq!(tracker_status(false, true, 5), "disabled");
         // Parked by rtorrent for a non-counter reason.
         assert_eq!(tracker_status(true, false, 0), "error");
+    }
+
+    #[test]
+    fn file_progress_handles_empty_and_out_of_range_chunk_counts() {
+        assert_eq!(file_progress(0, 0), 100.0);
+        assert_eq!(file_progress(4, 10), 40.0);
+        assert_eq!(file_progress(-1, 10), 0.0);
+        assert_eq!(file_progress(12, 10), 100.0);
+    }
+
+    #[test]
+    fn row_to_raw_parses_tags_from_the_custom_namespace() {
+        let mut row = vec![Value::Str(String::new()); 37];
+        row[0] = Value::Str("abcd".into());
+        // Column 32 is `d.custom=tags`; the wire form is comma-separated.
+        row[32] = Value::Str("linux, iso ,Linux".into());
+        // Column 33 is `d.custom=final_dir` (V3-14).
+        row[33] = Value::Str("/media/video".into());
+        // Columns 34/35 are the queue flag + sequence (V3-17).
+        row[34] = Value::Str("1".into());
+        row[35] = Value::Str(" 7 ".into());
+        // Column 36 is `d.custom=throttle_rule` (V3-18).
+        row[36] = Value::Str("vid".into());
+        let t = row_to_raw(&row);
+        assert_eq!(t.hash, "ABCD");
+        assert_eq!(t.tags, vec!["linux", "iso"]);
+        assert_eq!(t.final_dir, "/media/video");
+        assert!(t.force_start);
+        assert_eq!(t.queue_pos, Some(7));
+        assert_eq!(t.throttle_rule, "vid");
+        assert!(
+            row_to_raw(&row[..20]).tags.is_empty(),
+            "a short row is empty"
+        );
+        assert!(
+            row_to_raw(&row[..20]).final_dir.is_empty(),
+            "a short row has no final dir"
+        );
+        let short = row_to_raw(&row[..20]);
+        assert!(!short.force_start && short.queue_pos.is_none());
     }
 
     #[test]
@@ -1141,7 +1386,10 @@ mod tests {
             unselected_indexes: vec![],
         };
         let cmds = load_commands(&opts);
-        assert!(cmds.iter().all(|c| !c.starts_with("d.directory.set")), "{cmds:?}");
+        assert!(
+            cmds.iter().all(|c| !c.starts_with("d.directory.set")),
+            "{cmds:?}"
+        );
     }
 
     #[test]
@@ -1325,10 +1573,12 @@ mod live {
             return;
         };
         c.set_port_range("6990-6999").await.expect("set_port_range");
-        let back = c
-            .call("network.listen.port.range", &[])
-            .await
-            .expect("read back");
+        // The getter moved alongside the setter in 0.16.20; the bundled 0.15.7
+        // still answers to the original name.
+        let back = match c.call("network.listen.port.range", &[]).await {
+            Ok(v) => v,
+            Err(_) => c.call("network.port_range", &[]).await.expect("read back"),
+        };
         println!("port_range = {back:?}");
         assert_eq!(back.as_str(), Some("6990-6999"));
     }

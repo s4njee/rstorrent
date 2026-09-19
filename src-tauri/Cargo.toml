@@ -22,7 +22,7 @@ tauri-build = { version = "2", features = [] }
 rtorrent-core = { path = "../crates/rtorrent" }
 
 # --- Tauri shell + plugins ---
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"            # open paths / URLs
 tauri-plugin-dialog = "2"            # native file/folder pickers
 tauri-plugin-clipboard-manager = "2" # copy magnet links

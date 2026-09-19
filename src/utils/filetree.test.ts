@@ -22,12 +22,22 @@ describe("buildTree", () => {
     expect(fedora.name).toBe("Fedora");
     expect(fedora.isDir).toBe(true);
     expect(fedora.size).toBe(2150); // 2000 + 100 + 50
+    expect(fedora.progress).toBeCloseTo((2000 * 0 + 100 * 0 + 50 * 0) / 2150);
+    expect(fedora.priority).toBe(1);
     // Two files + one subfolder.
     expect(fedora.children.map((c) => c.name).sort()).toEqual([
       "CHECKSUM",
       "Live.iso",
       "docs",
     ]);
+  });
+  it("aggregates folder progress by file size and marks mixed priority", () => {
+    const tree = buildTree([
+      { ...f("dir/big", 100), progress: 50, priority: 2 },
+      { ...f("dir/small", 10), progress: 100, priority: 1 },
+    ]);
+    expect(tree[0].progress).toBeCloseTo(54.54545);
+    expect(tree[0].priority).toBe(-1);
   });
   it("assigns leaf file indexes", () => {
     const tree = buildTree(files);

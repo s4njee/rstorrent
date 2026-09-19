@@ -1,0 +1,75 @@
+/*
+ * Blackbird Light — light surfaces, dark text.
+ *
+ * `--pal-accent-ink` is black so accent-derived text and the focus ring stay
+ * readable on light chips; the dark palette mixes toward white instead.
+ */
+
+html[data-theme="light"] {
+  /* ---- Backgrounds ---- */
+  --pal-bg-canvas: #e2e4e7;
+  --pal-bg-app: #f4f5f6;
+  --pal-bg-row-alt: #eceef0;
+  --pal-bg-panel: #ffffff;
+  --pal-bg-chrome: #ffffff;
+  --pal-bg-elevated: #ffffff;
+  --pal-bg-control: #eef0f2;
+  --pal-bg-control-active: #e2e6ea;
+  --pal-bg-track: #e3e6e9;
+  --pal-bg-track-dim: #edeff1;
+
+  /* ---- Borders ---- */
+  --pal-border-strong: #b9bfc6;
+  --pal-border-default: #d4d8dd;
+  --pal-border-control: #c6ccd2;
+  --pal-border-subtle: #e0e4e8;
+  --pal-border-row: #e3e6ea;
+  --pal-border-row-dim: #e9ecef;
+
+  /* ---- Text ---- */
+  --pal-text-primary: #111418;
+  --pal-text-body: #1a1d21;
+  --pal-text-secondary: #3d434a;
+  --pal-text-muted: #5b6167;
+  --pal-text-dim: #5f656c;
+  --pal-text-faint: #6b7178;
+  --pal-text-fainter: #7c828a;
+  /* Nudged darker than blackbird's #8b9199 and cyan #0891b2: a section caption
+   * or placeholder at 2.9:1, and an upload rate at 3.4:1, are not readable.
+   * Floors are enforced by scripts/check-contrast.mjs. */
+  --pal-text-ghost: #878d95;
+
+  /* ---- State ---- */
+  --pal-state-disabled: #9aa0a7;
+
+  --pal-scrim: rgba(0, 0, 0, 0.3);
+
+  /* ---- Accent ---- */
+  --pal-accent: #1d4ed8;
+  --pal-accent-foreground: #ffffff;
+  --pal-accent-ink: #000000;
+
+  /* ---- Rates ---- */
+  --pal-rate-up: #0e7490;
+  --pal-rate-up-text: #155e75;
+
+  /* ---- Progress (blue/green, never the accent) ---- */
+  --pal-progress-active: #1b80e4;
+  --pal-progress-complete: #2a923d;
+
+  /* ---- Status ---- */
+  --pal-status-error: #c0392b;
+  --pal-status-warn: #b45309;
+
+  /* ---- Label palette (darkened for light surfaces) ---- */
+  --pal-label-iso: #b45309;
+  --pal-label-archive: #8a6d2b;
+  --pal-label-kernel: #0e7490;
+  --pal-label-apps: #7c3aed;
+  --pal-label-media: #c0392b;
+
+  /* ---- Shadows (softened for light) ---- */
+  --pal-shadow-window: 0 24px 60px rgba(0, 0, 0, 0.15);
+  --pal-shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.18);
+  --pal-shadow-menu: 0 18px 40px rgba(0, 0, 0, 0.16);
+}

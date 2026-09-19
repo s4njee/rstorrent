@@ -20,6 +20,8 @@ function mk(
   tracker: string,
   size = 1000,
   downRate = 0,
+  statusMsg = "",
+  errorKind = "",
 ): TorrentDto {
   return {
     hash,
@@ -28,7 +30,8 @@ function mk(
     bytesDone: (size * percent) / 100,
     percent,
     status,
-    statusMsg: "",
+    statusMsg,
+    errorKind,
     seedsConnected: 0,
     peersConnected: 0,
     seedsSwarm: 0,
@@ -77,7 +80,18 @@ const fixture: TorrentDto[] = [
   mk("E", "mint.iso", "paused", 45, "linux-iso", "linuxtracker.org"),
   mk("F", "raspios.img", "paused", 100, "sbc", "downloads.raspberrypi.org"),
   mk("G", "suse.iso", "stalled", 12, "linux-iso", "linuxtracker.org"),
-  mk("H", "cosmos.mkv", "error", 66, "video", "tracker.blender.org"),
+  mk(
+    "H",
+    "cosmos.mkv",
+    "error",
+    66,
+    "video",
+    "tracker.blender.org",
+    1000,
+    0,
+    'Tracker: [Failure reason "unregistered torrent"]',
+    "unregistered",
+  ),
 ];
 
 describe("sidebarCounts", () => {
@@ -106,7 +120,7 @@ describe("selectVisible", () => {
   it("filters by status", () => {
     const rows = selectVisible(
       fixture,
-      { type: "status", value: "downloading" },
+      { status: "downloading" },
       "",
       "name",
       "asc",
@@ -116,7 +130,7 @@ describe("selectVisible", () => {
   it("completed filter is a superset of 100% rows", () => {
     const rows = selectVisible(
       fixture,
-      { type: "status", value: "completed" },
+      { status: "completed" },
       "",
       "name",
       "asc",
@@ -124,11 +138,11 @@ describe("selectVisible", () => {
     expect(rows.map((r) => r.hash).sort()).toEqual(["A", "B", "F"]);
   });
   it("search matches name/label/tracker and ANDs with filter", () => {
-    const rows = selectVisible(fixture, null, "fedora", "name", "asc");
+    const rows = selectVisible(fixture, {}, "fedora", "name", "asc");
     expect(rows.map((r) => r.hash)).toEqual(["C"]);
     const both = selectVisible(
       fixture,
-      { type: "label", value: "linux-iso" },
+      { label: "linux-iso" },
       "iso",
       "name",
       "asc",
@@ -138,7 +152,7 @@ describe("selectVisible", () => {
     expect(both.map((r) => r.hash)).toEqual(["B", "C", "E", "G", "A"]);
   });
   it("sorts numerically by download rate descending", () => {
-    const rows = selectVisible(fixture, null, "", "downRate", "desc");
+    const rows = selectVisible(fixture, {}, "", "downRate", "desc");
     expect(rows[0].hash).toBe("C"); // 500 > 200 > 0...
   });
 });
@@ -236,14 +250,9 @@ describe("smart filters (C4)", () => {
 
   it("ANDs every present criterion", () => {
     // G is the only stalled linux-iso; E is linux-iso but paused.
-    const rows = selectVisible(
-      fixture,
-      { type: "smart", value: "sf1" },
-      "",
-      "name",
-      "asc",
-      [isoText],
-    );
+    const rows = selectVisible(fixture, { smart: "sf1" }, "", "name", "asc", [
+      isoText,
+    ]);
     expect(rows.map((r) => r.hash)).toEqual(["G"]);
   });
 
@@ -253,14 +262,9 @@ describe("smart filters (C4)", () => {
       name: "isos",
       label: "linux-iso",
     };
-    const rows = selectVisible(
-      fixture,
-      { type: "smart", value: "sf2" },
-      "",
-      "name",
-      "asc",
-      [labelOnly],
-    );
+    const rows = selectVisible(fixture, { smart: "sf2" }, "", "name", "asc", [
+      labelOnly,
+    ]);
     expect(rows.map((r) => r.hash).sort()).toEqual(["A", "B", "C", "E", "G"]);
   });
 
@@ -271,14 +275,9 @@ describe("smart filters (C4)", () => {
       status: "seeding",
       text: "debian",
     };
-    const rows = selectVisible(
-      fixture,
-      { type: "smart", value: "sf3" },
-      "",
-      "name",
-      "asc",
-      [withText],
-    );
+    const rows = selectVisible(fixture, { smart: "sf3" }, "", "name", "asc", [
+      withText,
+    ]);
     expect(rows.map((r) => r.hash)).toEqual(["B"]);
   });
 
@@ -290,7 +289,7 @@ describe("smart filters (C4)", () => {
     };
     const rows = selectVisible(
       fixture,
-      { type: "smart", value: "sf2" },
+      { smart: "sf2" },
       "fedora",
       "name",
       "asc",
@@ -301,14 +300,9 @@ describe("smart filters (C4)", () => {
 
   it("honours the completed superset inside criteria", () => {
     const done: SmartFilter = { id: "sf4", name: "done", status: "completed" };
-    const rows = selectVisible(
-      fixture,
-      { type: "smart", value: "sf4" },
-      "",
-      "name",
-      "asc",
-      [done],
-    );
+    const rows = selectVisible(fixture, { smart: "sf4" }, "", "name", "asc", [
+      done,
+    ]);
     // 100% rows regardless of status: two seeding + the paused raspios.
     expect(rows.map((r) => r.hash).sort()).toEqual(["A", "B", "F"]);
   });
@@ -316,7 +310,7 @@ describe("smart filters (C4)", () => {
   it("shows everything for a dangling id rather than an empty table", () => {
     const rows = selectVisible(
       fixture,
-      { type: "smart", value: "gone" },
+      { smart: "gone" },
       "",
       "name",
       "asc",
@@ -362,5 +356,85 @@ describe("selectionSummary (C3)", () => {
       upRate: 0,
       paused: 0,
     });
+  });
+});
+
+describe("tags (V3-10)", () => {
+  const tagged: TorrentDto[] = [
+    { ...fixture[0], hash: "T1", tags: ["linux", "zqtagname"] },
+    { ...fixture[1], hash: "T2", tags: ["linux"] },
+    { ...fixture[2], hash: "T3", tags: [] },
+  ];
+
+  it("filters by a tag facet and by a search substring", () => {
+    const linux = selectVisible(
+      tagged,
+      { tags: "linux" },
+      "",
+      "name",
+      "asc",
+      [],
+    );
+    expect(linux.map((t) => t.hash).sort()).toEqual(["T1", "T2"]);
+
+    const searched = selectVisible(tagged, {}, "zqtagname", "name", "asc", []);
+    expect(searched.map((t) => t.hash)).toEqual(["T1"]);
+  });
+
+  it("counts each tag membership over the unfiltered list", () => {
+    const counts = sidebarCounts(tagged);
+    expect(counts.tags).toEqual([
+      { value: "linux", count: 2 },
+      { value: "zqtagname", count: 1 },
+    ]);
+  });
+
+  it("ANDs a tag criterion in a smart filter", () => {
+    const filter: SmartFilter = {
+      id: "f",
+      name: "linux iso",
+      tags: "linux",
+      text: fixture[0].name,
+    };
+    const rows = selectVisible(tagged, { smart: "f" }, "", "name", "asc", [
+      filter,
+    ]);
+    expect(rows.map((t) => t.hash)).toEqual(["T1"]);
+  });
+});
+
+describe("library search (V3-12)", () => {
+  const a: TorrentDto = {
+    ...fixture[0],
+    hash: "AAAA1111",
+    name: "alpha",
+    savePath: "/srv/movies",
+  };
+  const b: TorrentDto = {
+    ...fixture[1],
+    hash: "BBBB2222",
+    name: "beta",
+    savePath: "/srv/tv",
+  };
+
+  it("matches hash and save path locally", () => {
+    expect(
+      selectVisible([a, b], {}, "aaaa1111", "name", "asc").map((t) => t.hash),
+    ).toEqual(["AAAA1111"]);
+    expect(
+      selectVisible([a, b], {}, "movies", "name", "asc").map((t) => t.hash),
+    ).toEqual(["AAAA1111"]);
+  });
+
+  it("unions server filename matches and needs them to match filenames", () => {
+    // No filename result set: a filename query matches nothing locally.
+    expect(selectVisible([a, b], {}, "s02e04", "name", "asc")).toEqual([]);
+    // The server's index supplies the hash.
+    const fileMatches = new Set(["BBBB2222"]);
+    expect(
+      selectVisible([a, b], {}, "s02e04", "name", "asc", [], fileMatches).map(
+        (t) => t.hash,
+      ),
+    ).toEqual(["BBBB2222"]);
   });
 });

@@ -1,81 +1,252 @@
 /*
- * Design tokens for the "Dark Ops" (1c) theme.
+ * Semantic token layer.
  *
- * Every colour, font, and size the UI uses is declared here as a CSS custom
- * property. Components MUST reference these variables (e.g. `var(--bg-app)`)
- * and never hard-code a hex value, so the whole look can be retuned in one place
- * and stays faithful to design/README.md. The raw hex values below are copied
- * verbatim from that spec's token table and must remain the single source of
- * truth for them.
+ * Every component consumes these names and nothing else, so a theme is a palette
+ * value set (palette.css + themes/*.css) and never a stylesheet. Nothing here
+ * holds a colour literal: values are either palette aliases or derivations of
+ * `--accent` via color-mix(), which is what makes the accent a single variable.
+ *
+ * Accent derivations: the tints mix the accent toward transparent (alpha-scaled,
+ * hue preserved) for selected rows, active sidebar items, chips and graph fills;
+ * `--accent-text` and `--focus-ring` mix it toward `--accent-ink` (white on dark
+ * themes, black on light ones) so derived text stays readable either way. Browsers
+ * without color-mix() get the same values from lib/theme.ts's JS mirror.
+ *
+ * Progress rule: `--progress-*` are palette aliases and MUST never derive from
+ * `--accent` — progress is never the accent, in any theme.
+ *
+ * Non-colour tokens (type scale, heights, spacing, motion) are theme-independent.
+ * A theme may override the shadow and radius families only.
+ *
+ * Import order: palette.css → themes.css → this file → global.css.
  */
 
 :root {
-  /* --- Backgrounds --- */
-  --bg-app: #14161a; /* main app background, table body */
-  --bg-panel: #191c21; /* title bar, toolbar, sidebar, footer, dialog chrome */
-  --bg-field: #0f1114; /* inputs, textareas, dropdowns */
-  --bg-row-alt: #171a1f; /* odd table rows (zebra) */
-  --bg-selected: #1d2b33; /* selected row, active nav, checked checkbox fill */
-  --bg-track: #22262d; /* progress-bar track; secondary button fill */
+  /* ---- Backgrounds ---- */
+  --bg-canvas: var(--pal-bg-canvas);
+  --bg-app: var(--pal-bg-app);
+  /* A row's hover shade: one step up from the row base, in every theme. */
+  --bg-row-hover: var(--pal-bg-control);
+  --bg-row-alt: var(--pal-bg-row-alt);
+  --bg-panel: var(--pal-bg-panel);
+  --bg-chrome: var(--pal-bg-chrome);
+  --bg-elevated: var(--pal-bg-elevated);
+  --bg-control: var(--pal-bg-control);
+  --bg-control-active: var(--pal-bg-control-active);
+  --bg-track: var(--pal-bg-track);
+  --bg-track-dim: var(--pal-bg-track-dim);
 
-  /* --- Borders --- */
-  --border-black: #000000; /* window outer border, dialog header/footer dividers */
-  --border-strong: #2a2f38; /* input borders, toolbar separators */
-  --border-mid: #23272e; /* panel/section dividers */
-  --border-row: #1a1d22; /* table row dividers */
+  /* ---- Borders ---- */
+  --border-strong: var(--pal-border-strong);
+  --border-default: var(--pal-border-default);
+  --border-control: var(--pal-border-control);
+  --border-subtle: var(--pal-border-subtle);
+  --border-row: var(--pal-border-row);
+  --border-row-dim: var(--pal-border-row-dim);
 
-  /* --- Text --- */
-  --text-primary: #d6dae2; /* torrent names, dialog body headings */
-  --text-body: #c8cdd6; /* default body text, labels */
-  --text-muted: #8b93a2; /* secondary values, inactive nav */
-  --text-dim: #565e6b; /* column headers, captions, tertiary values, inactive tabs */
+  /* ---- Text ---- */
+  --text-primary: var(--pal-text-primary);
+  --text-body: var(--pal-text-body);
+  --text-secondary: var(--pal-text-secondary);
+  --text-muted: var(--pal-text-muted);
+  --text-dim: var(--pal-text-dim);
+  --text-faint: var(--pal-text-faint);
+  --text-fainter: var(--pal-text-fainter);
+  --text-ghost: var(--pal-text-ghost);
 
-  /* --- Accents --- */
-  --accent-cyan: #58c4dd; /* primary accent: add icon, active borders, DL bar */
-  --accent-cyan-bright: #8fdcee; /* active tab/nav text, download speed, primary button text */
-  --accent-green: #57d597; /* seeding bar */
-  --accent-green-soft: #7fd8a4; /* upload speed, good ratio */
-  --accent-amber: #d5a04c; /* stalled status/bar */
-  --accent-red: #e05d5d; /* error status/bar, destructive action */
-  --accent-violet: #9b8cf0; /* piece availability bar (swarm coverage) */
+  /* ---- State ---- */
+  --state-disabled: var(--pal-state-disabled);
+  --scrim: var(--pal-scrim); /* modal + drag-overlay backdrop */
 
-  /* --- Danger palette --- */
-  --danger-bg: #3a1f1f; /* destructive button fill, warning icon bg */
-  --danger-border: #6b2f2f; /* destructive button border */
-  --danger-text: #e0a5a5; /* destructive menu text */
-  --shadow-menu: rgba(0, 0, 0, 0.5); /* floating context menus */
+  /* ---- Accent: the base, its derivations, and text on a solid accent ---- */
+  --accent: var(--pal-accent);
+  --accent-ink: var(--pal-accent-ink);
+  --accent-foreground: var(--pal-accent-foreground);
+  --accent-tint: color-mix(in srgb, var(--accent) 22%, transparent);
+  --accent-tint-strong: color-mix(in srgb, var(--accent) 30%, transparent);
+  --accent-text: color-mix(in srgb, var(--accent) 55%, var(--accent-ink));
+  --focus-ring: color-mix(in srgb, var(--accent) 45%, var(--accent-ink));
 
-  /* --- Traffic lights (design reference only; real ones come from macOS) --- */
-  --tl-red: #f45c53;
-  --tl-amber: #f5b435;
-  --tl-green: #3fc24d;
+  /* ---- Rates ---- */
+  --rate-up: var(--pal-rate-up);
+  --rate-up-text: var(--pal-rate-up-text);
 
-  /* --- Status → colour map (used by table status text & progress fills) --- */
-  --status-downloading: var(--accent-cyan);
-  --status-seeding: var(--accent-green);
-  --status-paused: #4a515c;
-  --status-stalled: var(--accent-amber);
-  --status-error: var(--accent-red);
-  --status-checking: var(--accent-cyan-bright);
+  /* ---- Progress: palette aliases, never the accent ---- */
+  --progress-active: var(--pal-progress-active);
+  --progress-complete: var(--pal-progress-complete);
 
-  /* Piece availability bar (distinct from any status colour). */
-  --avail: var(--accent-violet);
+  /* ---- Status ---- */
+  --status-error: var(--pal-status-error);
+  --status-warn: var(--pal-status-warn);
 
-  /* --- Typography --- */
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --fs-base: 11.5px; /* body text */
-  --fs-cell: 10.5px; /* table cells / numerals */
-  --fs-header: 10px; /* column headers & captions (uppercase) */
-  --fs-title: 11px; /* window titles */
+  /* ---- Label palette ---- */
+  --label-iso: var(--pal-label-iso);
+  --label-archive: var(--pal-label-archive);
+  --label-kernel: var(--pal-label-kernel);
+  --label-apps: var(--pal-label-apps);
+  --label-media: var(--pal-label-media);
+  /* A label with no built-in family: the chip's neutral, so a square and a chip
+     for the same label never disagree. */
+  --label-neutral: var(--text-fainter);
 
-  /* --- Metrics --- */
-  --row-height: 23px; /* torrent table row height */
-  --titlebar-height: 34px; /* overlay drag strip; clears macOS traffic lights */
-  --toolbar-btn: 26px; /* toolbar button width */
-  --toolbar-btn-h: 24px; /* toolbar button height */
-  --radius-window: 9px;
-  --radius-control: 5px;
-  --radius-input: 4px;
+  /* ---- Typography (theme-independent) ----
+   * One family; numerals are aligned with font-variant-numeric, never a mono
+   * face. Sizes are the handoff's roles, not a generic ramp. */
+  --font-sans:
+    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fs-stat-value: 22px; /* 600, line-height 1.1 — stat cards */
+  --fs-section-title: 14px; /* 600 — Settings section titles */
+  --fs-app-name: 13px; /* 600, letter-spacing 0.04em — wordmark, modal title */
+  --fs-cell: 12.5px; /* 400 — table cells, sidebar items */
+  --fs-control: 12px; /* 400 — buttons, inputs, tabs, detail cells */
+  --fs-detail: 11.5px; /* 400 — detail facts, tracker rows */
+  --fs-header: 11px; /* 500, uppercase, letter-spacing 0.05em — column headers */
+  --fs-meta: 11px; /* 400 — status bar, hints */
+  --fs-chip: 10.5px; /* 400 — label/priority chips */
+  --fs-caption: 10px; /* 400, uppercase, letter-spacing 0.10–0.14em — captions */
+  --fs-progress-label: 9.5px; /* 400, letter-spacing 0.02em — % over a bar */
 
+  /* ---- Fixed heights (dense — keep these) ---- */
+  --h-topbar: 44px;
+  --h-toolbar: 36px;
+  --h-table-header: 28px;
+  --h-table-row: 30px;
+  --h-detail-tabs: 32px;
+  --h-detail-header: 24px;
+  --h-detail-file-row: 26px;
+  --h-peer-header: 26px;
+  --h-peer-row: 27px;
+  --h-statusbar: 26px;
+  --h-sidebar-item: 26px;
+  --h-button: 26px; /* buttons run 24–28 by context */
+  --h-input: 28px;
+  --h-menu-item: 26px;
+  /* Sidebar width (design frame 1a); the detail panel is --h-detail-*. */
+  --w-sidebar: 196px;
+
+  /* ---- Spacing steps in use ---- */
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 10px;
+  --sp-5: 12px;
+  --sp-6: 14px;
+  --sp-7: 16px;
+  --sp-8: 18px;
+  --sp-9: 20px;
+
+  /* ---- Radii (a theme may override these and shadows only) ---- */
+  --r-chip: 2px; /* chips, progress bars, dots-as-squares */
+  --r-control: 3px; /* buttons, inputs, menu items */
+  --r-card: 4px; /* cards, dropzone, popovers */
+  --r-window: 6px; /* app window, large panels */
+
+  /* ---- Shadows ---- */
+  --shadow-window: var(--pal-shadow-window);
+  --shadow-modal: var(--pal-shadow-modal);
+  --shadow-menu: var(--pal-shadow-menu);
+
+  /* ---- Motion ---- */
+  --t-progress: 300ms linear; /* progress-bar width transitions */
+  --t-row-fade: 120ms; /* row insert/remove fade */
+}
+
+/*
+ * Comfortable density: +4px on rows and controls. Applied through
+ * `data-density` on <html>; the values above are the dense defaults.
+ */
+html[data-density="comfortable"] {
+  --h-table-row: 34px;
+  --h-detail-file-row: 30px;
+  --h-peer-row: 31px;
+  --h-sidebar-item: 30px;
+  --h-button: 30px;
+  --h-input: 32px;
+  --h-menu-item: 30px;
+}
+
+/* =====================================================================
+ * LEGACY BRIDGE — Dark Ops names, for surfaces the console port has not
+ * reached yet (WC2–WC6 restyle them, WC10 deletes this block).
+ *
+ * Each entry maps an old name onto the new vocabulary so unported components
+ * keep rendering with the new palette. Two of the old names meant two things,
+ * so a few call sites were repointed rather than aliased here:
+ *   · chrome surfaces (title bar, toolbar, status bar, app bar, footer,
+ *     dialog bodies, tab strip) now use --bg-chrome, not --bg-panel;
+ *   · the context menu uses --shadow-menu as a whole shadow, not a colour.
+ * Where a single old name covered both a status *text* colour and a progress
+ * *fill*, it maps to the fill (the design's "progress is never the accent" rule
+ * is the stronger one); WC3-S3 splits the two per cell.
+ * ===================================================================== */
+:root {
+  /* Backgrounds */
+  --bg-field: var(--pal-bg-panel); /* inputs, textareas — design's panel role */
+  --bg-selected: var(--accent-tint); /* selected row, active nav */
+  --bg-inset: var(--bg-chrome);
+  --border-black: var(--border-default); /* the design has no pure-black edge */
+  --border-mid: var(--border-default);
+
+  /* Accents → the design's meanings */
+  --accent-cyan: var(
+    --accent
+  ); /* primary accent: borders, active edges, rates */
+  --accent-cyan-bright: var(--accent-text); /* accent text on tinted surfaces */
+  --accent-green: var(--progress-complete);
+  --accent-green-soft: var(--rate-up); /* upload rate is cyan in this design */
+  --accent-amber: var(--status-warn);
+  --accent-red: var(--status-error);
+  --accent-violet: var(--label-apps); /* piece availability */
+  --accent-red-soft: color-mix(in srgb, var(--status-error) 60%, white);
+  --accent-amber-soft: color-mix(in srgb, var(--status-warn) 60%, white);
+
+  /* Danger palette, derived so it cannot drift from the error colour */
+  --danger: var(--status-error);
+  --danger-bg: color-mix(in srgb, var(--status-error) 15%, transparent);
+  --danger-border: color-mix(in srgb, var(--status-error) 35%, transparent);
+  --danger-text: var(--status-error);
+
+  /* Success surfaces (the create-torrent result). The design has no "success"
+   * role — green belongs to completion — so this derives from it. */
+  --success-text: var(--progress-complete);
+  --success-bg: color-mix(in srgb, var(--progress-complete) 15%, transparent);
+  --success-border: color-mix(
+    in srgb,
+    var(--progress-complete) 40%,
+    transparent
+  );
+
+  /* Status map (see the note above about text vs fill) */
+  --status-downloading: var(--progress-active);
+  --status-seeding: var(--progress-complete);
+  --status-paused: var(--state-disabled);
+  --status-stalled: var(--status-warn);
+  --status-checking: var(--progress-active);
+  --avail: var(--label-apps);
+
+  /* Type scale */
+  --fs-base: var(--fs-cell);
+  --fs-title: var(--fs-control);
+  --fs-body: var(--fs-cell);
+
+  /* Metrics */
+  --row-height: var(--h-table-row);
+  --radius-window: var(--r-window);
+  --radius-control: var(--r-control);
+  --radius-input: var(--r-control);
+  --radius-card: var(--r-card);
+
+  /* Desktop-only chrome: the overlay drag strip that clears the macOS
+   * traffic lights. The web app bar is --h-topbar. */
+  --titlebar-height: 34px;
+  --toolbar-btn: 26px;
+  --toolbar-btn-h: 24px;
+
+  /* Native controls follow the theme's darkness (set per theme in themes) */
   color-scheme: dark;
+}
+
+html[data-theme="light"],
+html[data-theme="classic"] {
+  color-scheme: light;
 }

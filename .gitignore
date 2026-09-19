@@ -17,12 +17,38 @@ dist-ssr
 /dist-web/*
 !/dist-web/.gitkeep
 
+# The GPUI desktop bundle (tools/bundle-gpui-macos.sh). Built output: it carries
+# a copy of the staged rtorrent runtime.
+/dist-gpui/
+
+# The web server's local configuration: the daemon's endpoint and the auth mode
+# for this machine, neither of which belongs in the repository. The server reads
+# `rstorrent-web.toml` from its working directory.
+/rstorrent-web.toml
+
 # Cargo build output. The workspace target dir now lives at the repo root
 # (the workspace Cargo.toml is here), so ignore it here as well as in src-tauri.
 /target
 
 # Claude Code local state (agent worktrees are full repo copies — never commit).
 .claude/
+
+# Bundled rtorrent runtime (built by tools/build-rtorrent-macos.sh). The binary
+# and its dylibs are platform-specific, so they are built — never committed. The
+# directory and README stay so the Tauri resource path always resolves.
+src-tauri/binaries/rtorrent/*
+!src-tauri/binaries/rtorrent/README.md
+
+# The Windows build's WSL runtime (built by tools/build-rtorrent-wsl.sh): the
+# rstorrent distro's root filesystem, its checksum and build stamp. Built, never
+# committed; only the README explaining how to rebuild it is tracked.
+binaries/rtorrent-wsl/*
+!binaries/rtorrent-wsl/README.md
+
+# Playwright (WC10-S1): reports and traces are build output.
+/test-results/
+/playwright-report/
+/blob-report/
 
 # Editor directories and files
 .vscode/*
@@ -34,3 +60,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Runtime state a local server run leaves behind.
+server/move-journal.json

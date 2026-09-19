@@ -1,8 +1,38 @@
 /*
- * Global base styles: a minimal reset plus the app-wide defaults that make the
- * whole window render as the dark, monospace "dark ops" surface. Imported once
- * from main.tsx, after tokens.css so the custom properties are available.
+ * Global base styles: a minimal reset plus the app-wide defaults.
+ *
+ * The UI family is IBM Plex Sans (weights 400/500/600), self-hosted from
+ * public/fonts so the app works offline — the design is single-family and
+ * loads no webfont. The files are the same IBM Plex release the native GPUI
+ * shell embeds (crates/gpui/assets), converted to woff2. Imported once from
+ * each entry point, after tokens.css so the custom properties are available.
  */
+
+/* --- Self-hosted IBM Plex Sans -------------------------------------------
+ * Three weights, no italics: the design's complete scale. `swap` never hides
+ * text, and both HTML shells preload all three, so a swap is not normally
+ * visible. Licensed under the OFL — see public/fonts/LICENSE-IBMPlexSans.txt. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+}
 
 *,
 *::before,
@@ -20,7 +50,7 @@ body {
   margin: 0;
   background: var(--bg-app);
   color: var(--text-body);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--fs-base);
   line-height: 1.45;
   /* Crisp text on the dark background, matching the reference screenshots. */
@@ -34,7 +64,7 @@ body {
   overscroll-behavior: none;
 }
 
-/* Inputs and textareas inherit the monospace stack and allow selection. */
+/* Inputs and textareas inherit the UI family and allow selection. */
 input,
 textarea,
 select,
@@ -72,4 +102,26 @@ textarea {
 :focus-visible {
   outline: 1px solid var(--accent-cyan);
   outline-offset: 1px;
+}
+
+/*
+ * Reduced motion. The OS setting is a request, not a hint: with it on, nothing
+ * moves. Today that is the progress-bar width (--t-progress, the only animated
+ * thing in the app); the blanket rules are here so the next transition added
+ * anywhere is covered without anyone having to remember.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-progress: 0ms;
+    --t-row-fade: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -21,6 +21,25 @@ const MIB = 1_048_576;
 const KIB = 1_024;
 const NOW = Math.floor(Date.UTC(2026, 6, 20, 16, 0, 0) / 1000);
 
+function errorKindFor(status: Status, msg: string): string {
+  if (status !== "error" || !msg) return "";
+  const lower = msg.toLowerCase();
+  if (lower.includes("unregistered")) return "unregistered";
+  if (lower.includes("no such file") || lower.includes("chunk read error"))
+    return "missing_files";
+  if (lower.includes("no space")) return "no_space";
+  if (lower.includes("permission")) return "permission";
+  if (
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("could not connect")
+  )
+    return "tracker_timeout";
+  if (lower.includes("tracker")) return "tracker_error";
+  if (lower.includes("storage") || lower.includes("disk")) return "disk_error";
+  return "other";
+}
+
 function t(
   hash: string,
   name: string,
@@ -49,6 +68,7 @@ function t(
     percent,
     status,
     statusMsg,
+    errorKind: errorKindFor(status, statusMsg),
     seedsConnected: status === "downloading" ? Math.round(conn * 0.6) : 0,
     peersConnected: conn,
     seedsSwarm: seeds,
@@ -241,6 +261,7 @@ const globals: GlobalStats = {
 };
 
 export const snapshot: Snapshot = {
+  revision: 1,
   torrents,
   globals,
   connection: {
@@ -384,7 +405,14 @@ export const settings: Settings = {
   maxUploadsGlobal: 0,
   maxDownloadsGlobal: 0,
   maxActiveDownloads: 0,
+  maxActiveUploads: 0,
+  maxActiveTorrents: 0,
+  queueSlowLimitKbs: 0,
   labelDefaults: [],
+  incompleteDir: "",
+  moveRules: [],
+  collisionPolicy: "error",
+  bandwidthRules: [],
   watchFolders: [],
   runOnComplete: "",
   seedGoalAction: "stop",
@@ -392,6 +420,7 @@ export const settings: Settings = {
   turtleUpKb: 100,
   turtleEnabled: false,
   turtleSchedule: { enabled: false, startMin: 120, endMin: 480, days: [] },
+  schedule: { windows: [], tempOverride: null },
   connectionProfiles: [
     {
       name: "seedbox",

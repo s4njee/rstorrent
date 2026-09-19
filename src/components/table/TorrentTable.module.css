@@ -1,5 +1,13 @@
-/* Torrent table. The header and rows inherit the same persisted grid template;
-   the body remains the only scrolling region. */
+/*
+ * Torrent table (design frame 1a). The header and rows share one grid template,
+ * built from the persisted column state and injected as
+ * `--torrent-grid-template`; the body is the only scrolling region.
+ *
+ * Typography: 12.5px cells, 11px/500 uppercase headers, tabular numerals
+ * everywhere a number can appear. Status is plain coloured text, never a pill;
+ * progress is blue below 100% and green at 100%, never the accent.
+ */
+
 .table {
   flex: 1;
   min-width: 0;
@@ -15,22 +23,48 @@
   align-items: center;
 }
 
-/* Header row: uppercase dim labels; click to sort. */
+/* --- Header ------------------------------------------------------------- */
+
 .header {
-  border-bottom: 1px solid var(--border-mid);
+  height: var(--h-table-header);
+  flex: none;
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-default);
   font-size: var(--fs-header);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  flex: none;
 }
 .header > span {
   position: relative;
-  padding: 5px 6px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-3);
   cursor: default;
   white-space: nowrap;
   overflow: hidden;
+  /* Column dividers, per the design's per-cell right border. */
+  border-right: 1px solid var(--border-subtle);
+}
+.header > span:last-child {
+  border-right: none;
+}
+.header .sortable:hover {
+  color: var(--text-body);
+  background: var(--bg-control);
+}
+.header .dragging {
+  opacity: 0.5;
+}
+.right {
+  justify-content: flex-end;
+}
+.arrow {
+  color: var(--accent);
+  margin-left: 3px;
+  font-size: 8px;
 }
 .resizeHandle {
   position: absolute;
@@ -39,86 +73,244 @@
   right: 0;
   bottom: 0;
   width: 5px;
-  padding: 0 !important;
   cursor: col-resize;
   touch-action: none;
-  overflow: visible !important;
-}
-.header > span:first-child {
-  padding-left: 10px;
-}
-.header .sortable:hover {
-  color: var(--text-muted);
-}
-.right {
-  text-align: right;
-}
-.arrow {
-  color: var(--accent-cyan);
-  margin-left: 3px;
 }
 
-/* Scrollable body. */
+/* --- Body --------------------------------------------------------------- */
+
 .body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-/* Data row. */
+/* Virtualized inner container: the spacer sets the total scroll height and the
+   inner is translated to the visible window. */
+.virtualSpacer {
+  position: relative;
+  width: 100%;
+}
+.virtualInner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+/* --- Rows --------------------------------------------------------------- */
+
 .row {
-  height: var(--row-height);
+  height: var(--h-table-row);
   border-bottom: 1px solid var(--border-row);
   cursor: default;
+}
+
+/* A torrent that just appeared fades in rather than snapping (WC9-S5). Removal
+ * has no exit animation (no layout animation is wanted), so only insert. */
+.row[data-entering] {
+  animation: row-in var(--t-row-fade) ease-out;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+  }
 }
 .row.alt {
   background: var(--bg-row-alt);
 }
-.row.selected {
-  background: var(--bg-selected);
+.row:hover {
+  background: var(--bg-row-hover);
+}
+.row.selected,
+.row.selected:hover {
+  background: var(--accent-tint);
 }
 .row > span {
-  padding: 0 6px;
+  padding: 0 var(--sp-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--fs-cell);
-  color: var(--text-muted);
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
 }
+
 .name {
-  padding-left: 10px !important;
-  color: var(--text-primary) !important;
+  color: var(--text-primary);
 }
 .num {
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 .down {
-  color: var(--accent-cyan-bright) !important;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+  color: var(--accent);
 }
 .up {
-  color: var(--accent-green-soft) !important;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+  color: var(--rate-up);
 }
-.dim {
-  color: var(--text-dim) !important;
+/* An idle rate reads as an em-dash in the disabled colour, per the design. */
+.idleNum {
+  color: var(--state-disabled);
+}
+.faint {
+  color: var(--text-fainter);
+}
+.ratioGood {
+  color: var(--text-muted);
+}
+.ratioPoor {
+  color: var(--text-faint);
 }
 
-/* Empty / no-match states. */
-.empty {
-  flex: 1;
+/* --- Cells -------------------------------------------------------------- */
+
+.selectCell {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-dim);
-  text-align: center;
-  padding: 24px;
-  line-height: 1.7;
+  padding: 0 var(--sp-2);
 }
-.empty a {
-  color: var(--accent-cyan);
+
+/* The design's 11px checkbox: accent-bordered and accent-filled when set. */
+.checkbox {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: none;
+  color: var(--accent-foreground);
+  font-size: 9px;
+  line-height: 1;
   cursor: default;
+}
+.checkbox:hover {
+  border-color: var(--accent);
+}
+.checkboxOn {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.doneCell {
+  display: flex;
+  align-items: center;
+}
+
+.statusCell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toneActive {
+  color: var(--accent);
+}
+.toneSeeding {
+  color: var(--text-dim);
+}
+.toneIdle {
+  color: var(--text-faint);
+}
+.toneWarn {
+  color: var(--status-warn);
+}
+.toneError {
+  color: var(--status-error);
+}
+
+.labelCell {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1, 4px);
+  overflow: hidden;
+}
+/* Label chips: 16px, tinted per label family, neutral when unlabelled. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  max-width: 100%;
+  flex: none;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-chip);
+  background: var(--bg-track);
+  color: var(--text-muted);
+  font-size: var(--fs-chip);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Tag chips (V3-10): smaller than a label chip, coloured per tag by inline
+ * style; they shrink and ellipsise so a torrent with many tags does not push
+ * the row. */
+.tagChip {
+  max-width: 56px;
+  height: 14px;
+  font-size: calc(var(--fs-chip) - 0.5px);
+}
+.chip[data-label="iso"] {
+  background: color-mix(in srgb, var(--label-iso) 22%, transparent);
+  color: var(--label-iso);
+}
+.chip[data-label="archive"] {
+  background: color-mix(in srgb, var(--label-archive) 22%, transparent);
+  color: var(--label-archive);
+}
+.chip[data-label="kernel"] {
+  background: color-mix(in srgb, var(--label-kernel) 22%, transparent);
+  color: var(--label-kernel);
+}
+.chip[data-label="apps"] {
+  background: color-mix(in srgb, var(--label-apps) 22%, transparent);
+  color: var(--label-apps);
+}
+.chip[data-label="media"] {
+  background: color-mix(in srgb, var(--label-media) 22%, transparent);
+  color: var(--label-media);
+}
+
+/* --- Loading / empty states --------------------------------------------- */
+
+.shimmerRow {
+  /* Static placeholders: the design has no motion here beyond the progress
+     bar, and a pulsing table would fight the live rows. */
+  opacity: 0.5;
+}
+.shimmerCell {
+  height: 8px;
+  border-radius: var(--r-chip);
+  background: var(--bg-track-dim);
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  color: var(--text-faint);
+  text-align: center;
+  padding: var(--sp-9);
+  font-size: var(--fs-cell);
+}
+.emptyHint {
+  color: var(--text-ghost);
+  font-size: var(--fs-meta);
+}
+.emptyAction {
+  padding: 2px var(--sp-3);
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-cell);
+  cursor: default;
+}
+.emptyAction:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
 }

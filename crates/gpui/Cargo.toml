@@ -1,0 +1,75 @@
+[package]
+name = "rstorrent-gpui"
+version = "0.1.0"
+edition = "2021"
+description = "Native GPUI shell for rstorrent: table, sidebar, detail, dialogs, status"
+publish = false
+
+[[bin]]
+name = "rstorrent-gpui"
+path = "src/main.rs"
+
+[lib]
+name = "rstorrent_gpui"
+
+[dependencies]
+# Proven by the Ferrite and Excalibur GPUI shells (both macOS and Linux):
+# gpui-kit carries the components and the GPUI snapshot is pinned to the one
+# it was resolved against. `gpui` is named explicitly because derives in GPUI
+# refer to that path.
+gpui-kit = { version = "=0.6.1", default-features = true }
+gpui = { package = "gpui-pre", version = "=0.3.2" }
+gpui-pre-platform = "=0.3.2"
+# The host-agnostic rtorrent client layer: SCGI/XML-RPC, DTOs, mock backend.
+# Shared with the Tauri shell and the web server, with no UI dependency.
+rtorrent-core = { path = "../rtorrent" }
+# The web UI as a library: the app serves it from inside itself (see `web_host`)
+# rather than spawning a second binary.
+rstorrent-web = { path = "../../server" }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+anyhow = "1"
+futures = "0.3"
+# "Remove and delete data" moves files to the Trash / Recycle Bin, never `rm`.
+# Already in the workspace through `src-tauri`.
+trash = "5"
+# The local calendar date for the Started/Finished columns, matching
+# `formatDate`'s same-year elision. Already in the lock file.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# `statvfs` for free-space probing on the default save-path volume (unix only;
+# the disk readout stays unknown on Windows, where the files live in WSL).
+# Already in the workspace through the web server.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Completion toasts. Already in the lock file through `src-tauri`; same version.
+[target.'cfg(windows)'.dependencies]
+tauri-winrt-notification = "0.7.3"
+
+# The app icon for direct GPUI launches (not through the Tauri bundle).
+[target.'cfg(target_os = "macos")'.dependencies]
+# `exception`: completion notifications are raw message sends, and an
+# Objective-C exception from one must skip the ping, not abort the app.
+objc2 = { version = "0.6", features = ["exception"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSGraphics"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSObject", "NSString"] }
+
+[build-dependencies]
+# Embeds the exe icon and VERSIONINFO (see build.rs). Build dependencies follow
+# the HOST cfg, so this is unconditional (a macOS host cross-checking for
+# Windows needs it too) and build.rs only calls it for a Windows target. Same
+# version gpui-pre uses for its manifest.
+embed-resource = "3.0.11"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros", "test-util"] }
+
+[features]
+default = ["profiler"]
+# GPUI's per-frame draw/present timings, read by the dev overlay. Costs
+# nothing while tracing is switched off.
+profiler = ["gpui-kit/profiler"]

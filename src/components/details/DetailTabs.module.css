@@ -1,167 +1,595 @@
-/* Detail panel: a tab strip over a fixed-height content area on the app
-   background. Active tab is cyan-bright with a 2px cyan underline. */
+/*
+ * Detail panel (design frame 1a/1b).
+ *
+ * A 32px tab strip over a body split into the active pane and, on Files and
+ * Transfer, a 300px facts rail. Every height, column width and colour here is the
+ * handoff's; the panel is the densest surface in the app, so the sizes matter
+ * more than usual.
+ */
+
 .panel {
   flex: none;
-  border-top: 1px solid var(--border-mid);
+  display: flex;
+  flex-direction: column;
+  height: 288px;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-app);
+}
+
+/* --- Tab strip ----------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  height: var(--h-detail-tabs);
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-control);
+  cursor: default;
+}
+.tab:hover {
+  color: var(--text-secondary);
+}
+.active {
+  color: var(--text-primary);
   background: var(--bg-panel);
-  height: 132px;
+  border-bottom-color: var(--accent);
+}
+
+/* The focused torrent's name, right-aligned in whatever room is left. */
+.focused {
+  margin-left: auto;
+  align-self: center;
+  padding: 0 14px;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-detail);
+  color: var(--text-faint);
+}
+
+/* --- Body: pane + facts rail --------------------------------------------- */
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.rail {
+  flex: none;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border-left: 1px solid var(--border-default);
+  background: var(--bg-panel);
+}
+
+.railDivider {
+  height: 1px;
+  margin: 3px 0;
+  background: var(--border-default);
+}
+
+.fact {
+  display: flex;
+  gap: var(--sp-3);
+  font-size: var(--fs-detail);
+  line-height: 1.35;
+}
+.factKey {
+  flex: none;
+  width: 92px;
+  color: var(--text-fainter);
+}
+.factValue {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Rates carry their own colour: download is the accent, upload cyan. */
+.rate {
+  color: var(--accent-text);
+}
+.up {
+  color: var(--rate-up-text);
+}
+/* The pieces pane's own facts, in a two-column grid under the bars. */
+.pieces {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 12px;
+}
+.factGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(200px, 1fr));
+  gap: 4px 24px;
+}
+
+.transfer {
+  padding: var(--sp-4) 12px;
+}
+
+.placeholder {
+  padding: 14px 12px;
+  color: var(--text-dim);
+  font-size: var(--fs-control);
+}
+
+/* --- Error banner -------------------------------------------------------- */
+
+.errorBanner {
+  flex: none;
+  margin: 10px 12px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--r-control);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: var(--fs-control);
+}
+.errorKind {
+  font-weight: 600;
+}
+.errorHint {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+/* --- Shared pane chrome -------------------------------------------------- */
+
+.paneHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-size: var(--fs-header);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.paneFooter {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-chrome);
+}
+.footerSpacer {
+  flex: 1;
+}
+.footerButton {
+  height: var(--h-button);
+  padding: 0 12px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-control);
+  cursor: default;
+}
+.footerButton:hover {
+  background: var(--bg-control-active);
+  color: var(--text-primary);
+}
+.footerButton:disabled {
+  color: var(--state-disabled);
+  background: none;
+}
+.footerDanger {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+.footerDanger:disabled {
+  border-color: var(--border-control);
+  color: var(--state-disabled);
+}
+
+/* --- Files --------------------------------------------------------------- */
+
+.fileList,
+.peerList,
+.trackerList,
+.logList {
   display: flex;
   flex-direction: column;
 }
 
-.tabs {
+.fileRow {
   display: flex;
-  gap: 14px;
-  padding: 6px 14px 0;
-  font-size: var(--fs-title);
+  align-items: center;
+  gap: var(--sp-3);
   flex: none;
-}
-.tab {
-  padding: 2px 0 6px;
-  color: var(--text-dim);
-  border-bottom: 2px solid transparent;
-  cursor: default;
-}
-.tab:hover {
-  color: var(--text-muted);
-}
-.active {
-  color: var(--accent-cyan-bright);
-  border-bottom-color: var(--accent-cyan);
-  font-weight: 600;
-}
-
-.content {
-  flex: 1;
-  border-top: 1px solid var(--border-mid);
-  background: var(--bg-app);
-  overflow: auto;
-  padding: 8px 14px;
-}
-
-/* General tab: 4-column label:value grid. */
-.general {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 3px 20px;
-  font-size: var(--fs-cell);
+  height: var(--h-detail-file-row);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-row-dim);
+  font-size: var(--fs-control);
   color: var(--text-body);
 }
-.general b {
-  color: var(--text-dim);
-  font-weight: 600;
-}
-
-.placeholder {
-  color: var(--text-dim);
-  font-size: var(--fs-cell);
-}
-
-/* Simple detail table (trackers/peers) reusing the theme. */
-.dtable {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-cell);
-}
-.dtable th {
-  text-align: left;
-  color: var(--text-dim);
-  font-weight: 600;
+.fileHead {
+  height: var(--h-detail-header);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-ghost);
+  font-size: var(--fs-chip);
   text-transform: uppercase;
-  font-size: var(--fs-header);
-  letter-spacing: 0.05em;
-  padding: 2px 8px 4px 0;
+  letter-spacing: 0.06em;
 }
-.dtable td {
-  color: var(--text-muted);
-  padding: 2px 8px 2px 0;
+.fileName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* Content tab (D2/C15): give the progress bar room and let the filename ellipsis
-   rather than shove the other columns off. */
+.fileSize {
+  flex: none;
+  width: 80px;
+  text-align: right;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .fileProgressCol {
+  flex: none;
+  width: 110px;
+}
+.fileDone {
+  flex: none;
+  width: 70px;
+  text-align: right;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.filePriorityCell {
+  flex: none;
   width: 120px;
-}
-.dtable td.fileProgressCol {
-  vertical-align: middle;
-}
-
-/* The clickable priority cell — cursor + the cyan the rest of the app uses for
-   affordances, so it reads as interactive. */
-.filePriority {
   cursor: pointer;
-  color: var(--text-body);
   user-select: none;
 }
-.filePriority:hover {
-  color: var(--accent-cyan-bright);
+.fileSelected {
+  background: var(--accent-tint);
+}
+/* A skipped file is not downloading: the whole row recedes. */
+.fileSkipped {
+  color: var(--text-faint);
 }
 
-/* A skipped file (priority 0): dim the whole row so "not downloading" reads at
-   a glance. */
-.fileSkipped td {
+.folderToggle {
+  width: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text-dim);
+  font: inherit;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
 }
+.fileGlyph {
+  width: 10px;
+  color: var(--text-ghost);
+  text-align: center;
+}
+
+/* Priority chips: 16px, the design's three states. */
+.prio {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 7px;
+  border-radius: var(--r-chip);
+  font-size: var(--fs-chip);
+}
+.prioHigh {
+  background: var(--accent-tint);
+  color: var(--accent-text);
+}
+.prioNormal {
+  background: var(--bg-track);
+  color: var(--text-muted);
+}
+.prioSkip {
+  background: var(--bg-track-dim);
+  color: var(--text-faint);
+}
+
+/* --- Peers --------------------------------------------------------------- */
+
+.peerPane {
+  display: flex;
+  flex-direction: column;
+}
+.peerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+  height: var(--h-peer-row);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-row-dim);
+  font-size: var(--fs-control);
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+.peerHead {
+  height: var(--h-peer-header);
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-size: var(--fs-header);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.peerIp {
+  flex: none;
+  width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peerPort {
+  flex: none;
+  width: 66px;
+  text-align: right;
+  color: var(--text-muted);
+}
+.peerClient {
+  flex: 1;
+  min-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peerHave {
+  flex: none;
+  width: 110px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.haveTrack {
+  flex: 1;
+  height: 9px;
+  border-radius: var(--r-chip);
+  background: var(--bg-track);
+  overflow: hidden;
+}
+.haveFill {
+  display: block;
+  height: 100%;
+  background: var(--rate-up);
+}
+.haveText {
+  flex: none;
+  width: 30px;
+  text-align: right;
+  color: var(--text-muted);
+}
+.peerRate {
+  flex: none;
+  width: 78px;
+  text-align: right;
+}
+.peerFlags {
+  flex: none;
+  width: 70px;
+  text-align: right;
+  color: var(--text-fainter);
+  letter-spacing: 0.04em;
+}
+.none {
+  color: var(--state-disabled);
+}
+
+/* --- Trackers ------------------------------------------------------------ */
 
 .trackerPane {
-  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.trackerList {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.trackerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-row-dim);
+  font-size: var(--fs-control);
+  color: var(--text-body);
+}
+.trackerRowActive {
+  background: var(--accent-tint);
+}
+.trackerDisabled {
+  opacity: 0.65;
+}
+.dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--state-disabled);
+}
+.dotactive {
+  background: var(--accent);
+}
+.dotidle {
+  background: var(--state-disabled);
+}
+.dotwarn {
+  background: var(--status-warn);
+}
+.doterror {
+  background: var(--status-error);
+}
+.trackerUrl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trackerStatus {
+  flex: none;
+  width: 120px;
+  text-align: right;
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+.textactive {
+  color: var(--accent-text);
+}
+.textwarn {
+  color: var(--status-warn);
+}
+.texterror {
+  color: var(--status-error);
+}
+.textidle {
+  color: var(--state-disabled);
+}
+/* A peer source that is on without announcing: the handoff's cyan, kept apart
+ * from the accent a real tracker's working row takes. */
+.dotup {
+  background: var(--rate-up);
+}
+.textup {
+  color: var(--rate-up-text);
+}
+.trackerSeeds {
+  flex: none;
+  width: 96px;
+  text-align: right;
+  font-size: var(--fs-meta);
+  color: var(--text-fainter);
+  font-variant-numeric: tabular-nums;
+}
+.trackerNext {
+  flex: none;
+  width: 86px;
+  text-align: right;
+  font-size: var(--fs-meta);
+  color: var(--text-fainter);
+  font-variant-numeric: tabular-nums;
 }
 
 .trackerAdd {
   display: flex;
-  gap: 5px;
-  margin-bottom: 5px;
+  gap: var(--sp-2);
 }
-
 .trackerAdd input {
-  width: min(360px, 55%);
+  width: 320px;
   box-sizing: border-box;
-  padding: 3px 7px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-input);
-  background: var(--bg-field);
+  height: var(--h-input);
+  padding: 0 8px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
   color: var(--text-body);
   font: inherit;
-  font-size: var(--fs-cell);
+  font-size: var(--fs-control);
 }
-
 .trackerAdd button {
-  padding: 3px 8px;
-  border: 1px solid var(--accent-cyan);
-  border-radius: var(--radius-input);
-  background: var(--bg-selected);
-  color: var(--accent-cyan-bright);
+  height: var(--h-input);
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-control);
+  background: var(--accent-tint);
+  color: var(--accent-text);
   font: inherit;
-  font-size: var(--fs-cell);
+  font-size: var(--fs-control);
+  cursor: default;
 }
-
 .trackerAdd button:disabled {
-  opacity: 0.4;
+  border-color: var(--border-control);
+  background: none;
+  color: var(--state-disabled);
 }
 
-.trackerDisabled {
-  opacity: 0.45;
-}
+/* --- Log ----------------------------------------------------------------- */
 
-/* The torrent's tracker/storage error text (d.message), shown above the table
-   so a failure the individual rows can't express is still visible here. */
-.trackerError {
-  margin-bottom: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--danger-border);
-  border-radius: var(--radius-input);
-  background: var(--danger-bg);
-  color: var(--danger-text);
-  font-size: var(--fs-cell);
+.logPane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
-
-/* A failing tracker's Status cell, so it stands out from "working" rows. */
-.statusError {
+.logList {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-1) 0;
+}
+.logRow {
+  display: flex;
+  gap: var(--sp-3);
+  padding: 1px 12px;
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+  color: var(--text-body);
+}
+/* An entry about the torrent in hand is picked out of the noise. */
+.logMine {
+  background: var(--accent-tint);
+}
+.logwarn {
+  color: var(--status-warn);
+}
+.logerror {
   color: var(--status-error);
 }
-
-/* Muted secondary cell text (e.g. the tracker Type column). */
-.dim {
-  color: var(--text-dim);
+.logTime {
+  flex: none;
+  width: 76px;
+  color: var(--text-ghost);
+  font-variant-numeric: tabular-nums;
+}
+.logMessage {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

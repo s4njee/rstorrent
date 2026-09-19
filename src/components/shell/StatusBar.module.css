@@ -1,21 +1,81 @@
-/* Bottom status bar: DHT nodes on the left, global rates + free space right. */
+/*
+ * Status bar (design frame 1a): 26px, chrome surface, top border, 11px meta text
+ * with tabular numerals. Sits at the bottom of the main column.
+ */
+
 .bar {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 5px 14px;
-  background: var(--bg-panel);
-  border-top: 1px solid var(--border-mid);
-  font-size: var(--fs-cell);
-  color: var(--text-dim);
+  gap: var(--sp-8);
   flex: none;
+  height: var(--h-statusbar);
+  padding: 0 var(--sp-5);
+  background: var(--bg-chrome);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-faint);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
 }
+
+/* The connection indicator: accent when connected, error when not. */
+.dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--status-error);
+}
+.dot[data-connected] {
+  background: var(--accent);
+}
+
+.segment {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clickable {
+  cursor: default;
+}
+.clickable:hover {
+  color: var(--text-body);
+}
+
+/* Inline × action inside a pill (e.g. cancel a running move). */
+.inline {
+  margin-left: var(--sp-4);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+.inline:hover {
+  color: var(--text-body);
+  border-color: var(--text-faint);
+}
+
+.error {
+  flex: none;
+  color: var(--status-error);
+}
+
+.down {
+  flex: none;
+  color: var(--accent);
+}
+
+.up {
+  flex: none;
+  color: var(--rate-up);
+}
+
 .grow {
   flex: 1;
-}
-.down {
-  color: var(--accent-cyan-bright);
-}
-.up {
-  color: var(--accent-green-soft);
+  min-width: var(--sp-4);
 }
