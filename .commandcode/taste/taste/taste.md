@@ -1,0 +1,26 @@
+# Taste
+- Prefers native Rust desktop UIs (GPUI / gpui-kit) over Tauri + webview stacks for the app's GUI; when a capability must live in "the app", the GPUI shell is the one that should carry it. Confidence: 0.7
+- Wants larger work planned before implementation as markdown epic-and-story trackers — numbered epics/stories with sizes, milestones, and per-story acceptance criteria plus a concrete verification step. Confidence: 0.75
+- Wants the tracker kept current as work lands: items ticked off in place with a dated implementation report — what was done, deviations from the plan called out, the commands used to verify, and an explicit "left over" list of what remains. Confidence: 0.65
+- Keeps local reference projects around and expects agents to study them and follow their house patterns when building something new. Confidence: 0.7
+- When porting from a reference project, wants the design and behaviour re-implemented in the host project's own stack and patterns, not the source project's code transplanted. Confidence: 0.6
+- Prefers one shared design system (tokens plus components) across the app's shells rather than forking components per shell; expects a component to be unified as soon as both shells need it ("so the two cannot drift"). Confidence: 0.7
+- Deletes the components/files a change replaces instead of leaving them as dead code alongside the new ones. Confidence: 0.6
+- Puts pure logic (formatting, geometry, counting, viewport rules) in small standalone modules with unit tests rather than inline in components. Confidence: 0.6
+- Omits features or UI items entirely when no real data source exists for them, rather than shipping placeholder or faked values. Confidence: 0.65
+- Removes speculative/dead API surface (unused exports, stale tokens) as soon as it is confirmed unused. Confidence: 0.55
+- Leaves pre-existing or unrelated failures/warnings untouched and gates his own work on "no new failures" rather than everything being green. Confidence: 0.6
+- Verifies work end-to-end before calling it done: format, lint, typecheck, unit tests, all builds, and a live smoke run of the actually-running service. Confidence: 0.65
+- Prefers superseding old plan/design docs in place (marked "superseded", content retained) rather than deleting or overwriting them. Confidence: 0.6
+- Treats a design handoff as intent rather than a literal spec: keeps domain states the reference happened to omit (e.g. a "Stalled" status), makes judgement calls where the design is silent, and documents each call with its reasoning. Confidence: 0.55
+- Extends the backend contract to make the UI honest (new DTO fields, a daemon command plumbed through the whole chain) rather than deriving or faking the value the design needs. Confidence: 0.55
+- Drives work with terse milestone-ID directives (e.g. replying just "wc4", "complete wc5", or "do rel-01 from the backlogv2") and expects the agent to pull the scope and acceptance criteria from whichever tracker document holds them rather than being told them again. Confidence: 0.65
+- Reports honestly and self-corrects: flags and retracts earlier claims of his own that turn out to be wrong (e.g. attributing test failures to the environment rather than the codebase). Confidence: 0.5
+- Wants the desktop app to be self-contained: the shipped .app should carry the rtorrent runtime it bundles, so a fresh install needs no separate `brew install` — bundling is treated as part of the feature work, not a later packaging chore. Confidence: 0.55
+- Expects the new GPUI shell to keep functional parity with the older Tauri shell — when a capability exists in one and not the other (daemon start, bundling, the add-torrent / add-magnet / remove, and create-torrent flows), he commissions the port rather than accepting the gap. Confidence: 0.65
+- Treats a local reference project as the canonical source of brand identity: wants its accent colour, logo image, and product name ported onto the current app's user-facing surfaces (top bar, HTML titles), while leaving code-level names (crate, binary, package.json, docs) alone. Confidence: 0.5
+- Prefers reaching for the in-process/library integration (one binary, no child to sign, supervise or configure) and an in-app menu toggle, over spawning and managing a companion executable. Confidence: 0.55
+- Holds the UI to an accessibility baseline — semantic roles for tables/trees/dialogs, real labels bound to their inputs, keyboard equivalents for anything that is pointer-only, visible focus, reduced motion, non-colour status cues, contrast — and wants it proven by an automated axe-core test wired into the test suite/CI rather than by inspection. Confidence: 0.6
+- Uses pnpm (workspace) as the package manager on the JS side: expects installs via pnpm, not npm, with the lockfile kept satisfied and formatted. Confidence: 0.55
+- Wants the whole app buildable with a single self-contained command (including the bundled runtime and the embedded frontend), rather than a sequence of prerequisite scripts the user has to run by hand. Confidence: 0.6
+- Wants the primary build/run instructions as the first thing in README.md (top-of-file section), not buried further down. Confidence: 0.55

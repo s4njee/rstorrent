@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(cargo:*)",
+      "Shell(which cargo; ls ~/.cargo/bin/cargo 2>&1; ls ~/.rustup/toolchains/*/bin/cargo 2>&1 | head -5; echo \"PATH=$PATH\")",
+      "Shell(npm:*)",
+      "Shell(git log --oneline origin/main..HEAD 2>&1; echo \"---REMOTE---\"; git remote -v 2>&1 | head -20; echo \"---IGNORE---\"; cat .gitignore 2>&1 | head -40)",
+      "Shell(git:*)",
+      "Shell(git commit -F - <<'EOF' Add Start rtorrent to Daemon menu and disconnected card Add Daemon > Start Daemon native menu item and a Start rtorrent button on the disconnected card that launches a local daemon via a new start_daemon command (tmux/direct spawn, WSL-aware) and retries the connection. Co-authored-by: CommandCodeBot <noreply@commandcode.ai> EOF echo \"commit exit:$?\")"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}
