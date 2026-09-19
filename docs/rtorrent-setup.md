@@ -5,7 +5,7 @@ embed a BitTorrent engine. It talks to rtorrent over its XML-RPC-over-SCGI
 interface. This document gets a local daemon running and connected.
 
 > Prefer to explore the UI without a daemon? Launch with mock mode:
-> `RSTORRENT_MOCK=1 npm run tauri dev` — the app runs against ten built-in
+> `cargo run -p rstorrent-gpui -- --demo` — the app runs against ten built-in
 > fixture torrents.
 
 ## 1. The daemon

@@ -191,14 +191,13 @@ describe("web backend — commands", () => {
     expect(settings.mock).toBe(false);
   });
 
-  it("hydrates the log via /api/log and returns [] for open-requests", async () => {
+  it("hydrates the log via /api/log", async () => {
     const entries = [{ message: "connected" }];
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(res({ entries, seq: 1 }, { status: 200 })),
     );
     expect(await webBackend.invoke("get_log")).toEqual(entries);
-    expect(await webBackend.invoke("take_open_requests")).toEqual([]);
   });
 
   it("posts a mutation to /api/cmd/{name}", async () => {
@@ -224,10 +223,10 @@ describe("web backend — commands", () => {
     );
   });
 
-  it("rejects desktop-only commands without hitting the server", async () => {
+  it("rejects commands the server does not offer without hitting it", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await expect(webBackend.invoke("test_connection", {})).rejects.toThrow(
+    await expect(webBackend.invoke("get_statistics", {})).rejects.toThrow(
       /not available in the web UI/,
     );
     expect(fetchMock).not.toHaveBeenCalled();
@@ -251,12 +250,6 @@ describe("web backend — commands", () => {
     vi.stubGlobal("fetch", fetchMock);
     expect(await webBackend.invoke("get_moves")).toEqual(moves);
     expect(fetchMock).toHaveBeenCalledWith("/api/moves");
-  });
-
-  it("non-blank capabilities: browser can read clipboard, not the local FS", () => {
-    expect(webBackend.capabilities.clipboardRead).toBe(true);
-    expect(webBackend.capabilities.localFs).toBe(false);
-    expect(webBackend.capabilities.nativeDialogs).toBe(false);
   });
 });
 

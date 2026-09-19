@@ -9,8 +9,9 @@
 
   <body>
     <div id="root"></div>
-    <!-- Dev-only demo: runs the real UI in a browser against mocked IPC +
-         fixtures (see src/demo/). Not part of the Tauri app build. -->
+    <!-- Dev-only demo: runs the real web shell in a browser against an
+         in-memory backend + fixtures (see src/demo/). Served by `npm run dev`
+         at /demo.html; not part of the web console build (web.html). -->
     <script type="module" src="/src/demo/main.tsx"></script>
   </body>
 </html>

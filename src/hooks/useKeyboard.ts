@@ -53,7 +53,7 @@ export function useKeyboardShortcuts() {
         ui.selectAll(visibleHashes());
         return;
       }
-      // ⌘N — create torrent (also handled by native menu on desktop).
+      // ⌘N — create torrent.
       if (mod && e.key.toLowerCase() === "n" && !typingInField()) {
         e.preventDefault();
         ui.openDialog("create-torrent");
@@ -65,8 +65,8 @@ export function useKeyboardShortcuts() {
         actions.recheck();
         return;
       }
-      // Note: ⌘O / ⌘⇧O (add file/magnet) and ⌘, (Preferences) are owned by the
-      // native menu, which intercepts them before the webview — see menu.rs.
+      // Note: ⌘O / ⌘⇧O (add file/magnet) and ⌘, (settings) are not bound here;
+      // the top bar's add and settings buttons are their entry points.
 
       // The rest are single-key and must not fire while typing.
       if (typingInField()) return;

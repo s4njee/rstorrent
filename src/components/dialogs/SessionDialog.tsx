@@ -1,30 +1,24 @@
 /**
- * Session dialog (V3-22 / LIB-09, LIB-10): export the library to a portable
- * manifest, and import one back — including manifests discovered from
- * qBittorrent (`BT_backup`) or Transmission (config dir) resume data.
+ * Session dialog (V3-22 / LIB-09): export the library to a portable
+ * manifest, and import one back.
  *
  * Export carries hashes, re-addable sources, trackers, labels/tags, paths,
  * priorities, limits and client metadata — never credentials. Import adds
  * torrents stopped, rechecks them, and resumes only verified data through a
  * crash-safe journaled job the dialog polls.
  *
- * Desktop uses native pickers (manifest path in, save path out, client folder
- * in for discovery); the browser uses a file input and blob downloads, with
- * manifest text flowing through the same commands.
+ * Export downloads the manifest as a blob; import uploads one through a file
+ * input, and the manifest text flows through the same server commands.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { useUi } from "../../store/ui";
-import { capabilities } from "../../ipc/backend";
 import {
   cancelImport,
-  exportSession,
   exportSessionText,
   importSession,
   importStatus,
-  scanForeign,
   validateSession,
-  type ForeignScanReport,
   type SessionImportStatus,
   type SessionPlanItem,
   type SessionValidation,
@@ -51,18 +45,13 @@ const ACTION_LABEL: Record<string, string> = {
 
 export function SessionDialog() {
   const closeDialog = useUi((s) => s.closeDialog);
-  const canNative = capabilities().nativeDialogs;
 
   // --- export ---
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
   // --- import source ---
-  const [manifestPath, setManifestPath] = useState("");
   const [manifestText, setManifestText] = useState<string | null>(null);
-  const [scanMsg, setScanMsg] = useState<string | null>(null);
-  const [scanReport, setScanReport] = useState<ForeignScanReport | null>(null);
-  const [scanning, setScanning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- preview / import ---
@@ -82,11 +71,8 @@ export function SessionDialog() {
     [],
   );
 
-  const sourceArgs = (): { path?: string; manifestText?: string } | null => {
-    if (manifestText !== null) return { manifestText };
-    if (manifestPath.trim()) return { path: manifestPath.trim() };
-    return null;
-  };
+  const sourceArgs = (): { manifestText: string } | null =>
+    manifestText !== null ? { manifestText } : null;
 
   // --- export actions ---
 
@@ -94,27 +80,10 @@ export function SessionDialog() {
     setExporting(true);
     setExportMsg(null);
     try {
-      if (canNative) {
-        const { save } = await import("@tauri-apps/plugin-dialog");
-        const picked = await save({
-          defaultPath: "session-manifest.json",
-          filters: [{ name: "Session manifest", extensions: ["json"] }],
-        });
-        if (typeof picked !== "string") {
-          setExportMsg("export cancelled.");
-          return;
-        }
-        const report = await exportSession(picked);
-        const sourceless = report.torrents - report.withSources;
-        setExportMsg(
-          `exported ${report.torrents} torrent(s)${sourceless > 0 ? ` — ${sourceless} without a re-addable source (re-add those by hand first for a complete backup)` : " — every entry has a re-addable source"}.`,
-        );
-      } else {
-        const text = await exportSessionText();
-        const count = JSON.parse(text).torrents?.length ?? 0;
-        downloadText("session-manifest.json", text);
-        setExportMsg(`exported ${count} torrent(s).`);
-      }
+      const text = await exportSessionText();
+      const count = JSON.parse(text).torrents?.length ?? 0;
+      downloadText("session-manifest.json", text);
+      setExportMsg(`exported ${count} torrent(s).`);
     } catch (e) {
       setExportMsg(`export failed: ${String(e)}`);
     } finally {
@@ -135,75 +104,13 @@ export function SessionDialog() {
     }
   };
 
-  const chooseManifestFile = async () => {
-    if (!canNative) {
-      fileInputRef.current?.click();
-      return;
-    }
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const picked = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "Session manifest", extensions: ["json"] }],
-      });
-      if (typeof picked === "string") {
-        resetPreview();
-        setManifestText(null);
-        setScanReport(null);
-        setScanMsg(null);
-        setManifestPath(picked);
-      }
-    } catch (e) {
-      setImportError(String(e));
-    }
-  };
-
   const onWebFile = async (file: File) => {
     try {
       const text = await file.text();
       resetPreview();
-      setManifestPath("");
-      setScanReport(null);
-      setScanMsg(null);
       setManifestText(text);
     } catch (e) {
       setImportError(`could not read file: ${String(e)}`);
-    }
-  };
-
-  const doScan = async (client: "qbittorrent" | "transmission") => {
-    if (!canNative) {
-      setScanMsg(
-        "discovery reads the other client's files on the daemon host — upload a manifest instead, or run this from the desktop app.",
-      );
-      return;
-    }
-    setScanning(true);
-    setScanMsg(null);
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const picked = await open({ multiple: false, directory: true });
-      if (typeof picked !== "string") return;
-      const report = await scanForeign(client, picked);
-      resetPreview();
-      setManifestPath("");
-      setManifestText(report.manifestText);
-      setScanReport(report);
-      const warnBits = report.problems
-        .slice(0, 3)
-        .map((p) => p.message)
-        .join(" · ");
-      setScanMsg(
-        `found ${report.entryCount} torrent(s), ${report.restorableCount} with sources` +
-          (report.problems.length > 0
-            ? ` — ${report.problems.length} note(s), e.g. ${warnBits}`
-            : ""),
-      );
-    } catch (e) {
-      setScanMsg(`scan failed: ${String(e)}`);
-    } finally {
-      setScanning(false);
     }
   };
 
@@ -212,7 +119,7 @@ export function SessionDialog() {
   const doValidate = async () => {
     const source = sourceArgs();
     if (!source) {
-      setImportError("pick a manifest file, scan another client, or paste manifest text first.");
+      setImportError("upload a manifest file first.");
       return;
     }
     setValidating(true);
@@ -225,7 +132,9 @@ export function SessionDialog() {
       });
       setPreview(report);
       setSelected(
-        new Set(report.items.filter((i) => i.action === "add").map((i) => i.hash)),
+        new Set(
+          report.items.filter((i) => i.action === "add").map((i) => i.hash),
+        ),
       );
     } catch (e) {
       setImportError(String(e));
@@ -301,8 +210,12 @@ export function SessionDialog() {
           a source and are flagged, not dropped.
         </span>
         <div className={forms.field}>
-          <Button variant="secondary" disabled={exporting} onClick={() => void doExport()}>
-            {exporting ? "Exporting…" : canNative ? "Export to file…" : "Download manifest"}
+          <Button
+            variant="secondary"
+            disabled={exporting}
+            onClick={() => void doExport()}
+          >
+            {exporting ? "Exporting…" : "Download manifest"}
           </Button>
         </div>
         {exportMsg && <span className={forms.meta}>{exportMsg}</span>}
@@ -313,11 +226,13 @@ export function SessionDialog() {
           crash-safe journal resumes interrupted runs instead of re-adding.
         </span>
         <div className={forms.field}>
-          <Button variant="secondary" onClick={() => void chooseManifestFile()}>
-            {canNative ? "Choose manifest…" : "Upload manifest…"}
+          <Button
+            variant="secondary"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Upload manifest…
           </Button>
-          {manifestPath && <span className={forms.meta}>{manifestPath}</span>}
-          {manifestText !== null && !scanReport && (
+          {manifestText !== null && (
             <span className={forms.meta}>manifest text loaded.</span>
           )}
         </div>
@@ -333,31 +248,6 @@ export function SessionDialog() {
             e.target.value = "";
           }}
         />
-        <div className={forms.field}>
-          <span className={forms.meta}>…or discover from another client:</span>
-          <Button variant="secondary" disabled={scanning} onClick={() => void doScan("qbittorrent")}>
-            Scan qBittorrent…
-          </Button>
-          <Button variant="secondary" disabled={scanning} onClick={() => void doScan("transmission")}>
-            Scan Transmission…
-          </Button>
-        </div>
-        {scanMsg && <span className={forms.meta}>{scanMsg}</span>}
-        {scanReport && scanReport.problems.length > 0 && (
-          <div className={forms.col}>
-            {scanReport.problems.slice(0, 8).map((p, i) => (
-              <span key={i} className={forms.meta}>
-                {p.file.split(/[/\\]/).pop()}: {p.message}
-              </span>
-            ))}
-            {scanReport.problems.length > 8 && (
-              <span className={forms.meta}>
-                …and {scanReport.problems.length - 8} more (see the exported manifest).
-              </span>
-            )}
-          </div>
-        )}
-
         <div className={forms.field}>
           <label className={forms.fieldLabel} htmlFor="session-remap-from">
             Move paths from
@@ -395,16 +285,20 @@ export function SessionDialog() {
         {preview && (
           <>
             <span className={forms.meta}>
-              {preview.torrentCount} in manifest · {preview.restorableCount} restorable ·{" "}
-              {addable.length} to add · {preview.errors.length} error(s) ·{" "}
-              {preview.warnings.length} warning(s)
+              {preview.torrentCount} in manifest · {preview.restorableCount}{" "}
+              restorable · {addable.length} to add · {preview.errors.length}{" "}
+              error(s) · {preview.warnings.length} warning(s)
             </span>
             {preview.errors.slice(0, 5).map((e, i) => (
               <div key={`e${i}`} className={forms.error}>
-                {e.hash ? `${e.hash.slice(0, 8)}…: ` : ""}{e.message}
+                {e.hash ? `${e.hash.slice(0, 8)}…: ` : ""}
+                {e.message}
               </div>
             ))}
-            <div className={forms.col} style={{ maxHeight: 220, overflowY: "auto" }}>
+            <div
+              className={forms.col}
+              style={{ maxHeight: 220, overflowY: "auto" }}
+            >
               {preview.items.map((item) => (
                 <PlanRow
                   key={item.hash}
@@ -420,7 +314,9 @@ export function SessionDialog() {
                 disabled={importRunning || selected.size === 0}
                 onClick={() => void doImport(false)}
               >
-                {importRunning ? "Importing…" : `Import ${selected.size} stopped`}
+                {importRunning
+                  ? "Importing…"
+                  : `Import ${selected.size} stopped`}
               </Button>
               <Button
                 variant="secondary"
@@ -431,7 +327,10 @@ export function SessionDialog() {
                 Resume previous
               </Button>
               {importRunning && (
-                <Button variant="secondary" onClick={() => void cancelImport().catch(() => {})}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void cancelImport().catch(() => {})}
+                >
                   Cancel
                 </Button>
               )}
@@ -445,7 +344,9 @@ export function SessionDialog() {
               ? `importing… ${status.added} added, ${status.skipped} skipped, ${status.failed.length} failed`
               : `finished: ${status.added} added, ${status.resumed} resumed, ${status.skipped} skipped, ${status.failed.length} failed`}
             {status.failed.slice(0, 3).map((f, i) => (
-              <span key={i} style={{ display: "block" }}>{f}</span>
+              <span key={i} style={{ display: "block" }}>
+                {f}
+              </span>
             ))}
           </span>
         )}
@@ -474,7 +375,9 @@ function PlanRow({
           aria-label={`Import ${item.name}`}
         />
       ) : (
-        <span className={forms.meta} aria-hidden="true">·</span>
+        <span className={forms.meta} aria-hidden="true">
+          ·
+        </span>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -485,7 +388,10 @@ function PlanRow({
           </span>
         </div>
         {item.dstDir && (
-          <div className={forms.meta} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div
+            className={forms.meta}
+            style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+          >
             → {item.dstDir}
           </div>
         )}

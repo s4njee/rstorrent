@@ -1,65 +1,78 @@
 /**
- * Browser demo entry (dev-only). Installs a mock Tauri IPC layer backed by the
- * fixtures, then mounts the *real* App so the UI renders in a plain browser with
- * no daemon. A `?screen=` query param sets up each state for screenshots:
+ * Browser demo entry (dev-only). Registers an in-memory backend that answers
+ * from the fixtures, then mounts the *real* web shell so the UI renders in a
+ * plain browser with no server or daemon. A `?screen=` query param sets up each
+ * state for screenshots (serve with `npm run dev`, then open):
  *
- *   demo.html?screen=main    — a torrent selected, sidebar + detail
- *   demo.html?screen=pieces  — General tab with the pieces bar
- *   demo.html?screen=smart   — a saved smart filter + a multi-select
- *   demo.html?screen=prefs   — Preferences → Connection
+ *   /demo.html?screen=main    — a torrent selected, sidebar + detail
+ *   /demo.html?screen=pieces  — the Pieces pane with the pieces bar
+ *   /demo.html?screen=smart   — a saved smart filter + a multi-select
  *
- * This module is never imported by the Tauri build (index.html → src/main.tsx).
+ * Never part of the web console build (web.html → src/web/main.tsx).
  */
 
-import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import { emit } from "@tauri-apps/api/event";
 import ReactDOM from "react-dom/client";
-import { setBackend } from "../ipc/backend";
-import { tauriBackend } from "../ipc/tauri";
+import { setBackend, type Backend, type UnlistenFn } from "../ipc/backend";
+import { initTheme } from "../theme/theme";
+import "../theme/palette.css";
+import "../theme/themes.css";
 import "../theme/tokens.css";
+import "../theme/tokens.web.css";
 import "../theme/global.css";
 import * as fx from "./fixtures";
 
 const screen =
   new URLSearchParams(window.location.search).get("screen") ?? "main";
 
-mockWindows("main");
+/** Event subscribers by channel name, fed by {@link emit}. */
+const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
-mockIPC(
-  (cmd, args) => {
-    switch (cmd) {
+function emit(event: string, payload: unknown): void {
+  listeners.get(event)?.forEach((handler) => handler(payload));
+}
+
+const demoBackend: Backend = {
+  async invoke<T>(command: string, args?: Record<string, unknown>) {
+    switch (command) {
       case "get_settings":
-        return fx.settings;
+        return fx.settings as T;
+      case "get_snapshot":
+        return fx.snapshot as T;
       case "get_log":
-        return fx.log;
+        return fx.log as T;
+      case "get_moves":
+        return [] as T;
       case "get_statistics":
-        return fx.statistics;
+        return fx.statistics as T;
       case "daemon_health":
-        return fx.daemonHealth;
-      case "take_open_requests":
-        return [];
+        return fx.daemonHealth as T;
       case "set_detail_watch": {
         const a = args as { hash: string | null; tab: string | null };
         if (a.hash && a.tab === "general") {
           const hash = a.hash;
-          setTimeout(
-            () => void emit("state://detail", fx.piecesDetail(hash)),
-            20,
-          );
+          setTimeout(() => emit("state://detail", fx.piecesDetail(hash)), 20);
         }
-        return null;
+        return null as T;
       }
       default:
         // Every mutation / unhandled command is a no-op in the demo.
-        return null;
+        return null as T;
     }
   },
-  { shouldMockEvents: true },
-);
+  async listen<T>(
+    event: string,
+    handler: (payload: T) => void,
+  ): Promise<UnlistenFn> {
+    const set = listeners.get(event) ?? new Set();
+    listeners.set(event, set);
+    const h = handler as (payload: unknown) => void;
+    set.add(h);
+    return () => set.delete(h);
+  },
+};
 
-// The demo drives the real UI over Tauri's mock IPC, so it registers the Tauri
-// backend — its invoke/listen calls are intercepted by mockIPC above.
-setBackend(tauriBackend);
+setBackend(demoBackend);
+initTheme();
 
 // Smart filters are read from localStorage when the UI store initializes, so
 // seed them before the store module is imported below.
@@ -81,45 +94,31 @@ if (screen === "smart") {
   localStorage.removeItem("rstorrent.view");
 }
 
-const [{ default: App }, { useUi }] = await Promise.all([
-  import("../App"),
+const [{ WebApp }, { useUi }] = await Promise.all([
+  import("../web/WebApp"),
   import("../store/ui"),
 ]);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <App />,
+  <WebApp onSignOut={() => {}} />,
 );
 
-/** Click a Preferences left-nav item by its visible label. */
-function clickNav(label: string) {
-  const el = Array.from(document.querySelectorAll("div")).find(
-    (d) =>
-      typeof d.className === "string" &&
-      d.className.includes("navItem") &&
-      d.textContent?.includes(label),
-  );
-  (el as HTMLElement | undefined)?.click();
-}
-
 function drive() {
-  void emit("state://snapshot", fx.snapshot);
+  emit("state://snapshot", fx.snapshot);
   const ui = useUi.getState();
   switch (screen) {
     case "pieces":
+      ui.setActiveTab("pieces");
       ui.select("G7");
       break;
     case "smart":
       ui.selectAll(["C3", "G7"]);
       break;
-    case "prefs":
-      ui.openDialog("prefs");
-      setTimeout(() => clickNav("Connection"), 80);
-      break;
     default:
       ui.select("C3");
   }
-  // Re-emit once more in case the first raced the App's subscription.
-  setTimeout(() => void emit("state://snapshot", fx.snapshot), 150);
+  // Re-emit once more in case the first raced the shell's subscription.
+  setTimeout(() => emit("state://snapshot", fx.snapshot), 150);
 }
 
 // Let React mount + subscribe, then feed data and set up the screen.

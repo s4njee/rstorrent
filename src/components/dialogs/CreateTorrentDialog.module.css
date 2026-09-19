@@ -24,11 +24,6 @@
   align-items: center;
 }
 
-.buttonGroup {
-  display: flex;
-  gap: 6px;
-}
-
 .hint {
   font-size: var(--fs-meta);
   color: var(--text-muted);

@@ -9,9 +9,10 @@
 # whose non-system dylibs sit next to the executable and are referenced through
 # `@executable_path`.
 #
-# The output lands in src-tauri/binaries/rtorrent/, which
-# src-tauri/tauri.conf.json copies into the .app's Resources. At runtime
-# `daemon_start` prefers it and falls back to a system rtorrent.
+# The output lands in binaries/rtorrent-macos/, which crates/gpui/build.rs
+# copies beside a cargo-built binary and tools/bundle-gpui-macos.sh copies into
+# the .app's Resources. At runtime `daemon::start` prefers it and falls back to
+# a system rtorrent.
 #
 # Version note: 0.15.7 predates libtorrent's `verify_libcurl_internal_wakeup`
 # assertion, so it does not hit the libcurl/eventfd abort that affected 0.16.x
@@ -23,15 +24,14 @@
 #   RTORRENT_VERSION=v0.16.18 tools/build-rtorrent-macos.sh
 #
 # The runtime is built for the host architecture, matching the app it bundles
-# into. That also matters to Tauri's `externalBin`, which this script avoids by
-# using a plain directory resource, so the binary name needs no triple suffix.
+# into.
 
 set -euo pipefail
 
 VERSION="${RTORRENT_VERSION:-v0.15.7}"
 ARCH="$(uname -m)"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT_DIR="$REPO_ROOT/src-tauri/binaries/rtorrent"
+OUT_DIR="$REPO_ROOT/binaries/rtorrent-macos"
 BUILD_DIR="${BUILD_DIR:-$HOME/.cache/rstorrent-build}"
 PREFIX="$BUILD_DIR/prefix-$ARCH"
 JOBS="$(sysctl -n hw.ncpu)"
@@ -111,10 +111,9 @@ build_project libtorrent \
 build_project rtorrent --with-xmlrpc-tinyxml2
 
 # --- 3. Collect the runtime into the bundle directory ---------------------
-say "Collecting runtime into src-tauri/binaries/rtorrent"
+say "Collecting runtime into binaries/rtorrent-macos"
 # Clear only what this script generates. The directory also holds the committed
-# README that keeps the Tauri resource path resolvable before the first build,
-# so it must survive a re-run.
+# README, so it must survive a re-run.
 mkdir -p "$OUT_DIR"
 rm -f "$OUT_DIR/rtorrent" "$OUT_DIR"/*.dylib
 cp "$PREFIX/bin/rtorrent" "$OUT_DIR/rtorrent"
@@ -237,7 +236,7 @@ Done.
 
   Runtime   $OUT_DIR/rtorrent
   Version   $VERSION ($ARCH)
-  Bundle    src-tauri/tauri.conf.json copies src-tauri/binaries/rtorrent into
-            the .app's Resources; daemon_start prefers it over a system install.
+  Bundle    tools/bundle-gpui-macos.sh copies it into the .app's Resources;
+            daemon::start prefers it over a system install.
 
 DONE

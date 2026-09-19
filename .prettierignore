@@ -1,9 +1,7 @@
 dist
 dist-web
 target
-src-tauri/target
 .claude
 design
 package-lock.json
-src-tauri/gen
 *.md

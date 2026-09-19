@@ -7,10 +7,8 @@
  */
 
 import { useState } from "react";
-import { open, save } from "@tauri-apps/plugin-dialog";
 import { useUi } from "../../store/ui";
 import { useSettings } from "../../store/settings";
-import { capabilities } from "../../ipc/backend";
 import { createTorrent } from "../../ipc/commands";
 import type { CreateTorrentResult } from "../../ipc/types";
 import { ModalBase, Button } from "./ModalBase";
@@ -37,47 +35,19 @@ const PIECE_SIZE_OPTIONS = [
 export function CreateTorrentDialog() {
   const closeDialog = useUi((s) => s.closeDialog);
   const settings = useSettings((s) => s.settings);
-  const canNative = capabilities().nativeDialogs;
-  const canLocalFs = capabilities().localFs;
 
   const [sourcePath, setSourcePath] = useState("");
   const [outputPath, setOutputPath] = useState("");
   const [trackersText, setTrackersText] = useState("");
   const [pieceLength, setPieceLength] = useState(0);
   const [isPrivate, setIsPrivate] = useState(false);
-  const [startSeeding, setStartSeeding] = useState(canLocalFs);
+  const [startSeeding, setStartSeeding] = useState(false);
   const [comment, setComment] = useState("");
   const [source, setSource] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CreateTorrentResult | null>(null);
-
-  const chooseSourceFile = async () => {
-    if (!canNative) return;
-    try {
-      const picked = await open({ multiple: false, directory: false });
-      if (typeof picked === "string") {
-        setSourcePath(picked);
-        suggestOutputPath(picked);
-      }
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const chooseSourceFolder = async () => {
-    if (!canNative) return;
-    try {
-      const picked = await open({ multiple: false, directory: true });
-      if (typeof picked === "string") {
-        setSourcePath(picked);
-        suggestOutputPath(picked);
-      }
-    } catch (e) {
-      setError(String(e));
-    }
-  };
 
   const suggestOutputPath = (src: string) => {
     if (!outputPath) {
@@ -94,30 +64,9 @@ export function CreateTorrentDialog() {
     }
   };
 
-  const chooseOutputFile = async () => {
-    if (!canNative) return;
-    try {
-      const defaultName = sourcePath
-        ? `${sourcePath
-            .replace(/[/\\]+$/, "")
-            .split(/[/\\]/)
-            .pop()}.torrent`
-        : "new.torrent";
-      const picked = await save({
-        defaultPath: outputPath || defaultName,
-        filters: [{ name: "Torrent file", extensions: ["torrent"] }],
-      });
-      if (typeof picked === "string") {
-        setOutputPath(picked);
-      }
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
   const handleSubmit = async () => {
     if (!sourcePath.trim()) {
-      setError("Please select a source file or folder");
+      setError("Enter the path of a file or folder on the host");
       return;
     }
 
@@ -138,7 +87,7 @@ export function CreateTorrentDialog() {
         isPrivate,
         comment: comment.trim() || null,
         source: source.trim() || null,
-        startSeeding: startSeeding && canLocalFs,
+        startSeeding,
       });
 
       setResult(res);
@@ -204,26 +153,6 @@ export function CreateTorrentDialog() {
               disabled={submitting}
               spellCheck={false}
             />
-            {canNative && (
-              <div className={styles.buttonGroup}>
-                <button
-                  type="button"
-                  className={forms.browse}
-                  onClick={() => void chooseSourceFile()}
-                  disabled={submitting}
-                >
-                  File…
-                </button>
-                <button
-                  type="button"
-                  className={forms.browse}
-                  onClick={() => void chooseSourceFolder()}
-                  disabled={submitting}
-                >
-                  Folder…
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
@@ -239,16 +168,6 @@ export function CreateTorrentDialog() {
               disabled={submitting}
               spellCheck={false}
             />
-            {canNative && (
-              <button
-                type="button"
-                className={forms.browse}
-                onClick={() => void chooseOutputFile()}
-                disabled={submitting}
-              >
-                Browse…
-              </button>
-            )}
           </div>
         </div>
 
@@ -339,7 +258,7 @@ export function CreateTorrentDialog() {
             checked={startSeeding}
             onChange={setStartSeeding}
             label="Start seeding immediately in daemon"
-            disabled={submitting || !canLocalFs}
+            disabled={submitting}
           />
         </div>
       </div>

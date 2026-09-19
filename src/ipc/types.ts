@@ -1,11 +1,11 @@
 /**
- * IPC contract — the single source of truth for every value that crosses the
- * Tauri boundary between the Rust backend and this React frontend.
+ * Wire contract — every value that crosses the HTTP boundary between the
+ * `rstorrent-web` server and this React frontend.
  *
  * The Rust side mirrors these shapes with `#[derive(Serialize/Deserialize)]`
- * structs using `#[serde(rename_all = "camelCase")]`, so field names here and in
- * `src-tauri/src/ipc.rs` must stay identical. When you change a type here,
- * change its Rust twin in the same commit.
+ * structs using `#[serde(rename_all = "camelCase")]` (mostly
+ * `crates/rtorrent/src/types.rs`), so field names must stay identical. When you
+ * change a type here, change its Rust twin in the same commit.
  */
 
 /** Lifecycle status of a torrent, derived in Rust from rtorrent's raw flags. */
@@ -332,11 +332,7 @@ export interface BandwidthRule {
 
 /** Move-on-complete journal state (V3-14), mirroring the Rust `MoveState`. */
 export type MoveState =
-  | "pending"
-  | "in_progress"
-  | "done"
-  | "failed"
-  | "cancelled";
+  "pending" | "in_progress" | "done" | "failed" | "cancelled";
 
 /** One move-on-complete entry with live byte progress (V3-14). */
 export interface MoveStatus {
@@ -568,7 +564,8 @@ export interface RssRule {
 
 /** One parsed feed entry (B11), shown in the RSS preview. */
 export interface FeedItem {
-  title: string;  link: string;
+  title: string;
+  link: string;
   guid: string;
   pubDate: string;
   /** Enclosure length in bytes, when the feed states one. */

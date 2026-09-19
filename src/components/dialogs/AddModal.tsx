@@ -7,11 +7,9 @@
  * the tri-state contents tree, and the shared options (destination, label,
  * start, skip hash check) apply to whatever is added.
  *
- * Host branch (unchanged from the two dialogs it replaces):
- *  - **Desktop** (`capabilities.nativeDialogs`): the native picker returns
- *    paths → Rust `read_torrent_metadata` / `add_torrent`.
- *  - **Web**: `<input type="file">` → `File` → `POST /api/torrents/inspect`
- *    / `POST /api/torrents/file`.
+ * A `.torrent` comes in as a browser `File` (`<input type="file">`, a drop, or
+ * a queued external add) → `POST /api/torrents/inspect` for the tree, then
+ * `POST /api/torrents/file` to add it.
  *
  * SCoped honestly for a queue of more than one file: the contents tree and its
  * per-file deselection describe the **first** file only; a multi-file add uses
@@ -30,12 +28,8 @@ import {
 import { useUi } from "../../store/ui";
 import { useSettings } from "../../store/settings";
 import { useTorrents } from "../../store/torrents";
-import { capabilities } from "../../ipc/backend";
-import {
-  addTorrent,
-  addTracker,
-  readTorrentMetadata,
-} from "../../ipc/commands";
+import { addTorrent, addTracker } from "../../ipc/commands";
+import { webInspectTorrent, webUploadTorrent } from "../../ipc/web";
 import type { TorrentMeta } from "../../ipc/types";
 import { formatBytes } from "../../utils/format";
 import {
@@ -53,24 +47,21 @@ import styles from "./AddModal.module.css";
 
 type Mode = "magnet" | "file";
 
-/** One queued `.torrent`: a desktop path or a browser File. */
+/** One queued `.torrent` file. */
 interface QueueItem {
   key: string;
-  kind: "path" | "upload";
-  /** Present for a path item. */
-  path?: string;
-  /** Present for an upload item. */
-  file?: File;
+  file: File;
   name: string;
 }
 
-/** Read clipboard text through the host API; null on denial. */
+/** Queue entry for a browser `File`. */
+function uploadItem(file: File): QueueItem {
+  return { key: `upload:${file.name}`, file, name: file.name };
+}
+
+/** Read clipboard text; null when the browser denies it. */
 async function readClipboardText(): Promise<string | null> {
   try {
-    if (capabilities().nativeDialogs) {
-      const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
-      return await readText();
-    }
     return await navigator.clipboard.readText();
   } catch {
     return null;
@@ -82,7 +73,6 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
   const external = useUi((s) => s.externalAddRequest);
   const settings = useSettings((s) => s.settings);
   const torrents = useTorrents((s) => s.torrents);
-  const canNative = capabilities().nativeDialogs;
 
   const [mode, setMode] = useState<Mode>(initialMode);
   const [uriText, setUriText] = useState("");
@@ -132,13 +122,7 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
     setMode("file");
     setError(null);
     try {
-      const inspected =
-        item.kind === "path" && item.path
-          ? await readTorrentMetadata(item.path)
-          : item.file
-            ? await (await import("../../ipc/web")).webInspectTorrent(item.file)
-            : null;
-      if (inspected) applyMeta(inspected);
+      applyMeta(await webInspectTorrent(item.file));
     } catch (e) {
       setError(String(e));
     }
@@ -157,22 +141,8 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
         setUriText(source.uri);
         return;
       }
-      if (source?.kind === "file") {
-        await queueSource({
-          key: `path:${source.path}`,
-          kind: "path",
-          path: source.path,
-          name: source.path.split("/").pop() ?? source.path,
-        });
-        return;
-      }
       if (source?.kind === "upload") {
-        await queueSource({
-          key: `upload:${source.file.name}`,
-          kind: "upload",
-          file: source.file,
-          name: source.file.name,
-        });
+        await queueSource(uploadItem(source.file));
         return;
       }
       // No external source: offer a magnet on the clipboard, as before.
@@ -186,13 +156,6 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional once-per-open
   }, []);
 
-  const browseDestination = async () => {
-    if (!canNative) return;
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const dir = await open({ directory: true });
-    if (typeof dir === "string") setSavePath(dir);
-  };
-
   const onLabelChange = (value: string) => {
     setLabel(value);
     const preset = settings?.labelDefaults.find(
@@ -201,38 +164,14 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
     if (preset) setSavePath(preset.savePath);
   };
 
-  const pickFiles = async () => {
-    if (canNative) {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const chosen = await open({
-        multiple: true,
-        filters: [{ name: "Torrent", extensions: ["torrent"] }],
-      });
-      const paths = Array.isArray(chosen) ? chosen : chosen ? [chosen] : [];
-      for (const path of paths) {
-        await queueSource({
-          key: `path:${path}`,
-          kind: "path",
-          path,
-          name: path.split("/").pop() ?? path,
-        });
-      }
-      return;
-    }
+  const pickFiles = () => {
     fileInputRef.current?.click();
   };
 
   const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     void (async () => {
-      for (const file of files) {
-        await queueSource({
-          key: `upload:${file.name}`,
-          kind: "upload",
-          file,
-          name: file.name,
-        });
-      }
+      for (const file of files) await queueSource(uploadItem(file));
     })();
     e.target.value = "";
   };
@@ -242,14 +181,7 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
     setDragOver(false);
     const files = Array.from(e.dataTransfer?.files ?? []);
     void (async () => {
-      for (const file of files) {
-        await queueSource({
-          key: `upload:${file.name}`,
-          kind: "upload",
-          file,
-          name: file.name,
-        });
-      }
+      for (const file of files) await queueSource(uploadItem(file));
     })();
   };
 
@@ -314,18 +246,10 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
         : [];
     for (const item of queue) {
       try {
-        if (item.kind === "upload" && item.file) {
-          const { webUploadTorrent } = await import("../../ipc/web");
-          await webUploadTorrent(item.file, {
-            ...baseOptions,
-            unselectedIndexes,
-          });
-        } else if (item.path) {
-          await addTorrent(
-            { kind: "file", path: item.path },
-            { ...baseOptions, unselectedIndexes },
-          );
-        }
+        await webUploadTorrent(item.file, {
+          ...baseOptions,
+          unselectedIndexes,
+        });
       } catch (e) {
         failures.push(`${item.name}: ${String(e)}`);
       }
@@ -400,7 +324,7 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
   useEffect(() => {
     const kind = external?.source.kind;
     if (kind === "magnet") setMode("magnet");
-    if (kind === "file" || kind === "upload") setMode("file");
+    if (kind === "upload") setMode("file");
   }, [external]);
 
   return (
@@ -424,16 +348,14 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
         </>
       }
     >
-      {!canNative && (
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept=".torrent,application/x-bittorrent"
-          style={{ display: "none" }}
-          onChange={onFileInputChange}
-        />
-      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept=".torrent,application/x-bittorrent"
+        style={{ display: "none" }}
+        onChange={onFileInputChange}
+      />
 
       <div className={forms.col}>
         <div className={styles.segmented} role="group" aria-label="Add source">
@@ -531,7 +453,7 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
             <div
               className={styles.dropzone}
               data-drag={dragOver}
-              onClick={() => void pickFiles()}
+              onClick={pickFiles}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOver(true);
@@ -543,7 +465,7 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  void pickFiles();
+                  pickFiles();
                 }
               }}
             >
@@ -612,14 +534,6 @@ export function AddModal({ initialMode }: { initialMode: Mode }) {
             onChange={(e) => setSavePath(e.currentTarget.value)}
             spellCheck={false}
           />
-          {canNative && (
-            <button
-              className={forms.browse}
-              onClick={() => void browseDestination()}
-            >
-              Browse…
-            </button>
-          )}
         </div>
 
         <div className={forms.field}>

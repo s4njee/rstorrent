@@ -12,7 +12,6 @@ import { useUi } from "../../store/ui";
 import { useTorrents } from "../../store/torrents";
 import { useSettings, isLocalhost } from "../../store/settings";
 import { setLocation } from "../../ipc/commands";
-import { capabilities } from "../../ipc/backend";
 import { ModalBase, Button } from "./ModalBase";
 import { Checkbox } from "./Checkbox";
 import forms from "./forms.module.css";
@@ -26,7 +25,6 @@ export function SetLocationDialog() {
 
   const selected = torrents.filter((t) => selection.has(t.hash));
   const isLocal = isLocalhost(settings?.transport);
-  const canNative = capabilities().nativeDialogs;
 
   const [savePath, setSavePath] = useState(
     selected[0]?.savePath || settings?.defaultSavePath || "",
@@ -45,20 +43,6 @@ export function SetLocationDialog() {
         Set location for <b>{selected.length} torrents</b>
       </>
     );
-
-  const browse = async () => {
-    if (!canNative) return;
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const dir = await open({
-        directory: true,
-        defaultPath: savePath || undefined,
-      });
-      if (typeof dir === "string") setSavePath(dir);
-    } catch {
-      // User cancelled dialog or plugin unavailable
-    }
-  };
 
   const confirm = async () => {
     const trimmed = savePath.trim();
@@ -118,16 +102,6 @@ export function SetLocationDialog() {
             disabled={submitting}
             autoFocus
           />
-          {canNative && (
-            <button
-              type="button"
-              className={forms.browse}
-              onClick={() => void browse()}
-              disabled={submitting}
-            >
-              Browse…
-            </button>
-          )}
         </div>
 
         <Checkbox

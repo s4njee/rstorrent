@@ -846,8 +846,7 @@ impl Services {
             let mut opts = load_options(&options)?;
             let incomplete = crate::localfs::to_daemon_path(&settings.incomplete_dir)
                 .map_err(RtorrentError::Unsupported)?;
-            let routed =
-                rtorrent_core::complete::route_new_download(&incomplete, &opts.directory);
+            let routed = rtorrent_core::complete::route_new_download(&incomplete, &opts.directory);
             opts.directory = routed.0;
             let final_dir = routed.1;
             backend.load_raw(bytes, opts).await?;
@@ -875,8 +874,7 @@ impl Services {
             let mut opts = load_options(&options)?;
             let incomplete = crate::localfs::to_daemon_path(&settings.incomplete_dir)
                 .map_err(RtorrentError::Unsupported)?;
-            let routed =
-                rtorrent_core::complete::route_new_download(&incomplete, &opts.directory);
+            let routed = rtorrent_core::complete::route_new_download(&incomplete, &opts.directory);
             opts.directory = routed.0;
             let final_dir = routed.1;
             backend.load_magnet(&uri, opts).await?;

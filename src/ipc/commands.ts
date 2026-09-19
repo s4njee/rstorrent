@@ -1,10 +1,11 @@
 /**
- * Typed wrappers around Tauri's `invoke` for every frontend → Rust command.
+ * Typed wrappers around `invoke` for every frontend → server command.
  *
- * The command *names* (first arg to `invoke`) must match the `#[tauri::command]`
- * function names registered in `src-tauri/src/lib.rs`. Argument objects are
- * serialized to the Rust command parameters (camelCase). Keeping every call in
- * this one module means the IPC surface is auditable in a single place.
+ * The command *names* (first arg to `invoke`) are what the web backend maps
+ * onto the server (`POST /api/cmd/{name}` for mutations — see
+ * `server/src/cmd.rs`). Argument objects are serialized as JSON (camelCase).
+ * Keeping every call in this one module means the command surface is auditable
+ * in a single place.
  */
 
 import { backend } from "./backend";
@@ -14,35 +15,25 @@ import type {
   CreateTorrentResult,
   DaemonHealth,
   DetailTab,
-  FeedItem,
   LogEntry,
   MoveStatus,
-  RssRule,
   Settings,
   Snapshot,
   Statistics,
-  TorrentMeta,
-  Transport,
-  TuningPreview,
-  TuningResult,
 } from "./types";
 
 /**
  * Source for an add request.
  *
- * - `file` — desktop path (Tauri picker / Finder open / native drop).
- * - `upload` — browser `File` (web picker / DOM drop); never serialized over IPC.
+ * - `upload` — browser `File` (picker / DOM drop); sent as a multipart upload
+ *   by `webUploadTorrent`, never through `addTorrent`.
  * - `magnet` — magnet URI or http(s) `.torrent` URL.
  */
 export type AddSource =
-  | { kind: "file"; path: string }
-  | { kind: "upload"; file: File }
-  | { kind: "magnet"; uri: string };
+  { kind: "upload"; file: File } | { kind: "magnet"; uri: string };
 
-/** Parse a .torrent file's metadata to populate the Add dialog. */
-export function readTorrentMetadata(path: string): Promise<TorrentMeta> {
-  return backend().invoke("read_torrent_metadata", { path });
-}
+/** The sources `addTorrent` accepts: a magnet or http(s) `.torrent` URL. */
+export type MagnetSource = Extract<AddSource, { kind: "magnet" }>;
 
 /** Create a new .torrent file from local source files/directories. */
 export function createTorrent(
@@ -51,13 +42,11 @@ export function createTorrent(
   return backend().invoke("create_torrent", { params });
 }
 
-/** Drain file/deep-link requests that arrived before the webview was ready. */
-export function takeOpenRequests(): Promise<string[]> {
-  return backend().invoke("take_open_requests");
-}
-
-/** Add a torrent (file or magnet) with the given options. */
-export function addTorrent(source: AddSource, opts: AddOptions): Promise<void> {
+/** Add a torrent by magnet / URL with the given options. */
+export function addTorrent(
+  source: MagnetSource,
+  opts: AddOptions,
+): Promise<void> {
   return backend().invoke("add_torrent", { source, opts });
 }
 
@@ -169,11 +158,6 @@ export function copyMagnet(hash: string): Promise<string> {
   return backend().invoke("copy_magnet", { hash });
 }
 
-/** Reveal the torrent's data in Finder (localhost daemons only). */
-export function openDestination(hash: string): Promise<void> {
-  return backend().invoke("open_destination", { hash });
-}
-
 /** Ban a peer and drop the connection (B16). */
 export function banPeer(hash: string, peerId: string): Promise<void> {
   return backend().invoke("ban_peer", { hash, peerId });
@@ -222,49 +206,6 @@ export function getSettings(): Promise<Settings> {
   return backend().invoke("get_settings");
 }
 
-export function applySettings(patch: Partial<Settings>): Promise<Settings> {
-  return backend().invoke("apply_settings", { patch });
-}
-
-/** Flip turtle mode's manual switch (B14); resolves with the saved settings. */
-export function setTurtle(enabled: boolean): Promise<Settings> {
-  return backend().invoke("set_turtle", { enabled });
-}
-
-/** Probe a candidate connection; resolves with the daemon version or rejects. */
-export function testConnection(
-  transport: Transport,
-  password?: string,
-): Promise<string> {
-  // A password typed but not yet saved must be what gets probed; omitting it
-  // falls back to the Keychain.
-  return backend().invoke("test_connection", { transport, password });
-}
-
-/** Save a remote daemon password to the Keychain (never to settings.json). */
-export function setHttpPassword(
-  url: string,
-  username: string,
-  password: string,
-): Promise<void> {
-  return backend().invoke("set_http_password", { url, username, password });
-}
-
-/** Is a password saved for this endpoint? The secret itself is never returned. */
-export function hasHttpPassword(
-  url: string,
-  username: string,
-): Promise<boolean> {
-  return backend().invoke("has_http_password", { url, username });
-}
-
-export function clearHttpPassword(
-  url: string,
-  username: string,
-): Promise<void> {
-  return backend().invoke("clear_http_password", { url, username });
-}
-
 /** Steer the detail poll: which torrent + tab to watch (null to stop). */
 export function setDetailWatch(
   hash: string | null,
@@ -280,69 +221,6 @@ export function getStatistics(): Promise<Statistics> {
 /** Daemon self-report for the Statistics dialog's Daemon tab (D16). */
 export function daemonHealth(): Promise<DaemonHealth> {
   return backend().invoke("daemon_health");
-}
-
-/** Ask the daemon to write its session now (D13). */
-export function saveSession(): Promise<void> {
-  return backend().invoke("save_session");
-}
-
-/** Start a local rtorrent daemon (C20). Rejects for a remote transport. */
-export function startDaemon(): Promise<string> {
-  return backend().invoke("start_daemon");
-}
-
-/** Ask the daemon to shut down cleanly (D13). */
-export function shutdownDaemon(): Promise<void> {
-  return backend().invoke("shutdown_daemon");
-}
-
-/** Fetch and parse an RSS/Atom feed for the preview (B11). */
-export function rssFetch(url: string): Promise<FeedItem[]> {
-  return backend().invoke("rss_fetch", { url });
-}
-
-/** Manually add one feed item to rtorrent (B11). */
-export function rssDownload(
-  link: string,
-  label: string,
-  savePath: string,
-): Promise<void> {
-  return backend().invoke("rss_download", { link, label, savePath });
-}
-
-/** One explained preview row (V3-23). */
-export interface RssTestClause {
-  label: string;
-  passed: boolean;
-  detail: string;
-}
-
-export interface RssTestRow {
-  title: string;
-  link: string;
-  guid: string;
-  size: number | null;
-  matched: boolean;
-  clauses: RssTestClause[];
-}
-
-/** Test one rule against a live feed, with per-clause verdicts (V3-23). */
-export function rssTest(
-  rule: RssRule,
-  url: string,
-): Promise<RssTestRow[]> {
-  return backend().invoke("rss_test", { rule, url });
-}
-
-/** Export the seen-set as JSON (V3-23). */
-export function rssExportSeen(): Promise<string> {
-  return backend().invoke("rss_export_seen");
-}
-
-/** Import guids into the seen-set; resolves with how many were new (V3-23). */
-export function rssImportSeen(json: string): Promise<number> {
-  return backend().invoke("rss_import_seen", { json });
 }
 
 /** Hydrate the Log tab with the current ring-buffer contents. */
@@ -368,17 +246,6 @@ export function retryMove(hash: string): Promise<boolean> {
 /** Session manifest text for download (V3-22 / LIB-09). */
 export function exportSessionText(): Promise<string> {
   return backend().invoke("export_session_text");
-}
-
-/** Counts returned by a desktop file export (V3-22 / LIB-09). */
-export interface SessionExportReport {
-  torrents: number;
-  withSources: number;
-}
-
-/** Export the session manifest to a file (desktop only; web downloads text). */
-export function exportSession(path: string): Promise<SessionExportReport> {
-  return backend().invoke("export_session", { path });
 }
 
 /** One validation finding in the import preview (V3-22). */
@@ -408,10 +275,8 @@ export interface SessionValidation {
 }
 
 export interface SessionImportArgs {
-  /** Desktop file path (native picker). Exactly one of path/text. */
-  path?: string;
-  /** Manifest text (web upload, paste, foreign-scan result). */
-  manifestText?: string;
+  /** Manifest text (uploaded file). */
+  manifestText: string;
   /** Hashes to import; omitted means everything restorable. */
   selected?: string[];
   remapFrom?: string;
@@ -420,8 +285,10 @@ export interface SessionImportArgs {
 }
 
 /** Dry-run validation + restore preview (V3-22). */
-export function validateSession(args: SessionImportArgs): Promise<SessionValidation> {
-  return backend().invoke("validate_session", args as Record<string, unknown>);
+export function validateSession(
+  args: SessionImportArgs,
+): Promise<SessionValidation> {
+  return backend().invoke("validate_session", { ...args });
 }
 
 /** Live import status for the dialog to poll (V3-22). */
@@ -436,7 +303,7 @@ export interface SessionImportStatus {
 
 /** Start a detached, journalised import; poll `importStatus` (V3-22). */
 export function importSession(args: SessionImportArgs): Promise<void> {
-  return backend().invoke("import_session", args as Record<string, unknown>);
+  return backend().invoke("import_session", { ...args });
 }
 
 /** Live import status for the dialog to poll (V3-22). */
@@ -449,48 +316,7 @@ export function cancelImport(): Promise<void> {
   return backend().invoke("cancel_import");
 }
 
-/** One scanned foreign entry for the dialog preview (V3-22 / LIB-10). */
-export interface ForeignScanEntry {
-  hash: string;
-  name: string;
-  hasSource: boolean;
-  stopped: boolean;
-}
-
-/** Read-only discovery of another client's resume data (V3-22 / LIB-10). */
-export interface ForeignScanReport {
-  client: string;
-  manifestText: string;
-  entryCount: number;
-  restorableCount: number;
-  entries: ForeignScanEntry[];
-  problems: { file: string; message: string }[];
-}
-
-/** Scan qBittorrent (`BT_backup`) or Transmission resume data (V3-22 / LIB-10). */
-export function scanForeign(
-  client: "qbittorrent" | "transmission",
-  dir: string,
-): Promise<ForeignScanReport> {
-  return backend().invoke("scan_foreign", { client, dir });
-}
-
-/** Ask the poller to attempt a reconnect immediately. */
-export function retryConnection(): Promise<void> {
-  return backend().invoke("retry_connection");
-}
-
 /** Fetch the current full snapshot (FND-02 delta heal). */
 export function getSnapshot(): Promise<Snapshot | null> {
   return backend().invoke("get_snapshot");
-}
-
-/** Preview the 1 Gbps tuning block and where it would be written. */
-export function tuningPreview(): Promise<TuningPreview> {
-  return backend().invoke("tuning_preview");
-}
-
-/** Write the 1 Gbps tuning to .rtorrent.rc and apply it to the running daemon. */
-export function applyTuning(): Promise<TuningResult> {
-  return backend().invoke("apply_tuning");
 }

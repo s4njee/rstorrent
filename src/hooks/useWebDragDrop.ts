@@ -1,8 +1,7 @@
 /**
- * WE4-S3 — drag & drop onto the *browser* window.
+ * WE4-S3 — drag & drop onto the browser window.
  *
- * Desktop uses Tauri's native drag-drop (real filesystem paths). The web shell
- * has only the DOM File API, so this hook:
+ * The browser only offers the DOM File API (no filesystem paths), so this hook:
  *  - accepts `.torrent` file drops → upload sources
  *  - accepts dropped magnet/URL text → magnet sources
  *  - ignores unrelated payloads

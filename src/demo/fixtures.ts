@@ -1,7 +1,7 @@
 /**
  * Fixture data for the browser demo (mirrors the Rust MockClient's ten
- * torrents). Dev-only — this module is imported solely by the demo entry, never
- * by the Tauri app.
+ * torrents). Dev-only — imported by the demo entry and tests, never by the web
+ * console build.
  */
 
 import type {

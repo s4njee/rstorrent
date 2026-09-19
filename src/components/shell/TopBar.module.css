@@ -16,12 +16,6 @@
   border-bottom: 1px solid var(--border-default);
 }
 
-/* macOS: the window's traffic lights float over this bar, and the whole strip
- * drags the window. The gutter keeps the mark clear of the lights. */
-.bar[data-desktop] {
-  padding-left: 78px;
-}
-
 /* The mark: blackbird's own image, cropped square and rounded to the chip
    radius, as blackbird renders it. */
 .logo {

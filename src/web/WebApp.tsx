@@ -1,11 +1,9 @@
 /**
  * The web shell.
  *
- * Same chrome and layout as the desktop app — top bar, action toolbar, workspace
- * (sidebar + table / detail panel / status bar) — with the browser-only additions:
- * the account chip in the top bar (sign out) and the server-supplied display name.
- * The live-data wiring mirrors the desktop App minus its native channels (menus,
- * deep links, notifications).
+ * Top bar, action toolbar, workspace (sidebar + table / detail panel / status
+ * bar), plus the account chip in the top bar (sign out) and the server-supplied
+ * display name. `/settings` and `/stats` are routes of their own.
  */
 
 import { useEffect, useState } from "react";
@@ -33,6 +31,7 @@ import { DiskCard } from "../components/sidebar/DiskCard";
 import { TorrentTable } from "../components/table/TorrentTable";
 import { DetailTabs } from "../components/details/DetailTabs";
 import { ContextMenu } from "../components/menu/ContextMenu";
+import { ColumnMenu } from "../components/menu/ColumnMenu";
 import { DialogHost } from "../components/dialogs/DialogHost";
 import { StatusDialog } from "./StatusDialog";
 import { SettingsPage } from "./SettingsPage";
@@ -88,7 +87,7 @@ export function WebApp({ onSignOut }: { onSignOut: () => void }) {
   useFileSearch();
   const dragOver = useWebDragDrop();
 
-  // Live data channels (see App.tsx for the desktop counterpart).
+  // Live data channels.
   useEffect(() => {
     const applySnapshot = useTorrents.getState().applySnapshot;
     const prune = useUi.getState().pruneSelection;
@@ -98,7 +97,10 @@ export function WebApp({ onSignOut }: { onSignOut: () => void }) {
     void getLog().then((entries) => useLog.getState().hydrate(entries));
     void getMoves().then((moves) => useMoves.getState().set(moves));
     // Server facts (incl. bandwidth rules for the precedence display).
-    void useSettings.getState().load().catch(() => {});
+    void useSettings
+      .getState()
+      .load()
+      .catch(() => {});
 
     const unsubs = [
       onSnapshot((s) => {
@@ -271,6 +273,7 @@ export function WebApp({ onSignOut }: { onSignOut: () => void }) {
         </div>
       </div>
       <ContextMenu />
+      <ColumnMenu />
       <DialogHost />
       <Notices />
       {statusOpen && (

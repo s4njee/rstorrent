@@ -1,11 +1,11 @@
 /**
- * The single FIFO that every "add these torrents" entry point feeds:
- * Finder/deep-link opens, drag & drop onto the window, and paste.
+ * The single FIFO that every "add these torrents" entry point feeds: drag &
+ * drop onto the window, and paste.
  *
- * Sharing one queue across all three is the point. Each source is handled to
- * completion before the next starts, so dropping three `.torrent` files (or
- * dropping one while a deep-link dialog is already up) walks through the add
- * dialogs one at a time instead of racing them into the same slot.
+ * Sharing one queue is the point. Each source is handled to completion before
+ * the next starts, so dropping three `.torrent` files (or dropping one while an
+ * add dialog is already up) walks through the add dialogs one at a time
+ * instead of racing them into the same slot.
  *
  * Honours the `showAddDialog` preference: on when set (dialog per source,
  * resolving when it closes), otherwise an instant add with the same defaults
@@ -14,6 +14,7 @@
 
 import { addTorrent } from "./ipc/commands";
 import type { AddSource } from "./ipc/commands";
+import { webUploadTorrent } from "./ipc/web";
 import { defaultAddOptions, OpenRequestQueue } from "./externalOpen";
 import { useSettings } from "./store/settings";
 import { useUi } from "./store/ui";
@@ -34,11 +35,10 @@ async function handleSource(source: AddSource): Promise<void> {
     return;
   }
 
-  // Instant-add (showAddDialog off): magnets and desktop paths go through the
-  // shared command; browser File uploads hit the multipart endpoint.
+  // Instant-add (showAddDialog off): magnets go through the shared command;
+  // File uploads hit the multipart endpoint.
   const opts = defaultAddOptions(settings);
   if (source.kind === "upload") {
-    const { webUploadTorrent } = await import("./ipc/web");
     await webUploadTorrent(source.file, opts);
   } else {
     await addTorrent(source, opts);

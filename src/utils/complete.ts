@@ -39,7 +39,11 @@ export function resolveDestination(
   const labelKey = label.trim().toLowerCase();
   if (labelKey) {
     for (const rule of rules) {
-      if (rule.tag == null && rule.label?.trim().toLowerCase() === labelKey && rule.destination.trim()) {
+      if (
+        rule.tag == null &&
+        rule.label?.trim().toLowerCase() === labelKey &&
+        rule.destination.trim()
+      ) {
         return rule.destination.trim();
       }
     }
@@ -74,7 +78,10 @@ export function routeNewDownload(
   const incomplete = incompleteDir.trim();
   const chosen = chosenDir.trim();
   if (!incomplete || !chosen) return { directory: chosen, finalDir: null };
-  if (incomplete.replace(/\/+$/, "").toLowerCase() === chosen.replace(/\/+$/, "").toLowerCase()) {
+  if (
+    incomplete.replace(/\/+$/, "").toLowerCase() ===
+    chosen.replace(/\/+$/, "").toLowerCase()
+  ) {
     return { directory: chosen, finalDir: null };
   }
   return { directory: incomplete, finalDir: chosen };
@@ -86,7 +93,11 @@ export interface MovePlan {
 }
 
 /** `null` when already home or inputs are missing. */
-export function planMove(currentDir: string, destination: string, name: string): MovePlan | null {
+export function planMove(
+  currentDir: string,
+  destination: string,
+  name: string,
+): MovePlan | null {
   const current = currentDir.trim().replace(/\/+$/, "");
   const dest = destination.trim().replace(/\/+$/, "");
   const cleanName = name.trim();
@@ -118,16 +129,20 @@ export function resolveCollision(
   const dir = dstDir.trim().replace(/\/+$/, "");
   const clean = name.trim();
   if (!siblingsLower.includes(clean.toLowerCase())) return `${dir}/${clean}`;
-  if (policy === "error") throw new Error(`destination already exists: ${dir}/${clean}`);
+  if (policy === "error")
+    throw new Error(`destination already exists: ${dir}/${clean}`);
   const [stem, ext] = splitExt(clean);
   for (let n = 1; n < 1000; n++) {
     const candidate = ext ? `${stem} (${n}).${ext}` : `${stem} (${n})`;
-    if (!siblingsLower.includes(candidate.toLowerCase())) return `${dir}/${candidate}`;
+    if (!siblingsLower.includes(candidate.toLowerCase()))
+      return `${dir}/${candidate}`;
   }
   throw new Error(`destination already exists: ${dir}/${clean}`);
 }
 
-export type Preflight = { ok: true; unknown?: boolean } | { ok: false; required: number; free: number };
+export type Preflight =
+  | { ok: true; unknown?: boolean }
+  | { ok: false; required: number; free: number };
 
 /** `remaining` is size − done clamped at zero; `free` prefers d.free_diskspace. */
 export function preflight(remaining: number, free: number | null): Preflight {

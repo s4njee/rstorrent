@@ -25,7 +25,7 @@ import { webSettings } from "../ipc/webSettings";
 import { WebApp } from "./WebApp";
 import { useUi, type DialogKind } from "../store/ui";
 
-/** The browser's backend: no local filesystem, no native dialogs. The console
+/** A stub backend. The console
  *  loads the daemon log on mount and expects a list, and settings for the
  *  prefs draft — those two calls answer shape-complete, everything else is
  *  unread in this harness. */
@@ -36,14 +36,6 @@ const stubBackend: Backend = {
     return {};
   }) as Backend["invoke"],
   listen: async () => () => {},
-  capabilities: {
-    localFs: false,
-    nativeDialogs: false,
-    keychain: false,
-    menus: false,
-    deepLinks: false,
-    clipboardRead: true,
-  },
 };
 
 let host: HTMLDivElement;
@@ -102,14 +94,11 @@ describe("the console", () => {
     "add-file",
     "add-magnet",
     "create-torrent",
-    "prefs",
     "stats",
     "remove",
     "recheck",
     "set-tags",
     "rate-limit",
-    "tune-network",
-    "shutdown",
     "moves",
     "session",
   ];

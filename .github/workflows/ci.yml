@@ -1,16 +1,13 @@
 # CI for rstorrent (C21).
 #
-# Six jobs, split by what they actually need:
+# Five jobs, split by what they actually need:
 #
 #   frontend — pure Node, so it runs on Linux where runners are fastest.
-#   crate    — `rtorrent-core`, the shared client layer, is Tauri-free and
+#   crate    — `rtorrent-core`, the shared client layer, has no UI and
 #              builds anywhere, so it gets fmt/clippy/tests on Linux (cheap and
 #              fast). A PR touching only crates/rtorrent gets Linux-speed feedback.
 #   e2e      — the web console driven by Playwright against the mock server. It
 #              needs the Rust binary and a browser, so it is its own Linux job.
-#   desktop  — the `rstorrent` Tauri app runs on macOS because that's where its
-#              webview and Keychain backend (`security-framework`, via `keyring`)
-#              are real; building it on Linux would test a config nobody ships.
 #   gpui-macos / gpui-windows
 #            — the native GPUI shell (`rstorrent-gpui`) on both platforms it
 #              ships for. It links the web server as a library, and the server
@@ -19,9 +16,6 @@
 #              (icon + VERSIONINFO via rc.exe) and gpui's HLSL shaders (fxc.exe).
 #
 # Formatting is checked once, workspace-wide, in the (cheaper) crate job.
-#
-# The desktop job deliberately does NOT build the frontend first. `cargo test`
-# only needs `tauri.conf.json`, not the `../dist` output it points at.
 name: CI
 
 on:
@@ -87,8 +81,8 @@ jobs:
       - name: Formatting (workspace)
         run: cargo fmt --check --all
 
-      # The shared crate and the web server are both Tauri-free, so they build,
-      # lint, and test on Linux.
+      # The shared crate and the web server have no UI dependencies, so they
+      # build, lint, and test on Linux.
       - name: Clippy
         run: cargo clippy -p rtorrent-core -p rstorrent-web --all-targets -- -D warnings
 
@@ -139,32 +133,6 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
-
-  desktop:
-    name: desktop app (macOS — clippy, tests)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      # Caches ~/.cargo and the workspace target/. Keyed on the lockfile; a cold
-      # cache just means a slower run, never a wrong one.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "."
-
-      - name: Clippy
-        run: cargo clippy -p rstorrent --all-targets -- -D warnings
-
-      # Tests marked #[ignore] need a live rtorrent daemon or the macOS
-      # Keychain, so they stay out of CI and are run by hand — see
-      # docs/rtorrent-setup.md.
-      - name: Tests
-        run: cargo test -p rstorrent
 
   gpui-macos:
     name: GPUI app (macOS — clippy, tests)

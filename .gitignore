@@ -27,7 +27,7 @@ dist-ssr
 /rstorrent-web.toml
 
 # Cargo build output. The workspace target dir now lives at the repo root
-# (the workspace Cargo.toml is here), so ignore it here as well as in src-tauri.
+# (the workspace Cargo.toml is here).
 /target
 
 # Claude Code local state (agent worktrees are full repo copies — never commit).
@@ -35,9 +35,9 @@ dist-ssr
 
 # Bundled rtorrent runtime (built by tools/build-rtorrent-macos.sh). The binary
 # and its dylibs are platform-specific, so they are built — never committed. The
-# directory and README stay so the Tauri resource path always resolves.
-src-tauri/binaries/rtorrent/*
-!src-tauri/binaries/rtorrent/README.md
+# directory's README stays.
+binaries/rtorrent-macos/*
+!binaries/rtorrent-macos/README.md
 
 # The Windows build's WSL runtime (built by tools/build-rtorrent-wsl.sh): the
 # rstorrent distro's root filesystem, its checksum and build stamp. Built, never

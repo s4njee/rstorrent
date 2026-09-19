@@ -2,13 +2,11 @@
 
 Run this against a build in **both** modes:
 
-- **Desktop (GPUI, the shipping shell):** `RSTORRENT_MOCK=1 cargo run -p rstorrent-gpui`
+- **Desktop (GPUI):** `RSTORRENT_MOCK=1 cargo run -p rstorrent-gpui`
   (mock) or a live `cargo run -p rstorrent-gpui`; the bundled build is
   `dist-gpui/rstorrent-gpui.app`.
 - **Web console:** `RSTORRENT_MOCK=1 cargo run -p rstorrent-web` with
   `npm run dev:web` (see [web-setup.md](web-setup.md)).
-- **Tauri reference (frozen):** `RSTORRENT_MOCK=1 npm run tauri dev`, or a build
-  with `mock: true`.
 
 Mark each item ✅ / ❌ / n/a. File failures as new stories in `tasks.md` (or the
 GPUI/web trackers).

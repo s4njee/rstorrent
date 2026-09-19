@@ -5,9 +5,8 @@ person, Claude or another agent. Read this first, then [GPUI.md](GPUI.md) for
 the shell as a whole.
 
 **Goal:** `rstorrent-gpui.exe` runs natively on Windows 10/11 with its own
-bundled rtorrent, and replaces the Tauri shell (`src-tauri/`), which is being
-retired. Don't build on `src-tauri`. Where the GPUI crate still borrows from
-it, treat that as something to move out (see §7).
+bundled rtorrent. The Tauri shell it replaces has been removed (its last
+version is in commit `44e6680` if you need to compare behaviour).
 
 **State at handoff (2026-09-19):** all Windows code is written and
 type-checks for `x86_64-pc-windows-msvc` from macOS. **None of it has run on
@@ -49,7 +48,7 @@ WSL2 distro "rstorrent"  (Alpine + static musl rtorrent 0.15.7, ~20 MB)
 
 | File | Role |
 |---|---|
-| `crates/gpui/src/wsl.rs` | WSL bridge, ported from `src-tauri/src/wsl.rs`: path translation, `wsl.exe` wrappers (`available`, `registered_distros`, `import`, `run_script`, home-file read/write, `df`, trash). It targets the `rstorrent` distro when registered, otherwise the default distro. The pure parts compile and are unit-tested on every OS. |
+| `crates/gpui/src/wsl.rs` | WSL bridge, ported from the Tauri shell's `wsl.rs`: path translation, `wsl.exe` wrappers (`available`, `registered_distros`, `import`, `run_script`, home-file read/write, `df`, trash). It targets the `rstorrent` distro when registered, otherwise the default distro. The pure parts compile and are unit-tested on every OS. |
 | `crates/gpui/src/daemon_wsl.rs` | Windows daemon lifecycle: find the rootfs → `wsl --import` → write the starter `~/.rtorrent.rc` → launch `wsl.exe -d rstorrent --cd ~ -e /usr/local/bin/rtorrent` as a child → wait up to 30 s for the port. It also has `should_autostart` and `describe`. |
 | `crates/gpui/src/daemon.rs` | Cross-platform entry points. The Windows `start`, `should_autostart` and `describe` delegate to `daemon_wsl`. `is_reachable` is shared. |
 | `crates/gpui/src/model.rs` (`autostart_daemon`) | At launch, starts the bundled daemon in the background if nothing answers. The same code path runs on macOS. |
@@ -63,7 +62,7 @@ WSL2 distro "rstorrent"  (Alpine + static musl rtorrent 0.15.7, ~20 MB)
 | `tools/bundle-gpui-windows.ps1` | Packaging: builds the web console if stale and the release exe, then lays out `dist-gpui\windows\rstorrent\{rstorrent-gpui.exe, runtime\rstorrent-rootfs.tar.gz}` and zips it. |
 | `binaries/rtorrent-wsl/` | Runtime output: tarball, `SHA256SUMS`, README. Git-ignored except the README. |
 | `.github/workflows/ci.yml` | New `gpui-macos` and `gpui-windows` jobs (clippy and tests). They haven't run yet. |
-| `.github/workflows/release.yml` | The Windows leg also builds and zips the GPUI app, as a workflow artifact. For now it's packaged with `-SkipRuntime` (see §6). |
+| `.github/workflows/release.yml` | On a `v*` tag: a `wsl-runtime` ubuntu job builds the rootfs, then the `macos` and `windows` jobs package the app and attach both zips to the GitHub Release (see §6). |
 
 The runtime lookup order is in `daemon_wsl::bundled_rootfs`, first hit wins:
 1. the `RSTORRENT_WSL_ROOTFS` env var
@@ -91,10 +90,8 @@ The runtime lookup order is in `daemon_wsl::bundled_rootfs`, first hit wins:
 
 ## 3. Getting the code and the runtime onto Windows
 
-1. **Code.** At handoff the GPUI work was **uncommitted** on the Mac, on branch
-   `GPUI` (with `crates/gpui/`, `tools/`, `GPUI.md` and this file untracked). It
-   has to be committed and pushed, or copied, before a Windows clone has it.
-   Check `git log`, and confirm `crates/gpui/src/wsl.rs` exists.
+1. **Code.** Everything is on `main` (`git clone git@github.com:s4njee/rstorrent.git`).
+   Confirm `crates/gpui/src/wsl.rs` exists.
 2. **Runtime tarball.** It's git-ignored, so either:
    - build it on this machine inside WSL, from the checkout (which lives under `/mnt/c/...`):
      ```bash
@@ -227,28 +224,24 @@ Roughly by priority. Everything above is ported; these are not.
 - `ci.yml` → `gpui-windows`: `npm ci && npm run build:web`, then clippy and
   tests for `rstorrent-gpui` and `rtorrent-core`. There's no `-D warnings`,
   because of pre-existing warnings.
-- `release.yml` → the Windows leg builds the GPUI zip **without the runtime**,
-  since `windows-latest` can't run the Linux build. To fix: add an
-  `ubuntu-latest` job that runs `sudo tools/build-rtorrent-wsl.sh`, which works
-  locally as root on Linux x86-64, uploads `binaries/rtorrent-wsl/`, and have the
-  Windows leg download it before packaging.
-- The zip is a workflow artifact only, not attached to the GitHub Release.
+- `release.yml` → the `wsl-runtime` job (ubuntu-latest) runs
+  `sudo tools/build-rtorrent-wsl.sh` and uploads the rootfs; the `windows` job
+  downloads it into `binaries/rtorrent-wsl/` and runs the packaging script.
+  **Neither has run yet.** The chroot build was only tested on leo, so the first
+  `workflow_dispatch` run is the test for the ubuntu runner.
 
 ---
 
-## 7. Tauri retirement leftovers relevant here
+## 7. After the Tauri removal
 
-- The macOS runtime still stages into `src-tauri/binaries/rtorrent/`, read by
-  `crates/gpui/build.rs` and `tools/bundle-gpui-macos.sh`. Move it to
-  `binaries/rtorrent-macos/`, next to `binaries/rtorrent-wsl/`, and update both
-  readers and `tools/build-rtorrent-macos.sh`.
-- The icons are already moved: GPUI owns `crates/gpui/assets/icons/`.
-- `src-tauri/src/wsl.rs` has been ported. Its `daemon_start.rs` Windows path is
-  inconsistent (it waits on a unix socket), so don't port anything more from
-  it.
-- `tools/wsl-setup-rtorrent.sh` and `docs/wsl-setup.md` describe the
-  Tauri-era manual setup. Retire them, or keep them as "use your own distro"
-  docs, once the bundled runtime is proven.
+- Done: the Tauri shell (`src-tauri/`) is deleted. The macOS runtime now stages
+  in `binaries/rtorrent-macos/`, and GPUI owns its icons in
+  `crates/gpui/assets/icons/`.
+- Not ported from Tauri, and needed on Windows too: the tray; drag & drop;
+  paste-to-add; the watch-folder runner; `.torrent`/`magnet:` association
+  (see §5 and GPUI.md §4).
+- `tools/wsl-setup-rtorrent.sh` and `docs/wsl-setup.md` remain as the "use your
+  own distro" route. Retire them if the bundled runtime makes them pointless.
 
 ---
 

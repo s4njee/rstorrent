@@ -1,10 +1,8 @@
 /**
  * C2 — paste a magnet/torrent URL onto the main window to add it.
  *
- * This listens for the DOM `paste` event rather than a ⌘V keydown on purpose:
- * the native Edit menu owns the ⌘V accelerator (see menu.rs), so macOS routes
- * the shortcut through the menu to the webview as a paste command and a keydown
- * handler would never see it. The paste event fires either way.
+ * This listens for the DOM `paste` event rather than a ⌘V keydown, so it also
+ * catches pastes from the browser's Edit menu and context menu.
  *
  * Pastes into a text field (the filter box, a dialog input) are left alone, and
  * clipboard text that isn't a magnet/torrent URL falls through to default

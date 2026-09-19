@@ -42,7 +42,10 @@ function Row({ m }: { m: MoveStatus }) {
             {progressText(m)}
           </span>
         </div>
-        <div className={forms.meta} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+        <div
+          className={forms.meta}
+          style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+        >
           {m.src} → {m.dst}
         </div>
         {m.error && <div className={forms.error}>{m.error}</div>}

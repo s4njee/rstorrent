@@ -9,17 +9,21 @@ Ops" design in [`design/`](design/): a compact, monospace, power-user torrent
 client in the mold of qBittorrent, front-ending rtorrent over its XML-RPC
 interface.
 
-rtorrent has no Windows build, so the Windows app drives a daemon running in
-WSL2 and translates paths across the boundary — see
-[docs/wsl-setup.md](docs/wsl-setup.md). The macOS app **ships its own rtorrent**
-as a separate executable, so there is nothing to install before using it.
+Both apps **ship their own rtorrent**, so there is nothing to install first. On
+macOS it is a separate executable inside the `.app`. rtorrent has no Windows
+build, so the Windows app ships a static Linux rtorrent as a small WSL2 distro
+of its own, imports it on first start, and translates paths across the
+boundary. The Windows build is new and still being verified; see
+[windows.md](windows.md).
 
 rstorrent is a *client* — it does not embed a BitTorrent engine in-process; it
 speaks to rtorrent (bundled on macOS, system, or remote) over XML-RPC.
 
-The desktop shell is **GPUI** (the Tauri + React shell is being retired — see
-[GPUI.md](GPUI.md); the Tauri shell stays frozen as the behavioural reference
-until the GPUI parity epics G6–G8 land). The web console keeps the React UI.
+The desktop app is the native **GPUI** shell in [`crates/gpui`](crates/gpui)
+(see [GPUI.md](GPUI.md)). The earlier Tauri + React desktop shell has been
+removed; a few of its features are not ported yet — the tray, drag & drop onto
+the window, paste-to-add, the watch-folder runner and `.torrent`/`magnet:`
+association (GPUI.md §4). The web console keeps the React UI.
 
 ![The rstorrent main window](docs/images/main-window.png)
 
@@ -48,9 +52,8 @@ the Rust toolchain, Node, and Homebrew with `curl openssl@3 ncurses tinyxml2`.
 The result is ad-hoc signed rather than notarized, so Gatekeeper warns on first
 launch on another machine — see [docs/release.md](docs/release.md).
 
-For the Tauri shell instead, it is the same two steps that script performs:
-[`tools/build-rtorrent-macos.sh`](tools/build-rtorrent-macos.sh) to stage the
-runtime, then `npm run tauri build`.
+On Windows the equivalent is `tools\bundle-gpui-windows.ps1`, which produces a
+portable zip with the WSL runtime beside the exe — see [windows.md](windows.md).
 
 ## Status
 
@@ -62,7 +65,7 @@ auto-add. Verified against Homebrew's **rtorrent 0.16.17** on macOS, and
 **rtorrent 0.16.18** built in WSL on Windows. The macOS `.app` bundles its own
 **rtorrent 0.15.7** — built from source by
 [`tools/build-rtorrent-macos.sh`](tools/build-rtorrent-macos.sh) and staged in
-`src-tauri/binaries/rtorrent/` — and prefers it over any system install. See
+`binaries/rtorrent-macos/` — and prefers it over any system install. See
 [backlog.md](backlog.md) for the shipped-so-far list and what's next.
 
 See [plan.md](plan.md) for the architecture, [tasks.md](tasks.md) for the
@@ -78,8 +81,10 @@ Keychain or Windows Credential Manager, never in `settings.json`. Actions that
 only make sense for local files — delete-data, reveal-in-file-manager,
 free-space — are disabled for a remote daemon.
 
-**Adding torrents** — `.torrent` file association and the `magnet:` URL scheme,
-drag & drop onto the window, ⌘V to add from the clipboard, and a watch folder.
+**Adding torrents** — a `.torrent` picker with metadata and a contents tree, a
+magnet/URL dialog that offers a magnet already on the clipboard, and Create
+torrent. (File association, drag & drop and the watch folder are not yet ported
+to the GPUI shell.)
 
 **The table** — sortable, resizable, customizable columns; multi-select with a
 summary bar for bulk resume/pause/remove; a filter sidebar with status, label and
@@ -113,16 +118,16 @@ a daemon-health tab in Statistics, and RSS feeds with auto-download rules.
 ## Quick start
 
 ```sh
-npm install
+npm ci && npm run build:web     # the app embeds the web console at compile time
 
 # Run against the ten built-in fixture torrents — no daemon needed:
-RSTORRENT_MOCK=1 npm run tauri dev      # PowerShell: $env:RSTORRENT_MOCK=1
+cargo run -p rstorrent-gpui -- --demo
 
-# Run against a real daemon:
+# Run against a real daemon (the app starts the bundled one if none answers):
 #   macOS   — build the bundled one with tools/build-rtorrent-macos.sh,
 #             or use a system rtorrent; see docs/rtorrent-setup.md
-#   Windows — see docs/wsl-setup.md
-npm run tauri dev
+#   Windows — see windows.md
+cargo run -p rstorrent-gpui
 ```
 
 Mock mode is the fastest way to see the UI: it serves ten fixture torrents in
@@ -142,12 +147,11 @@ hit **Test connection** — it reports the rtorrent version.
 
 ## Web UI
 
-The same UI runs in a browser, served by a small self-hosted server
+A React UI runs in a browser, served by a small self-hosted server
 (`rstorrent-web`) that sits next to the daemon and proxies its XML-RPC/SCGI
-interface as JSON. The React frontend is shared with the desktop app — the only
-difference is the host backend (HTTP polling instead of Tauri IPC) and the shell
-chrome (an app bar instead of the native title bar). Single-password login,
-session cookie, delete-with-data gated to co-located daemons.
+interface as JSON. The desktop app can also serve it itself (one menu item,
+GPUI.md §10). Single-password login, session cookie, delete-with-data gated to
+co-located daemons.
 
 ```sh
 # Develop against the fixtures with no daemon:
@@ -165,47 +169,53 @@ and reverse-proxy (TLS) setup.
 
 | Command | What it does |
 |---|---|
-| `npm run tauri dev` | Run the desktop app (add `RSTORRENT_MOCK=1` for mock mode) |
+| `cargo run -p rstorrent-gpui` | Run the desktop app (add `-- --demo` for fixtures) |
 | `RSTORRENT_MOCK=1 cargo run -p rstorrent-web` | Run the web server against fixtures |
 | `npm run build:web` | Build the browser SPA the server embeds |
 | `npm test` | Frontend unit tests (Vitest) |
 | `npm run check:contrast` | Palette contrast floors + colour-literal guard (see `docs/web-console-plan.md`) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint + Prettier check |
-| `cargo test` (in `src-tauri/`) | Rust unit tests |
-| `cargo clippy --all-targets -- -D warnings` | Rust lints |
-| `cargo fmt --check` (in `src-tauri/`) | Rust formatting |
-| `npm run tauri build` | Package `.app`/`.dmg` (macOS) or `.msi`/NSIS `.exe` (Windows) |
+| `cargo test --workspace` | Rust unit tests |
+| `cargo clippy --workspace --all-targets` | Rust lints |
+| `cargo fmt --check --all` | Rust formatting |
+| `tools/bundle-gpui-macos.sh` | Package the macOS `.app` (bundled rtorrent inside) |
+| `tools\bundle-gpui-windows.ps1` | Package the Windows zip (WSL runtime beside the exe) |
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of the
-above on push and PR — the frontend checks on Linux, the Rust ones on macOS.
+above on push and PR — the frontend and shared-crate checks on Linux, the GPUI
+app on macOS and Windows.
 
 Tests that touch a live daemon or the Keychain are marked `#[ignore]` and are run
 deliberately — see [docs/rtorrent-setup.md](docs/rtorrent-setup.md).
 
 ## Layout
 
-This is a Cargo workspace: the rtorrent client layer is a Tauri-free crate that
+This is a Cargo workspace: the rtorrent client layer is a UI-free crate that
 both the desktop app and the web server share.
 
 ```
 plan.md · tasks.md · backlog.md   # architecture, tracker, ideas
-Cargo.toml                        # workspace: crates/rtorrent · server · src-tauri
+Cargo.toml                        # workspace: crates/rtorrent · crates/gpui · server
 design/                           # the "Dark Ops" design reference (authoritative)
 docs/rtorrent-setup.md            # connecting to a live rtorrent (macOS)
-docs/wsl-setup.md                 # connecting to rtorrent in WSL (Windows)
+windows.md                        # the Windows build: bundled WSL runtime, bring-up checklist
+docs/wsl-setup.md                 # a hand-installed rtorrent in your own WSL distro
 docs/web-setup.md                 # self-hosting the web UI (server + reverse proxy)
 docs/images/                      # README screenshots (regenerated from the demo)
-demo.html · src/demo/             # browser demo: real UI over mocked IPC + fixtures
+demo.html · src/demo/             # browser demo: the web UI over an in-memory backend + fixtures
 crates/rtorrent/                  # rtorrent-core: SCGI/HTTP transports, XML-RPC, DTOs, mock
-src/                              # React frontend (ipc backends, store, components, theme)
+crates/gpui/                      # rstorrent-gpui: the native desktop app (macOS, Windows)
+src/                              # React frontend for the web console (store, components, theme)
 src/web/ · web.html               # the browser web UI shell (WE) over an HTTP backend
 server/src/                       # rstorrent-web: axum server proxying the daemon as JSON
-src-tauri/src/                    # Tauri desktop shell over the shared crate (poller, commands)
-src-tauri/src/wsl.rs              # Windows-only: path translation across the WSL boundary
-src-tauri/binaries/rtorrent/      # the bundled macOS runtime (built, gitignored)
+crates/gpui/src/wsl.rs            # Windows: path translation across the WSL boundary
+binaries/rtorrent-macos/          # the bundled macOS runtime (built, gitignored)
+binaries/rtorrent-wsl/            # the bundled Windows runtime, a WSL rootfs (built, gitignored)
 tools/scgi-http-bridge.py         # dev-only HTTP→SCGI bridge, stands in for nginx
 tools/build-rtorrent-macos.sh     # builds the bundled rtorrent + libtorrent for the .app
+tools/build-rtorrent-wsl.sh       # builds the Windows runtime (static rtorrent in an Alpine rootfs)
+tools/bundle-gpui-{macos.sh,windows.ps1}  # package the app for each platform
 tools/wsl-setup-rtorrent.sh       # builds rtorrent inside WSL and starts it under systemd
 ```
 

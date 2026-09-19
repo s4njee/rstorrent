@@ -1,5 +1,5 @@
-// Transport security helpers (B9). isLocalhost gates delete-data and
-// reveal-in-Finder, so a remote daemon must never be mistaken for a local one.
+// Transport security helpers (B9). isLocalhost gates delete-data and moving
+// data on set-location, so a remote daemon must never be mistaken for a local one.
 // These mirror `host_is_local` / `is_insecure_credentialed` in Rust — if you
 // change one side, change the other.
 import { describe, it, expect } from "vitest";

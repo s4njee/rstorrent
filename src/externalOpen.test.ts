@@ -3,61 +3,9 @@ import {
   defaultAddOptions,
   OpenRequestQueue,
   parseDroppedFiles,
-  parseDroppedPaths,
-  parseOpenRequests,
   parsePastedText,
 } from "./externalOpen";
 import type { Settings } from "./ipc/types";
-
-describe("parseOpenRequests", () => {
-  it("preserves Finder file order and decodes file URLs", () => {
-    expect(
-      parseOpenRequests([
-        "file:///Users/me/One%20File.torrent",
-        "file://localhost/tmp/TWO.TORRENT",
-      ]),
-    ).toEqual([
-      { kind: "file", path: "/Users/me/One File.torrent" },
-      { kind: "file", path: "/tmp/TWO.TORRENT" },
-    ]);
-  });
-
-  it("accepts magnets and filters unrelated or remote files", () => {
-    expect(
-      parseOpenRequests([
-        "magnet:?xt=urn:btih:ABC&dn=Example",
-        "file:///tmp/readme.txt",
-        "file://server/share/test.torrent",
-        "https://example.com/test.torrent",
-      ]),
-    ).toEqual([{ kind: "magnet", uri: "magnet:?xt=urn:btih:ABC&dn=Example" }]);
-  });
-
-  it("accepts the Windows shapes: bare drive paths and file: URLs", () => {
-    expect(
-      parseOpenRequests([
-        // What a double-clicked .torrent looks like in argv.
-        "C:\\Users\\me\\Downloads\\One.torrent",
-        // `pathname` on Windows keeps a leading slash and POSIX separators.
-        "file:///C:/Users/me/Two%20Files.torrent",
-      ]),
-    ).toEqual([
-      { kind: "file", path: "C:\\Users\\me\\Downloads\\One.torrent" },
-      { kind: "file", path: "C:\\Users\\me\\Two Files.torrent" },
-    ]);
-  });
-
-  it("accepts a WSL share path but still rejects other UNC hosts", () => {
-    expect(
-      parseOpenRequests([
-        "\\\\wsl.localhost\\Ubuntu\\home\\me\\x.torrent",
-        "file://server/share/test.torrent",
-      ]),
-    ).toEqual([
-      { kind: "file", path: "\\\\wsl.localhost\\Ubuntu\\home\\me\\x.torrent" },
-    ]);
-  });
-});
 
 describe("parseDroppedFiles", () => {
   it("keeps only .torrent Files as upload sources", () => {
@@ -79,24 +27,18 @@ describe("OpenRequestQueue", () => {
       (source) =>
         new Promise<void>((resolve) => {
           started.push(
-            source.kind === "file"
-              ? source.path
-              : source.kind === "magnet"
-                ? source.uri
-                : source.file.name,
+            source.kind === "magnet" ? source.uri : source.file.name,
           );
           releases.push(resolve);
         }),
     );
 
-    queue.enqueue(
-      parseOpenRequests(["file:///tmp/one.torrent", "file:///tmp/two.torrent"]),
-    );
-    expect(started).toEqual(["/tmp/one.torrent"]);
+    queue.enqueue(parsePastedText("magnet:?xt=one\nmagnet:?xt=two"));
+    expect(started).toEqual(["magnet:?xt=one"]);
 
     releases.shift()!();
     await Promise.resolve();
-    expect(started).toEqual(["/tmp/one.torrent", "/tmp/two.torrent"]);
+    expect(started).toEqual(["magnet:?xt=one", "magnet:?xt=two"]);
 
     releases.shift()!();
     await queue.whenIdle();
@@ -106,20 +48,15 @@ describe("OpenRequestQueue", () => {
     const handled: string[] = [];
     const onError = vi.fn();
     const queue = new OpenRequestQueue(async (source) => {
-      const path =
-        source.kind === "file"
-          ? source.path
-          : source.kind === "magnet"
-            ? source.uri
-            : source.file.name;
-      handled.push(path);
-      if (path.includes("bad")) throw new Error("bad request");
+      const name = source.kind === "magnet" ? source.uri : source.file.name;
+      handled.push(name);
+      if (name.includes("bad")) throw new Error("bad request");
     }, onError);
 
-    queue.enqueue(parseOpenRequests(["/tmp/bad.torrent", "/tmp/good.torrent"]));
+    queue.enqueue(parsePastedText("magnet:?xt=bad\nmagnet:?xt=good"));
     await queue.whenIdle();
 
-    expect(handled).toEqual(["/tmp/bad.torrent", "/tmp/good.torrent"]);
+    expect(handled).toEqual(["magnet:?xt=bad", "magnet:?xt=good"]);
     expect(onError).toHaveBeenCalledOnce();
   });
 });
@@ -136,31 +73,6 @@ it("builds instant-add defaults from preferences", () => {
     sequential: false,
     skipHashCheck: false,
     unselectedIndexes: [],
-  });
-});
-
-describe("parseDroppedPaths (C1)", () => {
-  it("keeps .torrent files and ignores everything else in the drop", () => {
-    expect(
-      parseDroppedPaths([
-        "/Users/me/a.torrent",
-        "/Users/me/holiday.jpg",
-        "/Users/me/B.TORRENT",
-      ]),
-    ).toEqual([
-      { kind: "file", path: "/Users/me/a.torrent" },
-      { kind: "file", path: "/Users/me/B.TORRENT" },
-    ]);
-  });
-
-  it("keeps paths containing spaces intact", () => {
-    expect(parseDroppedPaths(["/Users/me/Some File.torrent"])).toEqual([
-      { kind: "file", path: "/Users/me/Some File.torrent" },
-    ]);
-  });
-
-  it("returns nothing for a drop with no torrents", () => {
-    expect(parseDroppedPaths(["/Users/me/notes.txt"])).toEqual([]);
   });
 });
 
@@ -185,11 +97,10 @@ describe("parsePastedText (C2)", () => {
     expect(parsePastedText("")).toEqual([]);
   });
 
-  it("splits on newlines only, so pasted paths keep their spaces", () => {
-    expect(parsePastedText("/tmp/Two Words.torrent\n/tmp/b.torrent")).toEqual([
-      { kind: "file", path: "/tmp/Two Words.torrent" },
-      { kind: "file", path: "/tmp/b.torrent" },
-    ]);
+  it("ignores local paths, which the server cannot read from the browser", () => {
+    expect(parsePastedText("/tmp/a.torrent\nfile:///tmp/b.torrent")).toEqual(
+      [],
+    );
   });
 
   it("takes every magnet from a multi-line paste, skipping junk lines", () => {
@@ -209,12 +120,5 @@ describe("parsePastedText (C2)", () => {
     expect(parsePastedText("  magnet:?xt=urn:btih:cccc  ")).toEqual([
       { kind: "magnet", uri: "magnet:?xt=urn:btih:cccc" },
     ]);
-  });
-});
-
-describe("parseOpenRequests still rejects http URLs", () => {
-  it("does not accept http(s) torrents from LaunchServices", () => {
-    // Only pasted/dropped text may carry an http URL; deep links never do.
-    expect(parseOpenRequests(["https://example.org/x.torrent"])).toEqual([]);
   });
 });

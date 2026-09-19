@@ -1,20 +1,21 @@
-# Build and publish the desktop app for macOS and Windows.
+# Build and publish the desktop app (the native GPUI shell) for macOS and Windows.
 #
 # Produces two artifacts:
-#   * macOS   — rstorrent-macos.zip          (the .app bundle, zipped with ditto)
-#   * Windows — rstorrent-<ver>-setup.exe     (the NSIS installer)
+#   * macOS   — rstorrent-<ver>-macos-arm64.zip   (the .app, bundled rtorrent
+#               inside, zipped with ditto; tools/bundle-gpui-macos.sh)
+#   * Windows — rstorrent-<ver>-windows-x64.zip   (portable folder: the exe plus
+#               runtime\rstorrent-rootfs.tar.gz; tools/bundle-gpui-windows.ps1)
 #
-# The Windows leg also builds the native GPUI shell as a portable zip
-# (tools/bundle-gpui-windows.ps1 → rstorrent-<ver>-windows-x64.zip), uploaded as
-# a separate workflow artifact only — not attached to the Release while the
-# Tauri installer is still the shipping build.
+# The Windows runtime is a Linux rtorrent in a WSL root filesystem, so it is
+# built by its own ubuntu job (tools/build-rtorrent-wsl.sh needs Linux x86-64
+# and root) and handed to the Windows job as an artifact.
 #
 # Triggers:
 #   * a version tag `v*` → builds both and attaches them to a GitHub Release.
 #   * manual dispatch    → builds both, downloadable as workflow artifacts.
 #
-# The macOS .app is Apple-Silicon (the runner arch) and unsigned — Gatekeeper
-# will warn on first launch; ad-hoc signing is fine for now (see docs/release.md).
+# Neither build is signed: the .app is ad-hoc signed (Gatekeeper warns on first
+# launch) and the exe is unsigned (SmartScreen warns). See docs/release.md.
 name: Release
 
 on:
@@ -27,21 +28,31 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: ${{ matrix.label }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            label: macOS
-            bundles: app
-          - os: windows-latest
-            label: Windows
-            bundles: nsis
-    runs-on: ${{ matrix.os }}
-    # The macOS leg also compiles rtorrent + libtorrent from source to stage the
-    # bundled daemon, which adds a few minutes on top of the Rust build.
+  wsl-runtime:
+    name: WSL runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Builds a static musl rtorrent in an Alpine chroot, packs a clean Alpine
+      # rootfs around it and smoke-tests SCGI — all as root on this runner.
+      - name: Build the rtorrent WSL rootfs
+        run: sudo tools/build-rtorrent-wsl.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rtorrent-wsl-runtime
+          path: |
+            binaries/rtorrent-wsl/rstorrent-rootfs.tar.gz
+            binaries/rtorrent-wsl/SHA256SUMS
+          if-no-files-found: error
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    # Also compiles rtorrent + libtorrent from source to stage the bundled
+    # daemon, which adds a few minutes on top of the Rust build.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -53,93 +64,81 @@ jobs:
 
       - run: npm ci
 
-      # Stage the bundled rtorrent the .app ships (Resources/binaries/rtorrent).
-      # Without it `tauri build` has no resource to copy, and the macOS app would
-      # fall back to a system install. Windows runs the daemon inside WSL, so it
-      # has no native runtime to bundle.
-      - name: Build bundled rtorrent (macOS)
-        if: runner.os == 'macOS'
-        run: tools/build-rtorrent-macos.sh
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # One command: stages the bundled rtorrent, builds the web console the
+      # binary embeds, builds the release binary, assembles, signs (ad hoc)
+      # and verifies dist-gpui/rstorrent-gpui.app.
+      - name: Build the app
+        run: tools/bundle-gpui-macos.sh
+
+      - name: Package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/gpui/Cargo.toml | head -1)
+          zip="rstorrent-${version}-macos-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent dist-gpui/rstorrent-gpui.app "$zip"
+          echo "ARTIFACT=$zip" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rstorrent-macOS
+          path: ${{ env.ARTIFACT }}
+          if-no-files-found: error
+
+      - name: Publish to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag \
+            || echo "release already exists"
+          gh release upload "$GITHUB_REF_NAME" "$ARTIFACT" --clobber
+
+  windows:
+    name: Windows
+    needs: wsl-runtime
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: rtorrent-wsl-runtime
+          path: binaries/rtorrent-wsl
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "."
 
-      # `tauri build` runs the frontend build (beforeBuildCommand) then bundles
-      # just the target we want for this platform.
-      - name: Build desktop app
-        run: npm run tauri build -- --bundles ${{ matrix.bundles }}
-
-      # --- Package: macOS → a .zip of the .app; Windows → the NSIS .exe ---
-      # The bundle path is found by glob so it works whether Tauri writes under
-      # the workspace `target/` or `src-tauri/target/`.
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
+      # Builds the web console if stale and the release exe, then lays out
+      # dist-gpui\windows\rstorrent\ with the runtime and zips it.
+      - name: Build and package the app
+        shell: pwsh
         run: |
-          app=$(find . -path '*release/bundle/macos/rstorrent.app' -type d | head -1)
-          if [ -z "$app" ]; then echo "::error::no .app bundle found"; exit 1; fi
-          ditto -c -k --sequesterRsrc --keepParent "$app" "rstorrent-macos.zip"
-          echo "ARTIFACT=rstorrent-macos.zip" >> "$GITHUB_ENV"
+          ./tools/bundle-gpui-windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $zip = Get-ChildItem dist-gpui/windows/rstorrent-*-windows-x64.zip | Select-Object -First 1
+          "ARTIFACT=$($zip.FullName.Replace('\', '/'))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          exe=$(find . -path '*release/bundle/nsis/*-setup.exe' | head -1)
-          if [ -z "$exe" ]; then echo "::error::no NSIS installer found"; exit 1; fi
-          echo "ARTIFACT=$(basename "$exe")" >> "$GITHUB_ENV"
-          cp "$exe" .
-
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: rstorrent-${{ runner.os }}
+          name: rstorrent-Windows
           path: ${{ env.ARTIFACT }}
           if-no-files-found: error
 
-      # --- GPUI shell (Windows): a portable zip beside the Tauri installer ---
-      # The WSL runtime (binaries/rtorrent-wsl/rstorrent-rootfs.tar.gz) is built
-      # by tools/build-rtorrent-wsl.sh, which needs Linux x86-64 as root — not
-      # windows-latest. Until a Linux job builds it (`sudo tools/build-rtorrent-wsl.sh`
-      # on ubuntu-latest) and hands it over as an artifact, package without it
-      # (-SkipRuntime) and say so.
-      # The server half embeds dist-web at compile time; `tauri build` above
-      # only built the Tauri frontend, so build the web console first. The
-      # packaging script then sees it current and the binary built, and only
-      # lays out and zips.
-      - name: Build GPUI app (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          npm run build:web
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo build --release -p rstorrent-gpui
-
-      - name: Package GPUI app (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $rootfs = 'binaries/rtorrent-wsl/rstorrent-rootfs.tar.gz'
-          if (Test-Path -LiteralPath $rootfs) {
-            ./tools/bundle-gpui-windows.ps1
-          } else {
-            Write-Output "::warning::no WSL runtime at $rootfs; packaging the GPUI zip without it (-SkipRuntime)"
-            ./tools/bundle-gpui-windows.ps1 -SkipRuntime
-          }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Upload GPUI workflow artifact (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: rstorrent-gpui-Windows
-          path: dist-gpui/windows/rstorrent-*-windows-x64.zip
-          if-no-files-found: error
-
-      # On a tag, publish to the GitHub Release. Both matrix jobs target the same
-      # release: the first creates it, the second finds it already there.
       - name: Publish to the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         env:

@@ -2,12 +2,10 @@
 #
 # Assemble a macOS .app for the GPUI shell, with the bundled rtorrent inside.
 #
-# The Tauri shell gets its .app from `tauri build`, which copies
-# `src-tauri/binaries/rtorrent/` into the bundle because `tauri.conf.json`
-# declares it as a resource. The GPUI shell has no bundler, so this is that
-# bundler: it builds the binary, lays out the .app by hand, and puts the same
-# staged runtime in `Contents/Resources/binaries/rtorrent/` — which is exactly
-# where `daemon::bundled_rtorrent` looks first.
+# GPUI has no bundler, so this is the bundler: it builds the binary, lays out
+# the .app by hand, and puts the staged runtime (binaries/rtorrent-macos/) in
+# `Contents/Resources/binaries/rtorrent/` — which is exactly where
+# `daemon::bundled_rtorrent` looks first.
 #
 # This is the whole build, in one command from a fresh clone: it stages the
 # bundled rtorrent (from source, cached after the first time), builds the web
@@ -25,8 +23,7 @@
 # output looks current.
 #
 # The result is ad-hoc signed, not notarized: Gatekeeper warns on first launch
-# on another machine, which is the same deal the Tauri build ships with (see
-# docs/release.md).
+# on another machine (see docs/release.md).
 
 set -euo pipefail
 
@@ -34,7 +31,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROFILE="${GPUI_PROFILE:-release}"
 BINARY="rstorrent-gpui"
 APP_NAME="rstorrent-gpui.app"
-STAGED_RUNTIME="$REPO_ROOT/src-tauri/binaries/rtorrent"
+STAGED_RUNTIME="$REPO_ROOT/binaries/rtorrent-macos"
 OUT_DIR="$REPO_ROOT/dist-gpui"
 APP="$OUT_DIR/$APP_NAME"
 CONTENTS="$APP/Contents"
@@ -105,9 +102,9 @@ BIN="$REPO_ROOT/target/$PROFILE/$BINARY"
 [ -f "$BIN" ] || die "no binary at $BIN"
 
 # --- 4. Lay out the bundle -------------------------------------------------
-# The identifier matches the Tauri app's on purpose: both shells read and write
-# the same ~/Library/Application Support/com.rstorrent.app/settings.json, and a
-# user switching between them should not have to reconnect.
+# The identifier is the one the retired Tauri app used, on purpose: settings
+# live in ~/Library/Application Support/com.rstorrent.app/settings.json, and an
+# existing user upgrading should not have to reconnect.
 say "Assembling $APP_NAME"
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"

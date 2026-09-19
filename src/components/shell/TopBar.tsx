@@ -2,10 +2,6 @@
  * The console's top bar (design frame 1a): the wordmark, the live global rates
  * with a 60-second sparkline, the filter field, the primary add action, and the
  * settings entry.
- *
- * Shared by both shells. The desktop sets `trafficLights`, which reserves the
- * macOS gutter and marks the bar as the window's drag region; a browser ignores
- * both, so neither shell needs its own bar.
  */
 
 import { useId, type ReactNode } from "react";
@@ -15,7 +11,13 @@ import { useTransferHistory } from "../../store/transferHistory";
 import { accel } from "../../platform";
 import { formatRate } from "../../utils/format";
 import { sparkPeak, sparkPoints } from "../../utils/sparkline";
-import { AddIcon, GearIcon, SearchIcon, SessionIcon, StatsIcon } from "../icons";
+import {
+  AddIcon,
+  GearIcon,
+  SearchIcon,
+  SessionIcon,
+  StatsIcon,
+} from "../icons";
 import styles from "./TopBar.module.css";
 
 /** Samples the sparkline draws; 60s of the ~1s cadence. */
@@ -25,25 +27,15 @@ const SPARK_W = 170;
 const SPARK_H = 26;
 
 interface TopBarProps {
-  /** Desktop only: reserve the traffic-light gutter and drag the window. */
-  trafficLights?: boolean;
-  /** Web only: the account chip (sign out). */
+  /** The account chip (sign out). */
   account?: ReactNode;
-  /**
-   * When set, the settings entry opens this instead of the desktop Preferences
-   * dialog — the web shell routes to `/settings` (WC7-S1).
-   */
-  onSettings?: () => void;
-  /** Web only: a route to the Stats page (WC8). */
-  onStats?: () => void;
+  /** The settings entry — the shell routes to `/settings` (WC7-S1). */
+  onSettings: () => void;
+  /** The route to the Stats page (WC8). */
+  onStats: () => void;
 }
 
-export function TopBar({
-  trafficLights = false,
-  account,
-  onSettings,
-  onStats,
-}: TopBarProps) {
+export function TopBar({ account, onSettings, onStats }: TopBarProps) {
   const globals = useTorrents((s) => s.globals);
   const points = useTransferHistory((s) => s.points);
   const search = useUi((s) => s.search);
@@ -67,11 +59,7 @@ export function TopBar({
   );
 
   return (
-    <header
-      className={styles.bar}
-      data-desktop={trafficLights ? "" : undefined}
-      {...(trafficLights ? { "data-tauri-drag-region": true } : {})}
-    >
+    <header className={styles.bar}>
       <img
         className={styles.logo}
         src="/blackbird.jpg"
@@ -136,17 +124,15 @@ export function TopBar({
         Add torrent
       </button>
 
-      {onStats && (
-        <button
-          type="button"
-          className={styles.iconButton}
-          onClick={onStats}
-          title="Statistics"
-          aria-label="Statistics"
-        >
-          <StatsIcon size={12} />
-        </button>
-      )}
+      <button
+        type="button"
+        className={styles.iconButton}
+        onClick={onStats}
+        title="Statistics"
+        aria-label="Statistics"
+      >
+        <StatsIcon size={12} />
+      </button>
 
       <button
         type="button"
@@ -161,7 +147,7 @@ export function TopBar({
       <button
         type="button"
         className={styles.iconButton}
-        onClick={() => (onSettings ? onSettings() : openDialog("prefs"))}
+        onClick={onSettings}
         title={`Settings (${accel(",")})`}
         aria-label="Settings"
       >

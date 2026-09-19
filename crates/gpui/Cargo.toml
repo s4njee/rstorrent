@@ -34,18 +34,18 @@ dirs = "6"
 anyhow = "1"
 futures = "0.3"
 # "Remove and delete data" moves files to the Trash / Recycle Bin, never `rm`.
-# Already in the workspace through `src-tauri`.
 trash = "5"
 # The local calendar date for the Started/Finished columns, matching
 # `formatDate`'s same-year elision. Already in the lock file.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # `statvfs` for free-space probing on the default save-path volume (unix only;
-# the disk readout stays unknown on Windows, where the files live in WSL).
+# on Windows the files live in WSL and `wsl::free_space` asks `df` there).
 # Already in the workspace through the web server.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# Completion toasts. Already in the lock file through `src-tauri`; same version.
+# Completion toasts (WinRT). A standalone crate despite the name — it does not
+# pull in Tauri.
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.7.3"
 

@@ -2,12 +2,12 @@
 #
 # Members:
 #   * crates/rtorrent — `rtorrent-core`, the host-agnostic client layer (SCGI/HTTP,
-#                       XML-RPC, DTOs, status derivation, mock). No Tauri.
-#   * src-tauri       — the macOS/Windows desktop app (Tauri shell over the crate).
+#                       XML-RPC, DTOs, status derivation, mock). No UI.
+#   * crates/gpui     — `rstorrent-gpui`, the native macOS/Windows desktop app.
 #   * server          — (added in WE1) the `rstorrent-web` self-hosted server.
 [workspace]
 resolver = "2"
-members = ["crates/rtorrent", "crates/gpui", "server", "src-tauri"]
+members = ["crates/rtorrent", "crates/gpui", "server"]
 
 # Profiles apply workspace-wide and must live at the root; a member's own
 # `[profile.*]` is ignored. Kept from the desktop app's packaging tuning.

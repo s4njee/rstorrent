@@ -16,8 +16,8 @@ against mocked IPC + the ten fixtures, so nothing real ends up in a committed
 image. No daemon, no desktop build.
 
 ```sh
-# 1. serve the demo (any free port; Tauri's 1420 may be taken)
-npx vite --port 5199 --host 127.0.0.1
+# 1. serve the demo (any free port)
+npx vite --config vite.web.config.ts --port 5199 --host 127.0.0.1
 
 # 2. shoot each state with headless Chrome
 for s in main pieces smart prefs; do

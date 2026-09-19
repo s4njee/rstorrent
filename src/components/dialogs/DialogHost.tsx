@@ -7,11 +7,8 @@ import { useUi } from "../../store/ui";
 import { RemoveDialog } from "./RemoveDialog";
 import { RecheckDialog } from "./RecheckDialog";
 import { AddModal } from "./AddModal";
-import { PreferencesDialog } from "./PreferencesDialog";
 import { StatisticsDialog } from "./StatisticsDialog";
 import { RateLimitDialog } from "./RateLimitDialog";
-import { TuneNetworkDialog } from "./TuneNetworkDialog";
-import { ShutdownDialog } from "./ShutdownDialog";
 import { SetLocationDialog } from "./SetLocationDialog";
 import { CreateTorrentDialog } from "./CreateTorrentDialog";
 import { SetLabelDialog } from "./SetLabelDialog";
@@ -38,16 +35,10 @@ export function DialogHost() {
       );
     case "create-torrent":
       return <CreateTorrentDialog />;
-    case "prefs":
-      return <PreferencesDialog />;
     case "stats":
       return <StatisticsDialog />;
     case "rate-limit":
       return <RateLimitDialog />;
-    case "tune-network":
-      return <TuneNetworkDialog />;
-    case "shutdown":
-      return <ShutdownDialog />;
     case "set-location":
       return <SetLocationDialog />;
     case "set-label":

@@ -2,7 +2,7 @@
  * Moves store — live move-on-complete statuses (V3-14).
  *
  * Hydrated via `get_moves` and refreshed on the `moves://update` nudge
- * (desktop push; the web adapter polls `GET /api/moves`). While a move is
+ * (the web backend polls `GET /api/moves` for it). While a move is
  * active the pill polls `getMoves` itself for smooth byte progress.
  */
 

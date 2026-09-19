@@ -28,6 +28,7 @@ import {
   type UiPreferences,
 } from "../ipc/webSettings";
 import { useNotices } from "../store/notices";
+import { refetchSnapshotNow } from "../ipc/web";
 import {
   applyDensity,
   applyTheme,
@@ -169,9 +170,7 @@ export function SettingsPage({ onBack }: { onBack: () => void }) {
           ) ?? rows,
       );
       if (outcome.applied.length > 0) {
-        void import("../ipc/web").then(({ refetchSnapshotNow }) =>
-          refetchSnapshotNow(),
-        );
+        refetchSnapshotNow();
       }
     } catch (error: unknown) {
       setReport({ applied: [], failed: [{ id: "*", error: String(error) }] });

@@ -114,13 +114,10 @@ export type DialogKind =
   | "add-file"
   | "add-magnet"
   | "create-torrent"
-  | "prefs"
   | "stats"
   | "remove"
   | "recheck"
   | "rate-limit"
-  | "tune-network"
-  | "shutdown"
   | "set-location"
   | "set-label"
   | "set-tags"
@@ -449,14 +446,14 @@ export const useUi = create<UiState>((set, get) => {
     },
 
     openDialog: (dialog) => {
-      // A queued Finder/deep-link dialog owns the modal until it is completed
+      // A queued drop/paste add dialog owns the modal until it is completed
       // or cancelled; menu actions must not strand its queue promise.
       if (get().externalAddRequest) return;
       set({ dialog, contextMenu: null, columnMenu: null });
     },
     openExternalAdd: (source, onComplete) =>
       set({
-        // file + upload both open the torrent dialog; magnet opens the other.
+        // An upload opens the torrent dialog; a magnet opens the other.
         dialog: source.kind === "magnet" ? "add-magnet" : "add-file",
         externalAddRequest: { id: nextExternalRequestId++, source },
         externalAddComplete: onComplete,

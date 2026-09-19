@@ -194,9 +194,7 @@ describe("extraFacts", () => {
   });
 
   it("words the full precedence: rule, turtle, global", () => {
-    const rules = [
-      { id: "vid", label: "video", downKb: 1024, upKb: 256 },
-    ];
+    const rules = [{ id: "vid", label: "video", downKb: 1024, upKb: 256 }];
     const ruled = extraFacts(
       torrent({
         downRateLimit: 1024,
@@ -209,7 +207,7 @@ describe("extraFacts", () => {
       rules,
       true,
     );
-    expect(valueOf(ruled, "Down limit")).toBe("1.0 KiB/s · rule label \"video\"");
+    expect(valueOf(ruled, "Down limit")).toBe('1.0 KiB/s · rule label "video"');
     const turtled = extraFacts(torrent(), 0, 0, [], true);
     expect(valueOf(turtled, "Down limit")).toBe("∞ · turtle");
   });

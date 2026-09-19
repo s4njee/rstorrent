@@ -17,7 +17,13 @@
 import { useEffect, useState } from "react";
 import { useTorrents } from "../../store/torrents";
 import { useUi } from "../../store/ui";
-import { activeMoves, baseName, movePercent, retryableMoves, useMoves } from "../../store/moves";
+import {
+  activeMoves,
+  baseName,
+  movePercent,
+  retryableMoves,
+  useMoves,
+} from "../../store/moves";
 import { cancelMove, getMoves } from "../../ipc/commands";
 import { formatFree, formatRate, formatUptime } from "../../utils/format";
 import { statusBarCounts } from "../../store/selectors";

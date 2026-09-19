@@ -65,8 +65,10 @@ list. Pure rules — formatting, filtering, sorting, selection, columns — live
 modules with no GPUI dependency and are unit-tested directly, exactly as
 `src/store/selectors.ts` and `src/utils/format.ts` are in the Tauri tree.
 
-**The Tauri app remains the behavioural reference** for every surface not yet
-ported. Where this document and the code disagree, the code is current.
+**The Tauri shell has been removed (2026-09-19).** For the surfaces not yet
+ported, its behaviour is still in git history — `git show 44e6680:src-tauri/…`
+is the last commit that has it. Where this document and the code disagree, the
+code is current.
 
 ---
 
@@ -187,13 +189,9 @@ the runtime beside the binary through `build.rs` rather than inside a bundle:
 
 | Step | What it does |
 |---|---|
-| `tools/build-rtorrent-macos.sh` | Builds rtorrent + libtorrent from source at the pinned tag (`v0.15.7` by default) and stages them in `src-tauri/binaries/rtorrent/` — the daemon plus its non-system dylibs, every one referenced through `@executable_path`, so the directory is relocatable |
+| `tools/build-rtorrent-macos.sh` | Builds rtorrent + libtorrent from source at the pinned tag (`v0.15.7` by default) and stages them in `binaries/rtorrent-macos/` — the daemon plus its non-system dylibs, every one referenced through `@executable_path`, so the directory is relocatable |
 | `crates/gpui/build.rs` | Copies that directory to `<target>/<profile>/binaries/rtorrent/` at build time, which is what a bare `cargo run`/`cargo build` looks beside |
 | `tools/bundle-gpui-macos.sh` | The one command above: runtime, console, binary, bundle, signature, verification |
-
-The Tauri shell reads the same staging directory through `tauri.conf.json`'s
-`bundle.resources`, so during the migration one staging directory serves both
-shells and the two cannot drift.
 
 **Resolution order** (`daemon::bundled_rtorrent`, first hit wins): the
 `RSTORRENT_RTORRENT_BIN` override, then `Contents/Resources/binaries/rtorrent/`
@@ -229,9 +227,8 @@ checks, neither of which needs a window, and the GPUI shell has no headless UI
 tests (§5).
 
 The result is ad-hoc signed, not notarized: Gatekeeper warns on first launch on
-another machine, the same deal the Tauri build ships with (see
-[docs/release.md](docs/release.md)). The CI workflow still packages only the
-Tauri app; a GPUI release leg is not written yet.
+another machine (see [docs/release.md](docs/release.md)). The Release workflow
+packages this `.app` and the Windows zip on a version tag.
 
 ---
 
@@ -360,7 +357,8 @@ live editing against the same daemon.
 
 **Decision (2026-09-16):** per backlog-v3 V3-01, GPUI is the desktop and the
 Tauri shell is retired once these land — the Tauri shell stays the behavioural
-reference but takes no new features. This section is the XL split the backlog
+reference but takes no new features. (Superseded 2026-09-19: the Tauri shell was
+removed before G7 landed; see §4 for what is still unported.) This section is the XL split the backlog
 requires before work starts; each story is sized S/M/L.
 
 ### G6 · Preferences and Statistics

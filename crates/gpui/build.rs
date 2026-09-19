@@ -7,10 +7,7 @@
 //! # macOS: stage the bundled rtorrent runtime beside the executable
 //!
 //! The runtime is built by `tools/build-rtorrent-macos.sh`, which stages it into
-//! `src-tauri/binaries/rtorrent/`. The Tauri shell reads that directory through
-//! `tauri.conf.json`'s `bundle.resources`; this does the same job for the GPUI
-//! shell, so during the migration one staging directory serves both and the
-//! two cannot drift.
+//! `binaries/rtorrent-macos/` at the repo root.
 //!
 //! It lands at `<target>/<profile>/binaries/rtorrent/`, which is where
 //! [`rstorrent_gpui::daemon`] looks for a bare executable — a `.app` keeps it in
@@ -29,7 +26,7 @@
 use std::path::{Component, Path, PathBuf};
 
 /// Where the staging script leaves the runtime, relative to this crate.
-const STAGED: &str = "../../src-tauri/binaries/rtorrent";
+const STAGED: &str = "../../binaries/rtorrent-macos";
 
 /// The subdirectory of the target directory the app looks in.
 const DESTINATION: &str = "binaries/rtorrent";

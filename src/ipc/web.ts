@@ -1,15 +1,14 @@
 /**
- * The web host backend: `fetch`/polling against the `rstorrent-web` server.
+ * The web backend: `fetch`/polling against the `rstorrent-web` server.
  *
- * WE1 implements the **read path** — the snapshot poll that drives the live
- * table. `invoke` answers the handful of read-ish commands the app issues at
- * startup and rejects mutations (they land in WE3). `listen("state://snapshot")`
- * polls `GET /api/state` every ~1s with ETag reuse and pauses while the tab is
- * hidden, refetching immediately on focus — matching the desktop poller's push
- * cadence over HTTP.
+ * `invoke` answers the read-ish commands locally (settings, snapshot, log,
+ * moves, health) and maps every mutation 1:1 onto `POST /api/cmd/{name}`.
+ * `listen("state://snapshot")` polls `GET /api/state` every ~1s with ETag
+ * reuse and pauses while the tab is hidden, refetching immediately on focus;
+ * the detail, log and moves channels poll the same way.
  */
 
-import type { Backend, Capabilities, UnlistenFn } from "./backend";
+import type { Backend, UnlistenFn } from "./backend";
 import type {
   BandwidthRule,
   DaemonHealth,
@@ -26,16 +25,6 @@ const POLL_MS = 1000;
 /** Detail + log poll cadence (ms). */
 const DETAIL_MS = 2000;
 
-/** The browser can only read the clipboard; everything else is the server's. */
-const capabilities: Capabilities = {
-  localFs: false,
-  nativeDialogs: false,
-  keychain: false,
-  menus: false,
-  deepLinks: false,
-  clipboardRead: true,
-};
-
 /** Last detail watch set by `set_detail_watch`; the detail loop reads it (WE3). */
 let detailWatch: { hash: string | null; tab: string | null } = {
   hash: null,
@@ -48,7 +37,7 @@ export function setUnauthorizedHandler(fn: () => void): void {
   onUnauthorized = fn;
 }
 
-/** Answer the read-ish startup commands; reject everything else (WE3). */
+/** Answer the read-ish commands locally; POST every mutation to the server. */
 async function dispatch(
   command: string,
   args: Record<string, unknown>,
@@ -91,17 +80,11 @@ async function dispatch(
       if (!res.ok) return [];
       return (await res.json()) as MoveStatus[];
     }
-    case "take_open_requests":
-      // No file/magnet deep links in the browser.
-      return [] as string[];
     case "set_detail_watch":
       detailWatch = {
         hash: (args.hash as string | null) ?? null,
         tab: (args.tab as string | null) ?? null,
       };
-      return null;
-    case "retry_connection":
-      // The server polls on its own; a client can't force a reconnect yet.
       return null;
     case "daemon_health": {
       const res = await fetch("/api/health");
@@ -109,25 +92,9 @@ async function dispatch(
       const body = (await res.json()) as { daemon: DaemonHealth | null };
       return body.daemon ?? {};
     }
-    // Desktop-only surface the web shell never renders — reject clearly so a
-    // stray call is obvious rather than hitting the server as an unknown command.
-    case "open_destination":
-    case "export_session":
-    case "set_http_password":
-    case "has_http_password":
-    case "clear_http_password":
-    case "test_connection":
-    case "set_turtle":
-    case "tuning_preview":
-    case "apply_tuning":
-    case "rss_fetch":
-    case "rss_download":
-    case "rss_test":
-    case "rss_export_seen":
-    case "rss_import_seen":
+    // No server endpoint (the web console has its own Stats page) — reject
+    // clearly rather than hitting the server as an unknown command.
     case "get_statistics":
-    case "save_session":
-    case "shutdown_daemon":
       throw new Error(`not available in the web UI: ${command}`);
     default:
       // Everything else is a mutation whose name maps 1:1 to POST /api/cmd/{name}.
@@ -482,14 +449,11 @@ export const webBackend: Backend = {
         return Promise.resolve(pollLog(handler as (e: LogEntry) => void));
       case "moves://update":
         return Promise.resolve(pollMoves(handler as () => void));
-      // The desktop-only channels (native menus, deep links, notifications)
-      // have no browser equivalent.
+      // Unknown channels have nothing to poll.
       default:
         return Promise.resolve(NOOP_UNLISTEN);
     }
   },
-
-  capabilities,
 };
 
 /** The current detail watch (hash + tab), for the WE3 detail loop. */

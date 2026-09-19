@@ -3,7 +3,7 @@
  *
  * Acts on the current selection. Items mirror the toolbar plus label/location
  * management. "Set label" opens a hover submenu of existing labels, a "none"
- * option, and an inline input for a new label. Copy-magnet and open-destination
+ * option, and an inline input for a new label. Copy-magnet and copy-path
  * apply to a single torrent only. Closes on click-away (overlay) or Esc (handled
  * by the global keyboard hook). The menu is clamped to stay on-screen.
  */
@@ -12,7 +12,6 @@ import { useMemo, useState } from "react";
 import { useUi } from "../../store/ui";
 import { useTorrents } from "../../store/torrents";
 import * as actions from "../../actions";
-import { capabilities } from "../../ipc/backend";
 import {
   setLabel,
   setSuperSeeding,
@@ -312,27 +311,15 @@ export function ContextMenu() {
           </span>
           Copy magnet link
         </div>
-        {capabilities().localFs ? (
-          <div
-            className={`${styles.item} ${single ? "" : styles.disabled}`}
-            onClick={() => single && run(() => actions.openDestination(single))}
-          >
-            <span className={styles.icon}>
-              <OpenIcon size={12} />
-            </span>
-            Open destination
-          </div>
-        ) : (
-          <div
-            className={`${styles.item} ${single ? "" : styles.disabled}`}
-            onClick={() => single && run(() => void copyPath(single))}
-          >
-            <span className={styles.icon}>
-              <OpenIcon size={12} />
-            </span>
-            Copy path
-          </div>
-        )}
+        <div
+          className={`${styles.item} ${single ? "" : styles.disabled}`}
+          onClick={() => single && run(() => void copyPath(single))}
+        >
+          <span className={styles.icon}>
+            <OpenIcon size={12} />
+          </span>
+          Copy path
+        </div>
 
         <div className={styles.sep} />
 

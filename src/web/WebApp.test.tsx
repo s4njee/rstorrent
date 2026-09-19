@@ -1,7 +1,7 @@
 /**
  * Render smoke for the web shell: proves the shell composes and renders the
  * shared chrome (top bar, action toolbar, filter sidebar, status bar) without a
- * render-time crash — e.g. a component reaching for a Tauri API in the browser.
+ * render-time crash — e.g. a component reaching for an API the browser lacks.
  *
  * This is not a visual/layout check (that's the manual parity pass), and it does
  * not drive live data: under vitest the store is a separate module instance from
@@ -18,14 +18,6 @@ import { WebApp } from "./WebApp";
 const stubBackend: Backend = {
   invoke: async () => ({}) as never,
   listen: async () => () => {},
-  capabilities: {
-    localFs: false,
-    nativeDialogs: false,
-    keychain: false,
-    menus: false,
-    deepLinks: false,
-    clipboardRead: true,
-  },
 };
 
 beforeEach(() => {

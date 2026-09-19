@@ -3,14 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A native macOS desktop client for the rtorrent daemon (Tauri + Rust).",
+  "description": "The rstorrent web console frontend (React), served by the rstorrent-web server.",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run dev:web",
     "dev:web": "vite --config vite.web.config.ts",
-    "build": "tsc && vite build",
+    "build": "npm run build:web",
     "build:web": "tsc && vite build --config vite.web.config.ts",
-    "preview": "vite preview",
-    "tauri": "tauri",
+    "preview": "vite preview --config vite.web.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . && prettier --check .",
@@ -21,10 +20,6 @@
     "check:contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-clipboard-manager": "^2",
-    "@tauri-apps/plugin-dialog": "^2",
-    "@tauri-apps/plugin-opener": "^2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zustand": "^5.0.2"
@@ -32,7 +27,6 @@
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@playwright/test": "^1.63.0",
-    "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

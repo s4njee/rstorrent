@@ -1,4 +1,9 @@
-# Running rstorrent on Windows with rtorrent in WSL
+# Running rstorrent on Windows with rtorrent in your own WSL distro
+
+> **The Windows app now ships its own rtorrent** as a dedicated WSL distro and
+> starts it for you — see [windows.md](../windows.md). This page covers the
+> alternative: a daemon you install and manage yourself in your own distro
+> (point **Preferences → Connection** at it, e.g. TCP `127.0.0.1:5000`).
 
 rtorrent is a Unix daemon and has no Windows build. On Windows, rstorrent runs
 as a native app and talks to an rtorrent running inside WSL2. This document
@@ -62,7 +67,7 @@ filesystem.
 
 The daemon reports paths in **its** namespace (`/home/you/Downloads/thing`).
 Explorer, the folder pickers, and `std::fs` all speak Windows paths. rstorrent
-translates at the boundary, in `src-tauri/src/wsl.rs`:
+translates at the boundary, in `crates/gpui/src/wsl.rs`:
 
 | Direction | Rule |
 |---|---|
@@ -172,6 +177,6 @@ spelling now only resolves when rtorrent is started with `-D`. Check
 default save path is set to a path the VM can `df`.
 
 **Toast notifications are attributed to PowerShell.** Windows addresses toasts
-by AppUserModelID, which only exists once the NSIS installer has written a Start
-Menu shortcut. In a `tauri dev` run there is no shortcut, so the app falls back
-to the PowerShell AUMID. Installed builds are attributed correctly.
+by AppUserModelID, which only exists once an installer has written a Start
+Menu shortcut. The app ships as a portable zip for now (no shortcut), so it
+falls back to the PowerShell AUMID; see windows.md §4 step 8.

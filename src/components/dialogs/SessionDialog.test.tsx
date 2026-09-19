@@ -69,14 +69,6 @@ const stubBackend: Backend = {
     return {};
   }) as Backend["invoke"],
   listen: async () => () => {},
-  capabilities: {
-    localFs: false,
-    nativeDialogs: false,
-    keychain: false,
-    menus: false,
-    deepLinks: false,
-    clipboardRead: true,
-  },
 };
 
 let host: HTMLDivElement;
@@ -149,10 +141,9 @@ async function uploadManifest() {
 describe("SessionDialog", () => {
   it("downloads the exported manifest", async () => {
     await mount();
-    const anchorClick = vi.spyOn(
-      HTMLAnchorElement.prototype,
-      "click",
-    ).mockImplementation(() => {});
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
     await click("Download manifest");
     expect(calls).toContain("export_session_text");
     expect(host.textContent).toContain("exported 1 torrent(s)");
